@@ -1,0 +1,70 @@
+// =============================================================================
+// NexorAIOS — Prisma Schema
+// Phase 0: Infrastructure models only. Business models added per module.
+// =============================================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["infra", "public"]
+}
+
+// -----------------------------------------------------------------------------
+// Infrastructure: Seed execution tracking
+// Ensures idempotent, auditable seed runs across environments.
+// -----------------------------------------------------------------------------
+
+model SeedExecution {
+  id         String   @id @default(uuid()) @db.Uuid
+  name       String   @unique @db.VarChar(255)
+  version    Int      @default(1)
+  executedAt DateTime @default(now()) @map("executed_at") @db.Timestamptz(6)
+  durationMs Int      @map("duration_ms")
+  checksum   String?  @db.VarChar(64)
+  metadata   Json?    @db.JsonB
+
+  @@map("seed_executions")
+  @@schema("infra")
+}
+
+// -----------------------------------------------------------------------------
+// Infrastructure: Outbox pattern preparation for domain events
+// Events written atomically with business transactions, processed async.
+// -----------------------------------------------------------------------------
+
+enum OutboxEventStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+
+  @@map("outbox_event_status")
+  @@schema("infra")
+}
+
+model OutboxEvent {
+  id             String            @id @default(uuid()) @db.Uuid
+  eventType      String            @map("event_type") @db.VarChar(255)
+  eventVersion   Int               @default(1) @map("event_version")
+  aggregateId    String            @map("aggregate_id") @db.Uuid
+  aggregateType  String            @map("aggregate_type") @db.VarChar(100)
+  payload        Json              @db.JsonB
+  metadata       Json              @db.JsonB
+  status         OutboxEventStatus @default(PENDING)
+  attempts       Int               @default(0)
+  lastError      String?           @map("last_error") @db.Text
+  organizationId String?           @map("organization_id") @db.Uuid
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  processedAt    DateTime?         @map("processed_at") @db.Timestamptz(6)
+
+  @@index([status, createdAt], map: "idx_outbox_events_status_created")
+  @@index([aggregateType, aggregateId], map: "idx_outbox_events_aggregate")
+  @@index([organizationId], map: "idx_outbox_events_organization")
+  @@map("outbox_events")
+  @@schema("infra")
+}

@@ -1,0 +1,87 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nexoraios-postgres
+    restart: unless-stopped
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_USER: nexor
+      POSTGRES_PASSWORD: nexor_dev_password
+      POSTGRES_DB: nexoraios
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init/postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U nexor -d nexoraios']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - nexoraios
+
+  redis:
+    image: redis:7-alpine
+    container_name: nexoraios-redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - nexoraios
+
+  minio:
+    image: minio/minio:latest
+    container_name: nexoraios-minio
+    restart: unless-stopped
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    environment:
+      MINIO_ROOT_USER: nexor_minio
+      MINIO_ROOT_PASSWORD: nexor_minio_secret
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -f http://localhost:9000/minio/health/live || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - nexoraios
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: nexoraios-minio-init
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint: /bin/sh
+    command: /scripts/init-minio.sh
+    volumes:
+      - ./init/minio/init-minio.sh:/scripts/init-minio.sh:ro
+    networks:
+      - nexoraios
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  minio_data:
+    driver: local
+
+networks:
+  nexoraios:
+    driver: bridge
+    name: nexoraios-network
