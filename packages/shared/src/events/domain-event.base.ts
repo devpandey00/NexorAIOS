@@ -25,12 +25,13 @@ export interface DomainEventHandler<T extends DomainEvent = DomainEvent> {
 }
 
 export interface EventPublisher {
-  publish<T extends DomainEvent>(event: T): Promise<void>;
-  publishMany<T extends DomainEvent>(events: T[]): Promise<void>;
+  publish(event: DomainEvent): Promise<void>;
+  publishMany(events: DomainEvent[]): Promise<void>;
 }
 
 export interface EventSubscriber {
   subscribe<T extends DomainEvent>(eventType: string, handler: DomainEventHandler<T>): void;
+
   unsubscribe(eventType: string, handler: DomainEventHandler): void;
 }
 
@@ -47,7 +48,11 @@ export abstract class BaseDomainEvent<
     readonly aggregateType: string,
     readonly payload: TPayload,
     readonly metadata: DomainEventMetadata,
-    options?: { id?: string; version?: number; occurredAt?: Date },
+    options?: {
+      id?: string;
+      version?: number;
+      occurredAt?: Date;
+    },
   ) {
     this.id = options?.id ?? crypto.randomUUID();
     this.version = options?.version ?? 1;
@@ -59,12 +64,12 @@ export function createEventMetadata(
   partial: Partial<DomainEventMetadata> & Pick<DomainEventMetadata, 'source'>,
 ): DomainEventMetadata {
   return {
-    correlationId: partial.correlationId,
-    requestId: partial.requestId,
-    userId: partial.userId,
-    organizationId: partial.organizationId,
-    ipAddress: partial.ipAddress,
-    userAgent: partial.userAgent,
+    ...(partial.correlationId !== undefined ? { correlationId: partial.correlationId } : {}),
+    ...(partial.requestId !== undefined ? { requestId: partial.requestId } : {}),
+    ...(partial.userId !== undefined ? { userId: partial.userId } : {}),
+    ...(partial.organizationId !== undefined ? { organizationId: partial.organizationId } : {}),
+    ...(partial.ipAddress !== undefined ? { ipAddress: partial.ipAddress } : {}),
+    ...(partial.userAgent !== undefined ? { userAgent: partial.userAgent } : {}),
     source: partial.source,
   };
 }

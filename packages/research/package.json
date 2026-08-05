@@ -1,0 +1,30 @@
+{
+  "name": "@nexor/research",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@nexor/shared": "workspace:*",
+    "axios": "^1.8.4",
+    "cheerio": "^1.1.2"
+  },
+  "devDependencies": {
+    "@nexor/config": "workspace:*",
+    "@types/node": "^22",
+    "typescript": "^5"
+  }
+}

@@ -40,10 +40,10 @@ export function createRequestContext(
   return {
     correlationId: partial.correlationId,
     requestId: partial.requestId,
-    organizationId: partial.organizationId,
-    userId: partial.userId,
-    ipAddress: partial.ipAddress,
-    userAgent: partial.userAgent,
+    ...(partial.organizationId !== undefined ? { organizationId: partial.organizationId } : {}),
+    ...(partial.userId !== undefined ? { userId: partial.userId } : {}),
+    ...(partial.ipAddress !== undefined ? { ipAddress: partial.ipAddress } : {}),
+    ...(partial.userAgent !== undefined ? { userAgent: partial.userAgent } : {}),
   };
 }
 

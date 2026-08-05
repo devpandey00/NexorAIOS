@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createRequestContext, runWithContext, getCorrelationId } from '../src/context.js';
+import { createRequestContext, runWithContext, getCorrelationId } from './context.js';
 
 describe('RequestContext', () => {
   it('propagates correlation ID through async local storage', () => {

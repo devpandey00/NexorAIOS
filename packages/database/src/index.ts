@@ -33,3 +33,4 @@ export {
   type SeedDefinition,
   type SeedRunnerOptions,
 } from './seed/seed-runner.js';
+export * from './repository/lead.repository.js';

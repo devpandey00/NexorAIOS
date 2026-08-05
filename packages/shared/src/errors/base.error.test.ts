@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ErrorCode } from '../src/errors/error-codes.js';
-import { NexorError, createNotFoundError, isNexorError } from '../src/errors/base.error.js';
+import { ErrorCode } from './error-codes.js';
+import { NexorError, createNotFoundError, isNexorError } from './base.error.js';
 
 describe('NexorError', () => {
   it('creates operational errors with correct properties', () => {

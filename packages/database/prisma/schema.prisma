@@ -68,3 +68,66 @@ model OutboxEvent {
   @@map("outbox_events")
   @@schema("infra")
 }
+// -----------------------------------------------------------------------------
+// Lead Management (Sales CRM)
+// -----------------------------------------------------------------------------
+
+enum LeadStatus {
+  NEW
+  RESEARCHED
+  QUALIFIED
+  PITCH_READY
+  CONTACTED
+  REPLIED
+  MEETING_BOOKED
+  PROPOSAL_SENT
+  WON
+  LOST
+
+  @@map("lead_status")
+  @@schema("public")
+}
+
+model Lead {
+  id String @id @default(uuid()) @db.Uuid
+
+  businessName String @map("business_name") @db.VarChar(255)
+
+  ownerName String? @map("owner_name") @db.VarChar(255)
+
+  niche String @db.VarChar(100)
+
+  country String @db.VarChar(100)
+
+  website String? @db.VarChar(500)
+
+  email String? @db.VarChar(255)
+
+  whatsapp String? @db.VarChar(30)
+
+  linkedin String? @db.VarChar(500)
+
+  instagram String? @db.VarChar(500)
+
+  auditScore Int? @map("audit_score")
+
+  status LeadStatus @default(NEW)
+
+  notes String? @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([status], map: "idx_leads_status")
+
+  @@index([country], map: "idx_leads_country")
+
+  @@index([niche], map: "idx_leads_niche")
+
+  @@index([createdAt], map: "idx_leads_created")
+
+  @@map("leads")
+
+  @@schema("public")
+}

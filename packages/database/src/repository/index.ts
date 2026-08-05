@@ -1,7 +1,2 @@
-export {
-  BaseRepository,
-  type PaginatedResult,
-  type PaginationParams,
-  type RepositoryContext,
-  type SoftDeletable,
-} from './base.repository.js';
+export * from './base.repository.js';
+export * from './lead.repository.js';

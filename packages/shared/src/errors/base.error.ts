@@ -49,10 +49,15 @@ export class NexorError extends Error {
 
   constructor(options: NexorErrorOptions) {
     super(options.message, { cause: options.cause });
+
     this.name = 'NexorError';
     this.code = options.code;
     this.statusCode = options.statusCode ?? 500;
-    this.details = options.details;
+
+    if (options.details) {
+      this.details = options.details;
+    }
+
     this.isOperational = options.isOperational ?? true;
 
     Error.captureStackTrace(this, this.constructor);
@@ -62,7 +67,7 @@ export class NexorError extends Error {
     return {
       code: this.code,
       message: this.message,
-      details: this.details,
+      ...(this.details ? { details: this.details } : {}),
       timestamp: new Date().toISOString(),
     };
   }
@@ -77,7 +82,7 @@ export function createValidationError(message: string, details?: ErrorDetail[]):
     code: ErrorCode.VALIDATION_ERROR,
     message,
     statusCode: 400,
-    details,
+    ...(details ? { details } : {}),
   });
 }
 

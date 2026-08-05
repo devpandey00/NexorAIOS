@@ -27,8 +27,8 @@ function enrichWithContext(meta: LogMetadata): LogMetadata {
     ...meta,
     correlationId: context.correlationId,
     requestId: context.requestId,
-    organizationId: context.organizationId,
-    userId: context.userId,
+    ...(context.organizationId !== undefined ? { organizationId: context.organizationId } : {}),
+    ...(context.userId !== undefined ? { userId: context.userId } : {}),
   };
 }
 
@@ -96,7 +96,15 @@ export function getLogger(): Logger {
       format: (process.env['LOG_FORMAT'] as LoggerOptions['format']) ?? 'json',
       environment: process.env['NODE_ENV'] ?? 'development',
       version: process.env['APP_VERSION'] ?? '0.0.0',
-      redactPaths: process.env['LOG_REDACT_PATHS']?.split(',').map((p) => p.trim()),
+
+      ...(process.env['LOG_REDACT_PATHS']
+        ? {
+            redactPaths: process.env['LOG_REDACT_PATHS']
+              .split(',')
+              .map((p) => p.trim())
+              .filter(Boolean),
+          }
+        : {}),
     });
   }
 

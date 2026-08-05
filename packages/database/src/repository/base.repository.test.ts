@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BaseRepository } from '../src/repository/base.repository.js';
+import { BaseRepository } from './base.repository.js';
 
 class TestRepository extends BaseRepository {
   public paginate(params: { page?: number; pageSize?: number }) {
