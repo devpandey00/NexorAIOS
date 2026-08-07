@@ -6,10 +6,10 @@ export interface CompanyData {
 export function detectCompany(url: string, title: string): CompanyData {
   const domain = new URL(url).hostname.replace('www.', '');
 
-  let name = title.split('|')[0].trim();
+  let name = title.split('|').at(0)?.trim() ?? '';
 
   if (!name) {
-    name = domain.split('.')[0];
+    name = domain.split('.').at(0)?.trim() ?? 'Unknown';
   }
 
   return {
