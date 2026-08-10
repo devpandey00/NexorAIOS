@@ -1,8 +1,18 @@
-import { googleSearch } from '../providers/google.provider.js';
+import { webSearch } from '../providers/web.provider.js';
 
 export class LeadSearchService {
   async search(query: string) {
-    const leads = await googleSearch(query);
+    const normalizedQuery = query.trim();
+
+    if (!normalizedQuery) {
+      return {
+        success: true,
+        count: 0,
+        leads: [],
+      };
+    }
+
+    const leads = await webSearch(normalizedQuery);
 
     return {
       success: true,

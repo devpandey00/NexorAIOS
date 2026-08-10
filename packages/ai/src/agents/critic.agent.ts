@@ -5,7 +5,9 @@ export class CriticAgent {
   async execute(originalPrompt: string, aiResponse: string) {
     const prompt = criticPrompt(originalPrompt, aiResponse);
 
-    return analyzerService.analyze(prompt);
+    return analyzerService.analyze({
+      prompt,
+    });
   }
 }
 

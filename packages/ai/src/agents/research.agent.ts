@@ -5,7 +5,9 @@ export class ResearchAgent {
   async execute(researchData: unknown) {
     const prompt = researchPrompt(JSON.stringify(researchData, null, 2));
 
-    return analyzerService.analyze(prompt);
+    return analyzerService.analyze({
+      prompt,
+    });
   }
 }
 

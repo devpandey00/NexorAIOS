@@ -5,7 +5,9 @@ export class BusinessAgent {
   async execute(researchData: unknown) {
     const prompt = businessPrompt(JSON.stringify(researchData, null, 2));
 
-    return analyzerService.analyze(prompt);
+    return analyzerService.analyze({
+      prompt,
+    });
   }
 }
 

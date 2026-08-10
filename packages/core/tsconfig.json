@@ -1,9 +1,0 @@
-{
-  "extends": "@nexor/config/typescript/library",
-  "compilerOptions": {
-    "outDir": "./dist",
-    "rootDir": "./src"
-  },
-  "include": ["src/**/*"],
-  "exclude": ["dist", "node_modules"]
-}

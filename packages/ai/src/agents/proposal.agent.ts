@@ -8,7 +8,9 @@ export class ProposalAgent {
       JSON.stringify(sales, null, 2),
     );
 
-    return analyzerService.analyze(prompt);
+    return analyzerService.analyze({
+      prompt,
+    });
   }
 }
 

@@ -50,3 +50,7 @@ Thumbs.db
 # Misc
 *.pem
 .cache/
+
+# Local AI/environment artifacts
+.envcode
+*.backup

@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { researchService } from '@nexor/research';
+import { businessReportService } from '@nexor/ai';
 
 export async function POST(req: NextRequest) {
   try {
-    const { url } = await req.json();
+    const body = await req.json();
+    const url = typeof body?.url === 'string' ? body.url.trim() : '';
 
     if (!url) {
       return NextResponse.json(
@@ -11,29 +13,33 @@ export async function POST(req: NextRequest) {
           success: false,
           error: 'URL is required',
         },
-        {
-          status: 400,
-        },
+        { status: 400 },
       );
     }
 
-    const result = await researchService.analyze(url);
+    const research = await researchService.analyze(url);
+
+    const report = await businessReportService.generate({
+      url,
+      research,
+    });
 
     return NextResponse.json({
       success: true,
-      result,
+      result: {
+        research,
+        report,
+      },
     });
   } catch (error) {
-    console.error(error);
+    console.error('RESEARCH API ERROR:', error);
 
     return NextResponse.json(
       {
         success: false,
-        error: 'Research failed',
+        error: error instanceof Error ? error.message : 'Research failed',
       },
-      {
-        status: 500,
-      },
+      { status: 500 },
     );
   }
 }

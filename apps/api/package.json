@@ -12,10 +12,12 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
+    "@nexor/ai": "workspace:^",
     "@nexor/core": "workspace:*",
     "@nexor/database": "workspace:*",
     "@nexor/logger": "workspace:*",
     "@nexor/research": "workspace:*",
+    "@nexor/search": "workspace:^",
     "@nexor/shared": "workspace:*",
     "@tailwindcss/postcss": "^4",
     "class-variance-authority": "^0.7.1",
