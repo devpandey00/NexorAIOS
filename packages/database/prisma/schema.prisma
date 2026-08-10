@@ -68,6 +68,7 @@ model OutboxEvent {
   @@map("outbox_events")
   @@schema("infra")
 }
+
 // -----------------------------------------------------------------------------
 // Lead Management (Sales CRM)
 // -----------------------------------------------------------------------------
@@ -119,15 +120,405 @@ model Lead {
 
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  campaignLeads  CampaignLead[]
+  socialProfiles SocialProfile[]
+  jobs           Job[]
+  agentRuns      AgentRun[]
+  outreach       Outreach[]
+  conversations  Conversation[]
+  followUps      FollowUp[]
+  tasks          Task[]
+
   @@index([status], map: "idx_leads_status")
-
   @@index([country], map: "idx_leads_country")
-
   @@index([niche], map: "idx_leads_niche")
-
   @@index([createdAt], map: "idx_leads_created")
-
   @@map("leads")
+  @@schema("public")
+}
 
+enum CampaignStatus {
+  DRAFT
+  QUEUED
+  RUNNING
+  PAUSED
+  COMPLETED
+  PARTIALLY_COMPLETED
+  FAILED
+  CANCELLED
+
+  @@map("campaign_status")
+  @@schema("public")
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  RETRYING
+  CANCELLED
+
+  @@map("job_status")
+  @@schema("public")
+}
+
+enum JobType {
+  LEAD_DISCOVERY
+  SOCIAL_DISCOVERY
+  ENRICHMENT
+  RESEARCH
+  SEO
+  UX
+  BRAND
+  TECHNOLOGY
+  COMPETITOR
+  BUSINESS_INTELLIGENCE
+  SCORING
+  OUTREACH
+  FOLLOW_UP
+  ANALYTICS
+
+  @@map("job_type")
+  @@schema("public")
+}
+
+enum OutreachStatus {
+  DRAFT
+  APPROVAL_REQUIRED
+  APPROVED
+  SCHEDULED
+  SENT
+  FAILED
+  CANCELLED
+
+  @@map("outreach_status")
+  @@schema("public")
+}
+
+enum OutreachChannel {
+  WHATSAPP
+  EMAIL
+  INSTAGRAM
+  LINKEDIN
+  FACEBOOK
+  SMS
+
+  @@map("outreach_channel")
+  @@schema("public")
+}
+
+enum ConversationChannel {
+  WHATSAPP
+  EMAIL
+  INSTAGRAM
+  LINKEDIN
+  FACEBOOK
+  SMS
+
+  @@map("conversation_channel")
+  @@schema("public")
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+
+  @@map("message_direction")
+  @@schema("public")
+}
+
+enum FollowUpStatus {
+  PENDING
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+
+  @@map("follow_up_status")
+  @@schema("public")
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+
+  @@map("task_status")
+  @@schema("public")
+}
+
+enum SocialPlatform {
+  INSTAGRAM
+  FACEBOOK
+  LINKEDIN
+  YOUTUBE
+  X
+  TIKTOK
+
+  @@map("social_platform")
+  @@schema("public")
+}
+
+model Campaign {
+  id String @id @default(uuid()) @db.Uuid
+
+  name   String         @db.VarChar(255)
+  query  String         @db.Text
+  status CampaignStatus @default(DRAFT)
+
+  totalLeads      Int @default(0) @map("total_leads")
+  processedLeads  Int @default(0) @map("processed_leads")
+  successfulLeads Int @default(0) @map("successful_leads")
+  failedLeads     Int @default(0) @map("failed_leads")
+
+  startedAt   DateTime? @map("started_at") @db.Timestamptz(6)
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  leads      CampaignLead[]
+  jobs       Job[]
+  agentRuns  AgentRun[]
+  outreach   Outreach[]
+  activities ActivityEvent[]
+
+  @@index([status], map: "idx_campaigns_status")
+  @@index([createdAt], map: "idx_campaigns_created")
+  @@map("campaigns")
+  @@schema("public")
+}
+
+model CampaignLead {
+  id String @id @default(uuid()) @db.Uuid
+
+  campaignId String @map("campaign_id") @db.Uuid
+  leadId     String @map("lead_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  lead     Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, leadId], map: "uq_campaign_lead")
+  @@index([leadId], map: "idx_campaign_leads_lead")
+  @@map("campaign_leads")
+  @@schema("public")
+}
+
+model Job {
+  id String @id @default(uuid()) @db.Uuid
+
+  campaignId String? @map("campaign_id") @db.Uuid
+  leadId     String? @map("lead_id") @db.Uuid
+
+  type   JobType
+  status JobStatus @default(QUEUED)
+
+  attempts    Int @default(0)
+  maxAttempts Int @default(3)
+
+  payload Json?   @db.JsonB
+  result  Json?   @db.JsonB
+  error   String? @db.Text
+
+  startedAt   DateTime? @map("started_at") @db.Timestamptz(6)
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  lead     Lead?     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt], map: "idx_jobs_status_created")
+  @@index([campaignId], map: "idx_jobs_campaign")
+  @@index([leadId], map: "idx_jobs_lead")
+  @@map("jobs")
+  @@schema("public")
+}
+
+model AgentRun {
+  id String @id @default(uuid()) @db.Uuid
+
+  campaignId String? @map("campaign_id") @db.Uuid
+  leadId     String? @map("lead_id") @db.Uuid
+
+  agent  String    @db.VarChar(100)
+  status JobStatus @default(QUEUED)
+
+  input  Json?   @db.JsonB
+  output Json?   @db.JsonB
+  error  String? @db.Text
+
+  startedAt   DateTime? @map("started_at") @db.Timestamptz(6)
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  lead     Lead?     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([agent, status], map: "idx_agent_runs_agent_status")
+  @@index([leadId], map: "idx_agent_runs_lead")
+  @@map("agent_runs")
+  @@schema("public")
+}
+
+model SocialProfile {
+  id String @id @default(uuid()) @db.Uuid
+
+  leadId String @map("lead_id") @db.Uuid
+
+  platform   SocialPlatform
+  url        String         @db.VarChar(500)
+  confidence Int            @default(100)
+  source     String?        @db.VarChar(255)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@unique([leadId, platform], map: "uq_lead_social_platform")
+  @@index([platform], map: "idx_social_profiles_platform")
+  @@map("social_profiles")
+  @@schema("public")
+}
+
+model Outreach {
+  id String @id @default(uuid()) @db.Uuid
+
+  leadId     String  @map("lead_id") @db.Uuid
+  campaignId String? @map("campaign_id") @db.Uuid
+
+  channel OutreachChannel
+  status  OutreachStatus  @default(DRAFT)
+
+  message String @db.Text
+
+  approvedAt  DateTime? @map("approved_at") @db.Timestamptz(6)
+  scheduledAt DateTime? @map("scheduled_at") @db.Timestamptz(6)
+  sentAt      DateTime? @map("sent_at") @db.Timestamptz(6)
+
+  providerMessageId String? @map("provider_message_id") @db.VarChar(255)
+  error             String? @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  lead     Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt], map: "idx_outreach_status_created")
+  @@index([leadId], map: "idx_outreach_lead")
+  @@map("outreach")
+  @@schema("public")
+}
+
+model Conversation {
+  id String @id @default(uuid()) @db.Uuid
+
+  leadId  String              @map("lead_id") @db.Uuid
+  channel ConversationChannel
+
+  status String @default("OPEN") @db.VarChar(50)
+
+  lastMessageAt DateTime? @map("last_message_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  lead     Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@unique([leadId, channel], map: "uq_lead_conversation_channel")
+  @@index([lastMessageAt], map: "idx_conversations_last_message")
+  @@map("conversations")
+  @@schema("public")
+}
+
+model Message {
+  id String @id @default(uuid()) @db.Uuid
+
+  conversationId String @map("conversation_id") @db.Uuid
+
+  direction MessageDirection
+  content   String           @db.Text
+
+  providerMessageId String? @map("provider_message_id") @db.VarChar(255)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt], map: "idx_messages_conversation_created")
+  @@map("messages")
+  @@schema("public")
+}
+
+model FollowUp {
+  id String @id @default(uuid()) @db.Uuid
+
+  leadId String @map("lead_id") @db.Uuid
+
+  status FollowUpStatus @default(PENDING)
+
+  scheduledAt  DateTime @map("scheduled_at") @db.Timestamptz(6)
+  attemptCount Int      @default(0)
+  maxAttempts  Int      @default(3)
+
+  notes String? @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([status, scheduledAt], map: "idx_followups_status_scheduled")
+  @@index([leadId], map: "idx_followups_lead")
+  @@map("follow_ups")
+  @@schema("public")
+}
+
+model Task {
+  id String @id @default(uuid()) @db.Uuid
+
+  leadId String? @map("lead_id") @db.Uuid
+
+  title       String  @db.VarChar(255)
+  description String? @db.Text
+
+  status   TaskStatus @default(TODO)
+  priority Int        @default(3)
+
+  dueAt DateTime? @map("due_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  lead Lead? @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([status, dueAt], map: "idx_tasks_status_due")
+  @@index([leadId], map: "idx_tasks_lead")
+  @@map("tasks")
+  @@schema("public")
+}
+
+model ActivityEvent {
+  id String @id @default(uuid()) @db.Uuid
+
+  campaignId String? @map("campaign_id") @db.Uuid
+
+  type     String @db.VarChar(100)
+  message  String @db.Text
+  metadata Json?  @db.JsonB
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, createdAt], map: "idx_activity_campaign_created")
+  @@index([type, createdAt], map: "idx_activity_type_created")
+  @@map("activity_events")
   @@schema("public")
 }
