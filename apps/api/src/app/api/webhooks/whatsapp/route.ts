@@ -1,11 +1,13 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import {
+  ConversationChannel,
   FollowUpStatus,
   getDatabaseClients,
   LeadStatus,
   MessageDirection,
-  ConversationChannel,
+  OutreachChannel,
+  OutreachStatus,
   TaskStatus,
 } from '@nexor/database';
 import { replyClassifierService } from '@nexor/ai';
@@ -31,12 +33,7 @@ export async function GET(req: NextRequest) {
   const token = req.nextUrl.searchParams.get('hub.verify_token');
   const challenge = req.nextUrl.searchParams.get('hub.challenge');
 
-  if (
-    mode === 'subscribe' &&
-    challenge &&
-    process.env.WHATSAPP_VERIFY_TOKEN &&
-    token === process.env.WHATSAPP_VERIFY_TOKEN
-  ) {
+  if (mode === 'subscribe' && challenge && process.env.WHATSAPP_VERIFY_TOKEN && token === process.env.WHATSAPP_VERIFY_TOKEN) {
     return new NextResponse(challenge, { status: 200 });
   }
 
@@ -78,22 +75,9 @@ export async function POST(req: NextRequest) {
 
           const now = new Date();
           const conversation = await prisma.conversation.upsert({
-            where: {
-              leadId_channel: {
-                leadId: lead.id,
-                channel: ConversationChannel.WHATSAPP,
-              },
-            },
-            create: {
-              leadId: lead.id,
-              channel: ConversationChannel.WHATSAPP,
-              status: 'REPLIED',
-              lastMessageAt: now,
-            },
-            update: {
-              status: 'REPLIED',
-              lastMessageAt: now,
-            },
+            where: { leadId_channel: { leadId: lead.id, channel: ConversationChannel.WHATSAPP } },
+            create: { leadId: lead.id, channel: ConversationChannel.WHATSAPP, status: 'REPLIED', lastMessageAt: now },
+            update: { status: 'REPLIED', lastMessageAt: now },
           });
 
           await prisma.message.create({
@@ -105,16 +89,9 @@ export async function POST(req: NextRequest) {
             },
           });
 
-          await prisma.lead.update({
-            where: { id: lead.id },
-            data: { status: LeadStatus.REPLIED },
-          });
-
+          await prisma.lead.update({ where: { id: lead.id }, data: { status: LeadStatus.REPLIED } });
           await prisma.followUp.updateMany({
-            where: {
-              leadId: lead.id,
-              status: { in: [FollowUpStatus.PENDING, FollowUpStatus.SCHEDULED] },
-            },
+            where: { leadId: lead.id, status: { in: [FollowUpStatus.PENDING, FollowUpStatus.SCHEDULED] } },
             data: { status: FollowUpStatus.CANCELLED, notes: 'Cancelled because lead replied' },
           });
 
@@ -128,24 +105,24 @@ export async function POST(req: NextRequest) {
 
             const classification = await replyClassifierService.classify({
               businessName: lead.businessName,
-              leadContext: {
-                niche: lead.niche,
-                country: lead.country,
-                website: lead.website,
-                auditScore: lead.auditScore,
-              },
+              leadContext: { niche: lead.niche, country: lead.country, website: lead.website, auditScore: lead.auditScore },
               recentMessages: recent.reverse(),
               incomingMessage: text,
             });
 
-            await prisma.conversation.update({
-              where: { id: conversation.id },
-              data: { status: classification.intent },
-            });
+            await prisma.conversation.update({ where: { id: conversation.id }, data: { status: classification.intent } });
 
-            const taskStatus = classification.nextAction === 'STOP_OUTREACH'
-              ? TaskStatus.COMPLETED
-              : TaskStatus.TODO;
+            const needsReply = ['REPLY_NOW', 'BOOK_MEETING', 'SEND_PRICING', 'ASK_CLARIFYING_QUESTION'].includes(classification.nextAction);
+            if (needsReply && classification.suggestedReply.trim()) {
+              await prisma.outreach.create({
+                data: {
+                  leadId: lead.id,
+                  channel: OutreachChannel.WHATSAPP,
+                  status: OutreachStatus.DRAFT,
+                  message: classification.suggestedReply.trim(),
+                },
+              });
+            }
 
             await prisma.task.create({
               data: {
@@ -158,7 +135,7 @@ export async function POST(req: NextRequest) {
                   `Suggested reply: ${classification.suggestedReply}`,
                   `Incoming message: ${text}`,
                 ].join('\n'),
-                status: taskStatus,
+                status: classification.nextAction === 'STOP_OUTREACH' ? TaskStatus.COMPLETED : TaskStatus.TODO,
                 priority: classification.intent === 'MEETING_REQUEST' ? 1 : classification.intent === 'INTERESTED' ? 2 : 3,
               },
             });
