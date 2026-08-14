@@ -1,4 +1,18 @@
-import { PrismaClient, type Prisma } from '@prisma/client';
+import {
+  PrismaClient,
+  type Prisma,
+  CampaignStatus,
+  JobStatus,
+  JobType,
+  LeadStatus,
+  OutreachChannel,
+  OutreachStatus,
+  ConversationChannel,
+  MessageDirection,
+  FollowUpStatus,
+  TaskStatus,
+  SocialPlatform,
+} from '@prisma/client';
 import { getLogger } from '@nexor/logger';
 
 export interface DatabaseConfig {
@@ -100,4 +114,18 @@ export function setDatabaseClients(databaseClients: DatabaseClients): void {
   clients = databaseClients;
 }
 
-export { PrismaClient, type Prisma };
+export {
+  PrismaClient,
+  type Prisma,
+  CampaignStatus,
+  JobStatus,
+  JobType,
+  LeadStatus,
+  OutreachChannel,
+  OutreachStatus,
+  ConversationChannel,
+  MessageDirection,
+  FollowUpStatus,
+  TaskStatus,
+  SocialPlatform,
+};

@@ -2,7 +2,8 @@
   "extends": "@nexor/config/typescript/library",
   "compilerOptions": {
     "outDir": "./dist",
-    "rootDir": "./src"
+    "rootDir": "./src",
+    "composite": false
   },
   "include": ["src/**/*"]
 }
