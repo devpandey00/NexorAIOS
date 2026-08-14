@@ -1,6 +1,7 @@
 export * from './services/analyzer.service.js';
 export * from './services/orchestrator.service.js';
 export * from './services/outreach.service.js';
+export * from './services/reply-classifier.service.js';
 
 export * from './agents/research.agent.js';
 export * from './agents/business.agent.js';
