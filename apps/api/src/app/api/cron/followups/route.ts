@@ -3,6 +3,38 @@ import { FollowUpStatus, getDatabaseClients, OutreachChannel, OutreachStatus } f
 
 const prisma = getDatabaseClients().write;
 
+function buildFollowUpMessage(lead: {
+  businessName: string;
+  notes: string | null;
+}) {
+  let requirement = 'improving your online lead generation';
+  let finding = '';
+
+  if (lead.notes) {
+    try {
+      const parsed = JSON.parse(lead.notes) as {
+        intelligence?: { requirement?: unknown; findings?: unknown };
+      };
+      if (typeof parsed.intelligence?.requirement === 'string' && parsed.intelligence.requirement.trim()) {
+        requirement = parsed.intelligence.requirement.trim();
+      }
+      if (Array.isArray(parsed.intelligence?.findings)) {
+        const first = parsed.intelligence.findings.find((item) => typeof item === 'string' && item.trim());
+        if (typeof first === 'string') finding = first.trim();
+      }
+    } catch {
+      // Ignore malformed historical notes; follow-up still gets a safe fallback.
+    }
+  }
+
+  return [
+    `Hi ${lead.businessName}, just following up on my earlier note.`,
+    `I was looking specifically at ${requirement}.`,
+    finding ? `One thing that stood out was ${finding}.` : 'I had a couple of specific observations from the review.',
+    'Happy to send the details over if useful.',
+  ].join(' ');
+}
+
 export async function GET(req: Request) {
   const secret = process.env.CRON_SECRET;
   const authorization = req.headers.get('authorization');
@@ -26,33 +58,48 @@ export async function GET(req: Request) {
         continue;
       }
 
-      const channel = followUp.lead.whatsapp ? OutreachChannel.WHATSAPP : followUp.lead.email ? OutreachChannel.EMAIL : null;
+      const channel = followUp.lead.whatsapp
+        ? OutreachChannel.WHATSAPP
+        : followUp.lead.email
+          ? OutreachChannel.EMAIL
+          : null;
+
       if (!channel) {
-        await prisma.followUp.update({ where: { id: followUp.id }, data: { status: FollowUpStatus.CANCELLED, notes: 'No supported contact channel' } });
+        await prisma.followUp.update({
+          where: { id: followUp.id },
+          data: { status: FollowUpStatus.CANCELLED, notes: 'No supported contact channel' },
+        });
         continue;
       }
 
       const existing = await prisma.outreach.findFirst({
         where: {
           leadId: followUp.leadId,
-          status: { in: [OutreachStatus.DRAFT, OutreachStatus.APPROVED, OutreachStatus.SCHEDULED] },
+          status: { in: [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED, OutreachStatus.APPROVED, OutreachStatus.SCHEDULED] },
           createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
         },
       });
+
       if (existing) continue;
+
+      const message = buildFollowUpMessage(followUp.lead);
 
       await prisma.outreach.create({
         data: {
           leadId: followUp.leadId,
           channel,
           status: OutreachStatus.DRAFT,
-          message: `Hi ${followUp.lead.businessName}, just following up on my earlier message. I had a few specific ideas around improving your online lead generation. If it’s relevant, I can send the details over.`,
+          message,
         },
       });
 
       await prisma.followUp.update({
         where: { id: followUp.id },
-        data: { status: FollowUpStatus.COMPLETED, attemptCount: { increment: 1 } },
+        data: {
+          status: FollowUpStatus.COMPLETED,
+          attemptCount: { increment: 1 },
+          notes: `${followUp.notes ?? ''}\nDraft created at ${new Date().toISOString()}`.trim(),
+        },
       });
       draftsCreated++;
     }
@@ -60,6 +107,9 @@ export async function GET(req: Request) {
     return NextResponse.json({ success: true, due: due.length, draftsCreated });
   } catch (error) {
     console.error('[CRON FOLLOWUP ERROR]', error);
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: error instanceof Error ? error.message : String(error) },
+      { status: 500 },
+    );
   }
 }
