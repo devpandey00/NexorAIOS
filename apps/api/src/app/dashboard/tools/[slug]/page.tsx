@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import DashboardLayout from '@/components/dashboard/DashboardLayout';
+import LeadFinderWorkspace from '@/components/dashboard/LeadFinderWorkspace';
 import { getTool } from '@/lib/dashboard-tools';
 
 export default async function ToolPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -15,6 +16,26 @@ export default async function ToolPage({ params }: { params: Promise<{ slug: str
           <p className="mt-2 text-[10px] text-[var(--text-secondary)]">Return to the Tool Universe and choose an available module.</p>
           <Link href="/dashboard" className="mt-6 inline-flex rounded-xl bg-[var(--accent)] px-4 py-2 text-[9px] font-bold text-black">BACK TO COMMAND CENTER</Link>
         </section>
+      </DashboardLayout>
+    );
+  }
+
+  if (slug === 'lead-finder') {
+    return (
+      <DashboardLayout>
+        <main className="space-y-5">
+          <section className="nexor-fade nexor-panel p-7">
+            <div className="flex flex-col justify-between gap-5 md:flex-row md:items-start">
+              <div>
+                <Link href="/dashboard" className="font-mono text-[7px] tracking-[0.16em] text-[var(--text-muted)] hover:text-[var(--accent)]">← COMMAND CENTER</Link>
+                <div className="mt-5 flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent)]">N</span><div><div className="font-mono text-[7px] tracking-[0.16em] text-[var(--text-muted)]">LEAD GENERATION</div><h1 className="mt-1 text-3xl font-semibold tracking-[-0.04em] text-[var(--text)]">Lead Finder</h1></div></div>
+                <p className="mt-4 max-w-2xl text-[10px] leading-5 text-[var(--text-secondary)]">Generate targeted search intents and launch the live lead-discovery pipeline from this workspace.</p>
+              </div>
+              <span className="rounded-full bg-emerald-500/10 px-3 py-1.5 font-mono text-[7px] tracking-[0.14em] text-emerald-500">LIVE MODULE</span>
+            </div>
+          </section>
+          <LeadFinderWorkspace />
+        </main>
       </DashboardLayout>
     );
   }
