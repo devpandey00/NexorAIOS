@@ -22,6 +22,10 @@ function normalizeWebsite(url: string): string {
   }
 }
 
+function normalizePhone(phone: string): string {
+  return phone.replace(/\D/g, '');
+}
+
 export async function runCampaign(campaignId: string) {
   const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
   if (!campaign) throw new Error('Campaign not found');
@@ -52,16 +56,15 @@ export async function runCampaign(campaignId: string) {
 
     for (const result of searchResult.leads) {
       try {
-        if (!result.website) {
-          failed++;
-          processed++;
-          continue;
-        }
-
-        const normalizedWebsite = normalizeWebsite(result.website);
-        const existing = await prisma.lead.findFirst({
-          where: { website: { equals: result.website } },
-        });
+        const normalizedWebsite = result.website ? normalizeWebsite(result.website) : '';
+        const normalizedPhone = result.phone ? normalizePhone(result.phone) : '';
+        const existing = normalizedWebsite
+          ? await prisma.lead.findFirst({ where: { website: normalizedWebsite } })
+          : normalizedPhone
+            ? await prisma.lead.findFirst({ where: { whatsapp: normalizedPhone } })
+            : await prisma.lead.findFirst({
+                where: { businessName: { equals: result.name, mode: 'insensitive' } },
+              });
 
         let lead = existing;
         if (!lead) {
@@ -70,8 +73,8 @@ export async function runCampaign(campaignId: string) {
               businessName: result.name,
               niche: campaign.query,
               country: 'Unknown',
-              website: normalizedWebsite,
-              whatsapp: result.phone,
+              website: normalizedWebsite || undefined,
+              whatsapp: normalizedPhone || undefined,
               status: LeadStatus.NEW,
             },
           });
@@ -82,6 +85,15 @@ export async function runCampaign(campaignId: string) {
           create: { campaignId, leadId: lead.id },
           update: {},
         });
+
+        if (!result.website) {
+          if (normalizedPhone && !lead.whatsapp) {
+            await prisma.lead.update({ where: { id: lead.id }, data: { whatsapp: normalizedPhone } });
+          }
+          processed++;
+          successful++;
+          continue;
+        }
 
         const research = await researchService.analyze(result.website);
 
@@ -100,7 +112,7 @@ export async function runCampaign(campaignId: string) {
           where: { id: lead.id },
           data: {
             email: email ?? lead.email,
-            whatsapp: phone ?? lead.whatsapp,
+            whatsapp: phone ? normalizePhone(phone) : lead.whatsapp,
             auditScore: intelligence.score,
             status: intelligence.score >= 60 ? LeadStatus.QUALIFIED : LeadStatus.RESEARCHED,
             notes: JSON.stringify({
@@ -135,32 +147,54 @@ export async function runCampaign(campaignId: string) {
             findings: intelligence.findings,
           });
 
-          await prisma.outreach.create({
-            data: {
+          const existingWhatsAppDraft = await prisma.outreach.findFirst({
+            where: {
               leadId: lead.id,
-              campaignId,
               channel: OutreachChannel.WHATSAPP,
-              status: OutreachStatus.DRAFT,
-              message: whatsappMessage,
+              status: { in: [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED, OutreachStatus.APPROVED, OutreachStatus.SCHEDULED, OutreachStatus.SENT] },
             },
+            orderBy: { createdAt: 'desc' },
           });
 
-          if (email) {
+          if (!existingWhatsAppDraft) {
             await prisma.outreach.create({
               data: {
                 leadId: lead.id,
                 campaignId,
-                channel: OutreachChannel.EMAIL,
+                channel: OutreachChannel.WHATSAPP,
                 status: OutreachStatus.DRAFT,
-                message: buildPersonalizedPitch({
-                  businessName: result.name,
-                  requirement: intelligence.requirement,
-                  service: intelligence.service,
-                  findings: intelligence.findings,
-                  email: true,
-                }),
+                message: whatsappMessage,
               },
             });
+          }
+
+          if (email) {
+            const existingEmailDraft = await prisma.outreach.findFirst({
+              where: {
+                leadId: lead.id,
+                channel: OutreachChannel.EMAIL,
+                status: { in: [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED, OutreachStatus.APPROVED, OutreachStatus.SCHEDULED, OutreachStatus.SENT] },
+              },
+              orderBy: { createdAt: 'desc' },
+            });
+
+            if (!existingEmailDraft) {
+              await prisma.outreach.create({
+                data: {
+                  leadId: lead.id,
+                  campaignId,
+                  channel: OutreachChannel.EMAIL,
+                  status: OutreachStatus.DRAFT,
+                  message: buildPersonalizedPitch({
+                    businessName: result.name,
+                    requirement: intelligence.requirement,
+                    service: intelligence.service,
+                    findings: intelligence.findings,
+                    email: true,
+                  }),
+                },
+              });
+            }
           }
         }
 
