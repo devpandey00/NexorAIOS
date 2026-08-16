@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getDatabaseClients } from '@nexor/database';
 import { campaignService } from '@nexor/core';
 import { campaignPlannerService } from '@nexor/search';
 import { runCampaign } from '@/lib/campaign-runner';
@@ -26,18 +27,32 @@ export async function GET(req: NextRequest) {
   const batchSize = getBatchSize();
 
   try {
+    const prisma = getDatabaseClients().write;
     const rotationBase = Math.floor(Date.now() / (60 * 60 * 1000)) * batchSize;
     const plans = campaignPlannerService.planBatch(rotationBase, batchSize);
-    const results: Array<{ plan: (typeof plans)[number]; result: unknown }> = [];
+    const results: Array<{ plan: (typeof plans)[number]; campaignId?: string; result?: unknown; skipped?: boolean }> = [];
 
     for (const plan of plans) {
+      const existing = await prisma.campaign.findFirst({
+        where: {
+          query: plan.query,
+          createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+        },
+        select: { id: true },
+      });
+
+      if (existing) {
+        results.push({ plan, campaignId: existing.id, skipped: true });
+        continue;
+      }
+
       const campaign = await campaignService.create({
         name: `Auto ${plan.industry} — ${plan.location} — ${plan.service}`,
         query: plan.query,
       });
 
       const result = await runCampaign(campaign.id);
-      results.push({ plan, result });
+      results.push({ plan, campaignId: campaign.id, result, skipped: false });
     }
 
     return NextResponse.json({
