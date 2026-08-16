@@ -1,6 +1,7 @@
 import { getDatabaseClients, OutreachChannel, OutreachStatus } from '@nexor/database';
-import { campaignPlannerService } from '@nexor/search';
+import { campaignPlannerService, researchService } from '@nexor/search';
 import { campaignService } from '@nexor/core';
+import { assessLead, buildPersonalizedPitch } from '@nexor/core';
 import { runCampaign } from './campaign-runner';
 import { createSocialContent } from './social-content';
 import { discoverOpportunities } from './opportunities';
@@ -54,9 +55,28 @@ export async function runAutopilot() {
         niche: item.kind === 'INFLUENCER' ? 'influencer' : 'company prospect',
         country: item.location ?? 'Unknown',
         website: item.url,
-        email: item.contact?.includes('@') ? item.contact : undefined,
       },
     });
+
+    let message = item.kind === 'INFLUENCER'
+      ? `Hi ${item.title}, I came across your work and think there may be a strong collaboration opportunity with Nexor Media. I would love to share a simple idea tailored to your audience.`
+      : `Hi ${item.title}, I came across your business while researching companies that could benefit from stronger digital acquisition. I have a few specific ideas around lead generation and growth that I can share.`;
+
+    try {
+      const research = await researchService.analyze(item.url);
+      if (research.success) {
+        const intelligence = assessLead({
+          website: research.website,
+          technology: research.technology,
+          social: Object.fromEntries(Object.entries(research.social ?? {})),
+          seo: Object.fromEntries(Object.entries(research.seo ?? {})),
+        });
+        await prisma.lead.update({ where: { id: lead.id }, data: { auditScore: intelligence.score, notes: JSON.stringify({ research, intelligence }) } });
+        message = buildPersonalizedPitch({ businessName: item.title, requirement: intelligence.requirement, service: intelligence.service, findings: intelligence.findings });
+      }
+    } catch {
+      // Discovery remains usable when a target blocks research.
+    }
 
     const existingDraft = await prisma.outreach.findFirst({
       where: {
@@ -69,11 +89,9 @@ export async function runAutopilot() {
       await prisma.outreach.create({
         data: {
           leadId: lead.id,
-          channel: item.contact?.includes('@') ? OutreachChannel.EMAIL : OutreachChannel.WHATSAPP,
+          channel: lead.email ? OutreachChannel.EMAIL : OutreachChannel.WHATSAPP,
           status: OutreachStatus.DRAFT,
-          message: item.kind === 'INFLUENCER'
-            ? `Hi ${item.title}, I came across your work and think there may be a strong collaboration opportunity with Nexor Media. I would love to share a simple idea tailored to your audience.`
-            : `Hi ${item.title}, I came across your business while researching companies that could benefit from stronger digital acquisition. I have a few specific ideas around lead generation and growth that I can share.`,
+          message,
         },
       });
       opportunityDrafts++;
