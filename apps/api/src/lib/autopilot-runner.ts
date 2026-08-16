@@ -26,12 +26,10 @@ export async function runAutopilot() {
   }
 
   const socialDrafts = [] as string[];
-  const socialEnabled = process.env.AUTOPILOT_SOCIAL_DRAFTS !== 'false';
-  if (socialEnabled) {
-    const platforms = ['INSTAGRAM', 'FACEBOOK', 'LINKEDIN'];
-    for (const platform of platforms) {
+  if (process.env.AUTOPILOT_SOCIAL_DRAFTS !== 'false') {
+    for (const platform of ['INSTAGRAM', 'FACEBOOK', 'LINKEDIN'] as const) {
       const post = await createSocialContent({
-        platform: platform as 'INSTAGRAM' | 'FACEBOOK' | 'LINKEDIN',
+        platform,
         status: 'DRAFT',
         title: `${platform} growth post`,
         caption: 'Share one practical digital-growth insight for business owners, with a clear call to action and no invented claims.',
@@ -49,17 +47,15 @@ export async function runAutopilot() {
 
   let opportunityDrafts = 0;
   for (const item of [...opportunities.companies, ...opportunities.influencers]) {
-    const emailLike = item.contact?.includes('@') ? item.contact : null;
-    const lead = await prisma.lead.upsert({
-      where: { website: item.url },
-      create: {
+    const existingLead = await prisma.lead.findFirst({ where: { website: item.url } });
+    const lead = existingLead ?? await prisma.lead.create({
+      data: {
         businessName: item.title,
         niche: item.kind === 'INFLUENCER' ? 'influencer' : 'company prospect',
         country: item.location ?? 'Unknown',
         website: item.url,
-        email: emailLike ?? undefined,
+        email: item.contact?.includes('@') ? item.contact : undefined,
       },
-      update: { updatedAt: new Date(), email: emailLike ?? undefined },
     });
 
     const existingDraft = await prisma.outreach.findFirst({
@@ -73,23 +69,16 @@ export async function runAutopilot() {
       await prisma.outreach.create({
         data: {
           leadId: lead.id,
-          channel: emailLike ? OutreachChannel.EMAIL : OutreachChannel.WHATSAPP,
+          channel: item.contact?.includes('@') ? OutreachChannel.EMAIL : OutreachChannel.WHATSAPP,
           status: OutreachStatus.DRAFT,
           message: item.kind === 'INFLUENCER'
             ? `Hi ${item.title}, I came across your work and think there may be a strong collaboration opportunity with Nexor Media. I would love to share a simple idea tailored to your audience.`
-            : `Hi ${item.title}, I came across your business while researching companies that could benefit from stronger digital acquisition. I have a few specific ideas around lead generation and growth that I can share.`
+            : `Hi ${item.title}, I came across your business while researching companies that could benefit from stronger digital acquisition. I have a few specific ideas around lead generation and growth that I can share.`,
         },
       });
       opportunityDrafts++;
     }
   }
 
-  return {
-    success: true,
-    durationMs: Date.now() - startedAt,
-    campaigns,
-    socialDrafts,
-    opportunities,
-    opportunityDrafts,
-  };
+  return { success: true, durationMs: Date.now() - startedAt, campaigns, socialDrafts, opportunities, opportunityDrafts };
 }
