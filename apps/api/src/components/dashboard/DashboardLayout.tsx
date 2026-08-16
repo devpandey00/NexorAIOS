@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
+import MobileNav from './MobileNav';
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -9,7 +10,7 @@ interface DashboardLayoutProps {
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   return (
-    <div className="min-h-screen bg-[var(--bg)] text-[var(--text)]">
+    <div className="min-h-screen bg-[var(--bg)] pb-20 text-[var(--text)] lg:pb-0">
       <div className="flex min-h-screen">
         <Sidebar />
 
@@ -23,6 +24,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           </main>
         </div>
       </div>
+
+      <MobileNav />
     </div>
   );
 }
