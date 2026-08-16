@@ -2,7 +2,7 @@ import Link from 'next/link';
 import DashboardLayout from '@/components/dashboard/DashboardLayout';
 import LeadFinderWorkspace from '@/components/dashboard/LeadFinderWorkspace';
 import SocialContentWorkspace from '@/components/dashboard/SocialContentWorkspace';
-import GrowthAutomationWorkspace from '@/components/dashboard/GrowthAutomationWorkspace';
+import GrowthAutomationClient from '@/components/dashboard/GrowthAutomationClient';
 import { getTool } from '@/lib/dashboard-tools';
 
 const customModes: Record<string, 'AUTOPILOT' | 'JOB' | 'COMPANY' | 'INFLUENCER' | 'MESSAGE' | 'SOCIAL'> = {
@@ -79,7 +79,7 @@ export default async function ToolPage({ params }: { params: Promise<{ slug: str
               <p className="mt-4 max-w-2xl text-[10px] leading-5 text-[var(--text-secondary)]">{description}</p>
             </div>
           </section>
-          <GrowthAutomationWorkspace mode={customMode} />
+          <GrowthAutomationClient mode={customMode} />
         </main>
       </DashboardLayout>
     );
