@@ -2,7 +2,7 @@ import Link from 'next/link';
 import DashboardLayout from '@/components/dashboard/DashboardLayout';
 import LeadFinderWorkspace from '@/components/dashboard/LeadFinderWorkspace';
 import SocialContentWorkspace from '@/components/dashboard/SocialContentWorkspace';
-import GrowthAutomationWorkspace from '@/components/dashboard/GrowthAutomationWorkspace';
+import GrowthAutomationClient from '@/components/dashboard/GrowthAutomationClient';
 import { getTool } from '@/lib/dashboard-tools';
 
 const customModes: Record<string, 'AUTOPILOT' | 'JOB' | 'COMPANY' | 'INFLUENCER' | 'MESSAGE' | 'SOCIAL'> = {
@@ -40,7 +40,7 @@ export default async function ToolPage({ params }: { params: Promise<{ slug: str
     const title = tool?.name ?? customTitles[slug] ?? slug;
     const group = tool?.group ?? (customMode === 'SOCIAL' ? 'Social Media' : customMode === 'MESSAGE' ? 'WhatsApp & Email' : 'Command & Autopilot');
     const description = tool?.description ?? `Live ${title.toLowerCase()} workspace inside NexorAIOS.`;
-    return <DashboardLayout><main className="space-y-5"><section className="nexor-fade nexor-panel p-7"><Link href="/dashboard" className="font-mono text-[7px] tracking-[0.16em] text-[var(--text-muted)]">← COMMAND CENTER</Link><div className="mt-5"><div className="font-mono text-[7px] tracking-[0.16em] text-[var(--text-muted)]">{group.toUpperCase()}</div><h1 className="mt-1 text-3xl font-semibold tracking-[-0.04em]">{title}</h1><p className="mt-4 max-w-2xl text-[10px] leading-5 text-[var(--text-secondary)]">{description}</p></div></section><GrowthAutomationWorkspace mode={customMode} /></main></DashboardLayout>;
+    return <DashboardLayout><main className="space-y-5"><section className="nexor-fade nexor-panel p-7"><Link href="/dashboard" className="font-mono text-[7px] tracking-[0.16em] text-[var(--text-muted)]">← COMMAND CENTER</Link><div className="mt-5"><div className="font-mono text-[7px] tracking-[0.16em] text-[var(--text-muted)]">{group.toUpperCase()}</div><h1 className="mt-1 text-3xl font-semibold tracking-[-0.04em]">{title}</h1><p className="mt-4 max-w-2xl text-[10px] leading-5 text-[var(--text-secondary)]">{description}</p></div></section><GrowthAutomationClient mode={customMode} /></main></DashboardLayout>;
   }
 
   if (!tool) {
