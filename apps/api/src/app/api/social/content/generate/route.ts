@@ -24,7 +24,7 @@ function fallbackContent(input: {
     `Your ${input.niche.toLowerCase()} business should not rely on guesswork to grow online.`,
     input.offer ? `Our focus: ${input.offer}.` : '',
     input.audience ? `Built for ${input.audience}.` : '',
-    `Follow for practical growth ideas you can actually use.`,
+    'Follow for practical growth ideas you can actually use.',
   ].filter(Boolean).join('\n\n');
 
   const nicheTag = input.niche.toLowerCase().replace(/[^a-z0-9]+/g, '');
@@ -49,6 +49,7 @@ export async function POST(req: NextRequest) {
     if (!niche) throw new Error('niche is required');
 
     let generated = fallbackContent({ niche, platform, goal, offer, audience });
+    let aiUsed = false;
 
     try {
       const { geminiAnalyze } = await import('@nexor/ai');
@@ -72,6 +73,7 @@ Hashtags must be an array of strings.
           caption: parsed.caption.trim(),
           hashtags: parsed.hashtags.filter((value): value is string => typeof value === 'string').slice(0, 30),
         };
+        aiUsed = true;
       }
     } catch {
       // Deterministic fallback keeps content generation usable when an AI provider is not configured.
@@ -85,7 +87,7 @@ Hashtags must be an array of strings.
       hashtags: generated.hashtags,
     });
 
-    return NextResponse.json({ success: true, ai: generated !== fallbackContent({ niche, platform, goal, offer, audience }), post });
+    return NextResponse.json({ success: true, ai: aiUsed, post });
   } catch (error) {
     return NextResponse.json(
       { success: false, error: error instanceof Error ? error.message : String(error) },
