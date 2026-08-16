@@ -38,6 +38,13 @@ const QUERY_TEMPLATES = [
   (industry: string, location: string, service: string, intent: string) => `${industry} ${location} ${intent} ${service}`,
 ];
 
+const FALLBACK_QUERY_TEMPLATE = (
+  industry: string,
+  location: string,
+  service: string,
+  intent: string,
+) => `${industry} in ${location} ${service} ${intent}`;
+
 export class DiscoveryStrategyService {
   createQueries(input: Partial<DiscoveryStrategy>, limit = 20): DiscoveryQuery[] {
     const industries = input.industries?.length ? input.industries : DEFAULT_INDUSTRIES;
@@ -63,7 +70,7 @@ export class DiscoveryStrategyService {
         continue;
       }
 
-      const template = QUERY_TEMPLATES[templateIndex % QUERY_TEMPLATES.length] ?? QUERY_TEMPLATES[0];
+      const template = QUERY_TEMPLATES[templateIndex % QUERY_TEMPLATES.length] ?? FALLBACK_QUERY_TEMPLATE;
       const query = template(industry, location, service, intent).replace(/\s+/g, ' ').trim();
       const key = query.toLowerCase();
 
