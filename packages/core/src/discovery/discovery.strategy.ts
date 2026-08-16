@@ -27,23 +27,31 @@ const DEFAULT_INTENTS = [
   'improve social media', 'grow online', 'local business marketing',
 ];
 
-const QUERY_TEMPLATES = [
-  (industry: string, location: string, service: string, intent: string) => `${industry} in ${location} ${service} ${intent}`,
-  (industry: string, location: string, service: string, intent: string) => `best ${industry} in ${location} ${intent}`,
-  (industry: string, location: string, service: string, intent: string) => `${industry} ${location} businesses ${intent}`,
-  (industry: string, location: string, service: string, intent: string) => `${industry} ${location} ${service} companies`,
-  (industry: string, location: string, service: string, intent: string) => `${industry} ${location} looking for ${service}`,
-  (industry: string, location: string, service: string, intent: string) => `${industry} in ${location} with weak online presence`,
-  (industry: string, location: string, service: string, intent: string) => `${industry} in ${location} ${service} agency prospects`,
-  (industry: string, location: string, service: string, intent: string) => `${industry} ${location} ${intent} ${service}`,
-];
-
-const FALLBACK_QUERY_TEMPLATE = (
+type QueryTemplate = (
   industry: string,
   location: string,
   service: string,
   intent: string,
-) => `${industry} in ${location} ${service} ${intent}`;
+) => string;
+
+const QUERY_TEMPLATES: QueryTemplate[] = [
+  (industry, location, service, intent) => `${industry} in ${location} ${service} ${intent}`,
+  (industry, location, _service, intent) => `best ${industry} in ${location} ${intent}`,
+  (industry, location, _service, intent) => `${industry} ${location} businesses ${intent}`,
+  (industry, location, service, _intent) => `${industry} ${location} ${service} companies`,
+  (industry, location, service, _intent) => `${industry} ${location} looking for ${service}`,
+  (industry, location, _service, _intent) => `${industry} in ${location} with weak online presence`,
+  (industry, location, service, _intent) => `${industry} in ${location} ${service} agency prospects`,
+  (industry, location, service, intent) => `${industry} ${location} ${intent} ${service}`,
+];
+
+const FALLBACK_QUERY_TEMPLATE: QueryTemplate = (industry, location, service, intent) =>
+  `${industry} in ${location} ${service} ${intent}`;
+
+function getQueryTemplate(index: number): QueryTemplate {
+  const template = QUERY_TEMPLATES[index % QUERY_TEMPLATES.length];
+  return template ?? FALLBACK_QUERY_TEMPLATE;
+}
 
 export class DiscoveryStrategyService {
   createQueries(input: Partial<DiscoveryStrategy>, limit = 20): DiscoveryQuery[] {
@@ -70,7 +78,7 @@ export class DiscoveryStrategyService {
         continue;
       }
 
-      const template = QUERY_TEMPLATES[templateIndex % QUERY_TEMPLATES.length] ?? FALLBACK_QUERY_TEMPLATE;
+      const template = getQueryTemplate(templateIndex);
       const query = template(industry, location, service, intent).replace(/\s+/g, ' ').trim();
       const key = query.toLowerCase();
 
