@@ -24,11 +24,11 @@ export async function listSocialContent(input?: { platform?: string; status?: st
   return rows.map(normalizeRow);
 }
 
-export async function createSocialContent(input: { platform: SocialContentPlatform; status?: SocialContentStatus; title: string; caption: string; hashtags?: string[]; mediaUrl?: string | null; scheduledAt?: string | null; }): Promise<SocialContentRecord> {
+export async function createSocialContent(input: { platform: SocialContentPlatform; status?: SocialContentStatus; title: string; caption: string; hashtags?: string[]; mediaUrl?: string | null; scheduledAt?: string | null; externalId?: string | null; }): Promise<SocialContentRecord> {
   const rows = await prisma.$queryRaw<SocialContentRecord[]>`
-    INSERT INTO public.content_posts (platform, status, title, caption, hashtags, media_url, scheduled_at)
+    INSERT INTO public.content_posts (platform, status, title, caption, hashtags, media_url, scheduled_at, external_id)
     VALUES (${input.platform}, ${input.status ?? 'DRAFT'}, ${input.title}, ${input.caption}, ${JSON.stringify(input.hashtags ?? [])}::jsonb,
-      ${input.mediaUrl ?? null}, ${input.scheduledAt ? new Date(input.scheduledAt) : null})
+      ${input.mediaUrl ?? null}, ${input.scheduledAt ? new Date(input.scheduledAt) : null}, ${input.externalId ?? null})
     RETURNING id, platform, status, title, caption, hashtags, media_url AS "mediaUrl", scheduled_at AS "scheduledAt",
       published_at AS "publishedAt", external_id AS "externalId", error, created_at AS "createdAt", updated_at AS "updatedAt"`;
   const row = rows[0];
