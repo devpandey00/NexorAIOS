@@ -3,6 +3,7 @@ import {
   ConversationChannel,
   FollowUpStatus,
   getDatabaseClients,
+  LeadStatus,
   MessageDirection,
   OutreachChannel,
   OutreachStatus,
@@ -69,6 +70,11 @@ export async function POST(req: NextRequest) {
 
     const outreach = await prisma.outreach.findUnique({ where: { id }, include: { lead: true } });
     if (!outreach) return NextResponse.json({ success: false, error: 'Outreach not found' }, { status: 404 });
+
+    if (outreach.status === OutreachStatus.SENT) {
+      return NextResponse.json({ success: true, alreadySent: true, outreach });
+    }
+
     if (outreach.status !== OutreachStatus.APPROVED) {
       return NextResponse.json({ success: false, error: 'Outreach must be approved before sending' }, { status: 409 });
     }
@@ -93,10 +99,16 @@ export async function POST(req: NextRequest) {
 
     const now = new Date();
     const result = await prisma.$transaction(async (tx) => {
-      const sent = await tx.outreach.update({
-        where: { id },
+      const claimed = await tx.outreach.updateMany({
+        where: { id, status: OutreachStatus.APPROVED },
         data: { status: OutreachStatus.SENT, sentAt: now, providerMessageId, error: null },
       });
+
+      if (claimed.count !== 1) {
+        const current = await tx.outreach.findUnique({ where: { id } });
+        if (current?.status === OutreachStatus.SENT) return current;
+        throw new Error('Outreach was claimed by another sender');
+      }
 
       const conversation = await tx.conversation.upsert({
         where: { leadId_channel: { leadId: outreach.leadId, channel: conversationChannel } },
@@ -113,16 +125,30 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      await tx.followUp.create({
-        data: {
+      await tx.lead.update({
+        where: { id: outreach.leadId },
+        data: { status: LeadStatus.CONTACTED },
+      });
+
+      const existingFollowUp = await tx.followUp.findFirst({
+        where: {
           leadId: outreach.leadId,
-          status: FollowUpStatus.PENDING,
-          scheduledAt: new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000),
-          notes: `Follow up after outreach ${outreach.id}`,
+          status: { in: [FollowUpStatus.PENDING, FollowUpStatus.SCHEDULED] },
         },
       });
 
-      return sent;
+      if (!existingFollowUp) {
+        await tx.followUp.create({
+          data: {
+            leadId: outreach.leadId,
+            status: FollowUpStatus.PENDING,
+            scheduledAt: new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000),
+            notes: `Follow up after outreach ${outreach.id}`,
+          },
+        });
+      }
+
+      return tx.outreach.findUnique({ where: { id } });
     });
 
     return NextResponse.json({ success: true, outreach: result, recipient });
