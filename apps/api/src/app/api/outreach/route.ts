@@ -28,7 +28,12 @@ export async function POST(req: NextRequest) {
 
     const current = await prisma.outreach.findUnique({ where: { id } });
     if (!current) return NextResponse.json({ success: false, error: 'Outreach not found' }, { status: 404 });
-    if (![OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED].includes(current.status)) {
+
+    const pendingApproval =
+      current.status === OutreachStatus.DRAFT ||
+      current.status === OutreachStatus.APPROVAL_REQUIRED;
+
+    if (!pendingApproval) {
       return NextResponse.json({ success: false, error: 'Outreach is not pending approval' }, { status: 409 });
     }
 
