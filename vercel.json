@@ -3,6 +3,14 @@
     {
       "path": "/api/campaigns/auto/run",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/outreach",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/followups",
+      "schedule": "15 * * * *"
     }
   ]
 }
