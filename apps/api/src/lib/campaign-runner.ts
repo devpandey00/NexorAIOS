@@ -103,10 +103,15 @@ export async function runCampaign(campaignId: string) {
           continue;
         }
 
-        const intelligence = assessLead(research);
+        const intelligence = assessLead({
+          website: research.website,
+          technology: research.technology,
+          social: Object.fromEntries(Object.entries(research.social ?? {})),
+          seo: Object.fromEntries(Object.entries(research.seo ?? {})),
+        });
         const email = research.contacts?.emails?.[0];
         const phone = research.contacts?.phones?.[0];
-        const social = (research.social ?? {}) as Record<string, unknown>;
+        const social = Object.fromEntries(Object.entries(research.social ?? {})) as Record<string, unknown>;
 
         await prisma.lead.update({
           where: { id: lead.id },
@@ -151,7 +156,15 @@ export async function runCampaign(campaignId: string) {
             where: {
               leadId: lead.id,
               channel: OutreachChannel.WHATSAPP,
-              status: { in: [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED, OutreachStatus.APPROVED, OutreachStatus.SCHEDULED, OutreachStatus.SENT] },
+              status: {
+                in: [
+                  OutreachStatus.DRAFT,
+                  OutreachStatus.APPROVAL_REQUIRED,
+                  OutreachStatus.APPROVED,
+                  OutreachStatus.SCHEDULED,
+                  OutreachStatus.SENT,
+                ],
+              },
             },
             orderBy: { createdAt: 'desc' },
           });
@@ -173,7 +186,15 @@ export async function runCampaign(campaignId: string) {
               where: {
                 leadId: lead.id,
                 channel: OutreachChannel.EMAIL,
-                status: { in: [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED, OutreachStatus.APPROVED, OutreachStatus.SCHEDULED, OutreachStatus.SENT] },
+                status: {
+                  in: [
+                    OutreachStatus.DRAFT,
+                    OutreachStatus.APPROVAL_REQUIRED,
+                    OutreachStatus.APPROVED,
+                    OutreachStatus.SCHEDULED,
+                    OutreachStatus.SENT,
+                  ],
+                },
               },
               orderBy: { createdAt: 'desc' },
             });
