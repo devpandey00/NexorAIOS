@@ -99,16 +99,21 @@ export async function updateSocialContent(id: string, input: {
   scheduledAt?: string | null;
   error?: string | null;
 }): Promise<SocialContentRecord> {
+  const hasScheduledAt = input.scheduledAt !== undefined;
+  const hasMediaUrl = input.mediaUrl !== undefined;
+  const hasError = input.error !== undefined;
+  const hasHashtags = input.hashtags !== undefined;
+
   const rows = await prisma.$queryRaw<SocialContentRecord[]>`
     UPDATE public.content_posts
     SET
       status = COALESCE(${input.status ?? null}, status),
       title = COALESCE(${input.title ?? null}, title),
       caption = COALESCE(${input.caption ?? null}, caption),
-      hashtags = COALESCE(${input.hashtags ? JSON.stringify(input.hashtags) : null}::jsonb, hashtags),
-      media_url = COALESCE(${input.mediaUrl ?? null}, media_url),
-      scheduled_at = ${input.scheduledAt === undefined ? null : input.scheduledAt ? new Date(input.scheduledAt) : null},
-      error = ${input.error === undefined ? null : input.error},
+      hashtags = CASE WHEN ${hasHashtags} THEN ${JSON.stringify(input.hashtags ?? [])}::jsonb ELSE hashtags END,
+      media_url = CASE WHEN ${hasMediaUrl} THEN ${input.mediaUrl ?? null} ELSE media_url END,
+      scheduled_at = CASE WHEN ${hasScheduledAt} THEN ${input.scheduledAt ? new Date(input.scheduledAt) : null} ELSE scheduled_at END,
+      error = CASE WHEN ${hasError} THEN ${input.error ?? null} ELSE error END,
       published_at = CASE WHEN ${input.status ?? null} = 'PUBLISHED' THEN CURRENT_TIMESTAMP ELSE published_at END,
       updated_at = CURRENT_TIMESTAMP
     WHERE id = ${id}::uuid
