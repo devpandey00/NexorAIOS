@@ -21,7 +21,16 @@ export async function runAutopilot() {
       campaigns.push({ ...plan, campaignId: existing.id, skipped: true });
       continue;
     }
-    const campaign = await campaignService.create({ name: `Autopilot ${plan.industry} — ${plan.location} — ${plan.service}`, query: plan.query });
+
+    const campaign = await campaignService.create({
+      name: `Autopilot ${plan.industry} — ${plan.location} — ${plan.service}`,
+      query: plan.query,
+    });
+
+    // campaignService.create() only creates the campaign record. The runner
+    // requires an explicit queued LEAD_DISCOVERY job before it can execute.
+    await campaignService.createDiscoveryJob(campaign.id);
+
     const result = await runCampaign(campaign.id);
     campaigns.push({ ...plan, campaignId: campaign.id, result, skipped: false });
   }
