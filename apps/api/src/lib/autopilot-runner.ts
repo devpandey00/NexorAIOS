@@ -1,7 +1,7 @@
 import { getDatabaseClients, OutreachChannel, OutreachStatus } from '@nexor/database';
-import { campaignPlannerService, researchService } from '@nexor/search';
-import { campaignService } from '@nexor/core';
-import { assessLead, buildPersonalizedPitch } from '@nexor/core';
+import { campaignPlannerService } from '@nexor/search';
+import { researchService } from '@nexor/research';
+import { campaignService, assessLead, buildPersonalizedPitch } from '@nexor/core';
 import { runCampaign } from './campaign-runner';
 import { createSocialContent } from './social-content';
 import { discoverOpportunities } from './opportunities';
