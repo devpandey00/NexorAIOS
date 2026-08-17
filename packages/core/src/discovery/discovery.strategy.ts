@@ -78,7 +78,7 @@ export class DiscoveryStrategyService {
       }
 
       const template = getQueryTemplate(templateIndex);
-      const query = template(industry, location, service, intent).replace(/\s+/g, ' ').trim();
+      const query = (template ?? FALLBACK_QUERY_TEMPLATE)(industry, location, service, intent).replace(/\s+/g, ' ').trim();
       const key = query.toLowerCase();
 
       if (!seen.has(key)) {
