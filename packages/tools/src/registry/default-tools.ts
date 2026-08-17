@@ -8,6 +8,7 @@ import { websiteTool } from '../website/website.tool.js';
 import { whatsappTool } from '../whatsapp/whatsapp.tool.js';
 import { leadScoringTool } from '../sales/lead-scoring.tool.js';
 import { leadDedupTool } from '../sales/lead-dedup.tool.js';
+import { leadDiscoveryTool } from '../sales/lead-discovery.tool.js';
 import { outreachDraftTool } from '../sales/outreach-draft.tool.js';
 import { toolRegistry } from './tool-registry.js';
 
@@ -21,6 +22,7 @@ export function registerDefaultTools() {
     searchTool,
     websiteTool,
     whatsappTool,
+    leadDiscoveryTool,
     leadScoringTool,
     leadDedupTool,
     outreachDraftTool,
