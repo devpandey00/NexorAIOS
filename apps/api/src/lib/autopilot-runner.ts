@@ -8,6 +8,24 @@ import { discoverOpportunities } from './opportunities';
 
 const prisma = getDatabaseClients().write;
 
+function firstValidEmail(value: unknown): string | null {
+  if (!Array.isArray(value)) return null;
+  const email = value.find((item): item is string => typeof item === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(item.trim()));
+  return email?.trim().toLowerCase() ?? null;
+}
+
+function firstValidPhone(value: unknown): string | null {
+  if (!Array.isArray(value)) return null;
+  const phone = value.find((item): item is string => {
+    if (typeof item !== 'string') return false;
+    const digits = item.replace(/\D/g, '');
+    return digits.length >= 10 && digits.length <= 15;
+  });
+  if (!phone) return null;
+  const digits = phone.replace(/\D/g, '');
+  return digits.length >= 10 && digits.length <= 15 ? digits : null;
+}
+
 export async function runAutopilot() {
   const startedAt = Date.now();
   const batchSize = Math.min(Math.max(Number(process.env.AUTO_DISCOVERY_BATCH_SIZE ?? 3), 1), 5);
@@ -27,8 +45,6 @@ export async function runAutopilot() {
       query: plan.query,
     });
 
-    // campaignService.create() only creates the campaign record. The runner
-    // requires an explicit queued LEAD_DISCOVERY job before it can execute.
     await campaignService.createDiscoveryJob(campaign.id);
 
     const result = await runCampaign(campaign.id);
@@ -80,12 +96,28 @@ export async function runAutopilot() {
           social: Object.fromEntries(Object.entries(research.social ?? {})),
           seo: Object.fromEntries(Object.entries(research.seo ?? {})),
         });
-        await prisma.lead.update({ where: { id: lead.id }, data: { auditScore: intelligence.score, notes: JSON.stringify({ research, intelligence }) } });
+        const contacts = research.contacts as { emails?: unknown; phones?: unknown } | undefined;
+        const email = firstValidEmail(contacts?.emails);
+        const phone = firstValidPhone(contacts?.phones);
+        await prisma.lead.update({
+          where: { id: lead.id },
+          data: {
+            email: lead.email ?? email,
+            whatsapp: lead.whatsapp ?? phone,
+            auditScore: intelligence.score,
+            notes: JSON.stringify({ research, intelligence }),
+          },
+        });
+        if (!lead.email && email) lead.email = email;
+        if (!lead.whatsapp && phone) lead.whatsapp = phone;
         message = buildPersonalizedPitch({ businessName: item.title, requirement: intelligence.requirement, service: intelligence.service, findings: intelligence.findings });
       }
     } catch {
       // Discovery remains usable when a target blocks research.
     }
+
+    const channel = lead.email ? OutreachChannel.EMAIL : lead.whatsapp ? OutreachChannel.WHATSAPP : null;
+    if (!channel) continue;
 
     const existingDraft = await prisma.outreach.findFirst({
       where: {
@@ -98,7 +130,7 @@ export async function runAutopilot() {
       await prisma.outreach.create({
         data: {
           leadId: lead.id,
-          channel: lead.email ? OutreachChannel.EMAIL : OutreachChannel.WHATSAPP,
+          channel,
           status: OutreachStatus.DRAFT,
           message,
         },
