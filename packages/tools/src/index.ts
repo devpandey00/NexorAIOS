@@ -1,6 +1,7 @@
 export * from './types/tool.js';
 export * from './registry/tool-registry.js';
 export * from './registry/default-tools.js';
+export * from './runtime/tool-runner.js';
 export * from './calendar/calendar.tool.js';
 export * from './crm/crm.tool.js';
 export * from './email/email.tool.js';
