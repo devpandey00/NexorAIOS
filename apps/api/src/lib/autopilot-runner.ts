@@ -116,7 +116,7 @@ export async function runAutopilot() {
       // Discovery remains usable when a target blocks research.
     }
 
-    const channel = lead.email ? OutreachChannel.EMAIL : lead.whatsapp ? OutreachChannel.WHATSAPP : null;
+    const channel = lead.whatsapp ? OutreachChannel.WHATSAPP : lead.email ? OutreachChannel.EMAIL : null;
     if (!channel) continue;
 
     const existingDraft = await prisma.outreach.findFirst({
