@@ -1,5 +1,5 @@
 import { commandRouterService, type CommandRoute } from './command-router.service.js';
-import { executeWorkflow, type SupportedWorkflow } from '@nexor/tools';
+import { executeWorkflow, isSupportedWorkflow, type SupportedWorkflow } from '@nexor/tools';
 
 export interface CommandExecutionResult {
   route: CommandRoute;
@@ -9,6 +9,11 @@ export interface CommandExecutionResult {
 export class CommandExecutorService {
   async execute(command: string, context: Record<string, unknown> = {}): Promise<CommandExecutionResult> {
     const route = await commandRouterService.route(command, context);
+
+    if (!isSupportedWorkflow(route.workflow)) {
+      throw new Error(`Unsupported workflow selected by router: ${route.workflow}`);
+    }
+
     const execution = await executeWorkflow(route.workflow as SupportedWorkflow, {
       command,
       ...route.input,
