@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDatabaseClients } from '@nexor/database';
 import { executeWorkflow, type SupportedWorkflow } from '@nexor/tools';
-import { randomUUID } from 'node:crypto';
 
 const db = getDatabaseClients().write;
 
@@ -18,9 +17,8 @@ export async function POST() {
        RETURNING s."id",s."workflow",s."input"
      )
      INSERT INTO "public"."automation_runs" ("id","schedule_id","status","input","started_at","created_at")
-     SELECT $1::uuid,"id",'RUNNING',"input",NOW(),NOW() FROM claimed
+     SELECT gen_random_uuid(),"id",'RUNNING',"input",NOW(),NOW() FROM claimed
      RETURNING "id","schedule_id","input",(SELECT "workflow" FROM "public"."automation_schedules" WHERE "id"="schedule_id") AS "workflow"`,
-    randomUUID(),
   );
 
   const results: Array<Record<string, unknown>> = [];
