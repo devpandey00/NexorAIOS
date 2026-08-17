@@ -3,42 +3,31 @@ import { runWorkflow, type WorkflowResult } from '../runtime/workflow-runner.js'
 
 export async function runSalesMachineWorkflow(input: ToolInput): Promise<WorkflowResult> {
   return runWorkflow([
+    { id: 'discover', tool: 'search', input: { query: String(input.query ?? input.command ?? 'qualified digital marketing prospects') } },
     {
-      id: 'discover',
-      tool: 'search',
-      input: { query: String(input.query ?? input.command ?? 'qualified digital marketing prospects') },
-    },
-    {
-      id: 'research',
-      tool: 'website',
+      id: 'research', tool: 'website',
       input: ({ input, results }) => {
         const lead = input.lead as Record<string, unknown> | undefined;
         const discovered = results.discover?.data as Record<string, unknown> | undefined;
         const url = typeof lead?.website === 'string' ? lead.website : typeof discovered?.website === 'string' ? discovered.website : typeof discovered?.url === 'string' ? discovered.url : '';
         return url ? { url } : {};
+      }, optional: true,
+    },
+    { id: 'score', tool: 'lead_scoring', input: ({ input, results }) => ({ lead: input.lead ?? results.discover?.data ?? {}, research: results.research?.data ?? {} }) },
+    {
+      id: 'crm', tool: 'crm',
+      input: ({ input, results }) => ({ action: 'create', lead: { ...(input.lead as Record<string, unknown> | undefined), source: 'sales-machine', auditScore: (results.score?.data as Record<string, unknown> | undefined)?.score ?? null, notes: JSON.stringify(results.score?.data ?? {}) } }),
+    },
+    {
+      id: 'outreach_draft', tool: 'outreach_draft', optional: true,
+      input: ({ input, results }) => {
+        const crm = results.crm?.data as Record<string, unknown> | undefined;
+        const lead = (crm?.lead ?? crm) as Record<string, unknown> | undefined;
+        const leadId = typeof input.leadId === 'string' ? input.leadId : typeof lead?.id === 'string' ? lead.id : '';
+        const score = results.score?.data as Record<string, unknown> | undefined;
+        const services = Array.isArray(score?.recommendedServices) ? score.recommendedServices.join(', ') : 'digital marketing';
+        return { leadId, channel: input.channel === 'EMAIL' ? 'EMAIL' : 'WHATSAPP', context: `Based on the initial assessment, the strongest opportunity appears to be ${services}.` };
       },
-      optional: true,
-    },
-    {
-      id: 'score',
-      tool: 'lead_scoring',
-      input: ({ input, results }) => ({
-        lead: input.lead ?? results.discover?.data ?? {},
-        research: results.research?.data ?? {},
-      }),
-    },
-    {
-      id: 'crm',
-      tool: 'crm',
-      input: ({ input, results }) => ({
-        action: 'create',
-        lead: {
-          ...(input.lead as Record<string, unknown> | undefined),
-          source: 'sales-machine',
-          auditScore: (results.score?.data as Record<string, unknown> | undefined)?.score ?? null,
-          notes: JSON.stringify(results.score?.data ?? {}),
-        },
-      }),
     },
   ], input);
 }
