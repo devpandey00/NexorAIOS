@@ -2,6 +2,23 @@ import type { Tool, ToolInput, ToolOutput } from '../types/tool.js';
 
 export interface ToolRunOptions {
   timeoutMs?: number;
+  retries?: number;
+  retryDelayMs?: number;
+}
+
+async function executeWithTimeout(tool: Tool, input: ToolInput, timeoutMs: number): Promise<ToolOutput> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      tool.execute(input),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`Tool timed out after ${timeoutMs}ms`)), timeoutMs);
+        timer.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 export async function runTool(
@@ -11,22 +28,28 @@ export async function runTool(
 ): Promise<ToolOutput> {
   const startedAt = Date.now();
   const timeoutMs = options.timeoutMs ?? 30_000;
+  const retries = Math.max(0, Math.min(options.retries ?? 1, 3));
+  const retryDelayMs = Math.max(0, options.retryDelayMs ?? 250);
+  let lastError: unknown;
 
-  try {
-    const result = await Promise.race([
-      tool.execute(input),
-      new Promise<never>((_, reject) => {
-        const timer = setTimeout(() => reject(new Error(`Tool timed out after ${timeoutMs}ms`)), timeoutMs);
-        timer.unref?.();
-      }),
-    ]);
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const result = await executeWithTimeout(tool, input, timeoutMs);
+      if (result.success || attempt === retries) {
+        return { ...result, executionTime: Date.now() - startedAt };
+      }
+      lastError = result.error ?? 'Tool execution failed';
+    } catch (error) {
+      lastError = error;
+      if (attempt === retries) break;
+    }
 
-    return { ...result, executionTime: Date.now() - startedAt };
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-      executionTime: Date.now() - startedAt,
-    };
+    await new Promise((resolve) => setTimeout(resolve, retryDelayMs * 2 ** attempt));
   }
+
+  return {
+    success: false,
+    error: lastError instanceof Error ? lastError.message : String(lastError ?? 'Tool execution failed'),
+    executionTime: Date.now() - startedAt,
+  };
 }
