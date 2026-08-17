@@ -6,10 +6,11 @@ import { proposalTool } from '../proposal/proposal.tool.js';
 import { searchTool } from '../search/search.tool.js';
 import { websiteTool } from '../website/website.tool.js';
 import { whatsappTool } from '../whatsapp/whatsapp.tool.js';
+import { leadScoringTool } from '../sales/lead-scoring.tool.js';
 import { toolRegistry } from './tool-registry.js';
 
 export function registerDefaultTools() {
-  for (const tool of [calendarTool, crmTool, emailTool, filesTool, proposalTool, searchTool, websiteTool, whatsappTool]) {
+  for (const tool of [calendarTool, crmTool, emailTool, filesTool, proposalTool, searchTool, websiteTool, whatsappTool, leadScoringTool]) {
     if (!toolRegistry.has(tool.id)) toolRegistry.register(tool);
   }
 }
