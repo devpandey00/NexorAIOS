@@ -19,3 +19,4 @@ export * from './search/search.tool.js';
 export * from './website/website.tool.js';
 export * from './whatsapp/whatsapp.tool.js';
 export * from './sales/lead-scoring.tool.js';
+export * from './sales/outreach-draft.tool.js';
