@@ -1,8 +1,9 @@
-name: NexorAIOS · Reporting
+name: NexorAIOS · Morning / Midday / Evening Reports
 
 on:
   schedule:
-    - cron: '0 0,4,8,12,16,20 * * *'
+    # GitHub cron is UTC. These run at 09:00, 15:00 and 21:00 IST.
+    - cron: '30 3,9,15 * * *'
   workflow_dispatch:
 
 concurrency:
@@ -13,8 +14,13 @@ jobs:
   report:
     runs-on: ubuntu-latest
     steps:
-      - name: Send 4-hour report
+      - name: Send operational report
         run: |
+          HOUR=$(date -u +%H)
+          if [ "$HOUR" = "03" ]; then PERIOD=12; LABEL="Morning Brief"; \
+          elif [ "$HOUR" = "09" ]; then PERIOD=6; LABEL="Midday Report"; \
+          else PERIOD=6; LABEL="Evening / Daily Close"; fi
+          echo "Sending $LABEL ($PERIOD hour window)"
           curl --fail-with-body --silent --show-error --max-time 120 \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            "${{ secrets.NEXOR_BASE_URL }}/api/cron/reports/email?hours=4"
+            "${{ secrets.NEXOR_BASE_URL }}/api/cron/reports/email?hours=$PERIOD"
