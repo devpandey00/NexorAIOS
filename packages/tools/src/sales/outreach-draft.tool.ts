@@ -1,0 +1,21 @@
+import type { Tool, ToolInput, ToolOutput } from '../types/tool.js';
+
+export const outreachDraftTool: Tool = {
+  id: 'outreach_draft',
+  name: 'Outreach Draft',
+  description: 'Create a personalized WhatsApp or email draft and place it in the approval queue.',
+  category: 'communication',
+  async execute(input: ToolInput): Promise<ToolOutput> {
+    const leadId = typeof input.leadId === 'string' ? input.leadId : '';
+    const channel = input.channel === 'EMAIL' ? 'EMAIL' : input.channel === 'WHATSAPP' ? 'WHATSAPP' : '';
+    if (!leadId || !channel) return { success: false, error: 'leadId and channel are required' };
+    const base = String(process.env.NEXOR_API_URL ?? 'http://localhost:3000').replace(/\/$/, '');
+    const response = await fetch(`${base}/api/outreach/drafts`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ leadId, channel, context: typeof input.context === 'string' ? input.context : '' }),
+    });
+    const data = await response.json().catch(() => ({}));
+    return response.ok ? { success: true, data } : { success: false, error: data?.error ?? `Draft creation failed (${response.status})` };
+  },
+};
