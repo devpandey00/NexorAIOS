@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
-import type { WorkflowResult } from '@nexor/tools';
 
 export interface ScheduleInput {
   name: string;
@@ -10,6 +9,12 @@ export interface ScheduleInput {
   runAt?: Date;
   timezone?: string;
   nextRunAt?: Date;
+}
+
+export interface WorkflowExecutionResult {
+  success: boolean;
+  results?: Record<string, unknown>;
+  failedStep?: string;
 }
 
 export interface PersistentScheduler {
@@ -39,11 +44,8 @@ export class DatabasePersistentScheduler implements PersistentScheduler {
   async due(limit = 20) {
     return this.db.$queryRaw`
       SELECT * FROM "public"."automation_schedules"
-      WHERE "status" = 'ACTIVE'
-        AND "next_run_at" IS NOT NULL
-        AND "next_run_at" <= NOW()
-      ORDER BY "next_run_at" ASC
-      LIMIT ${Math.max(1, Math.min(limit, 100))}
+      WHERE "status" = 'ACTIVE' AND "next_run_at" IS NOT NULL AND "next_run_at" <= NOW()
+      ORDER BY "next_run_at" ASC LIMIT ${Math.max(1, Math.min(limit, 100))}
     ` as Promise<unknown[]>;
   }
 
@@ -57,8 +59,7 @@ export class DatabasePersistentScheduler implements PersistentScheduler {
         RETURNING "id", "workflow", "input"
       )
       INSERT INTO "public"."automation_runs" ("id","schedule_id","status","input","started_at","created_at")
-      SELECT ${runId}::uuid, "id", 'RUNNING', "input", NOW(), NOW() FROM claimed
-      RETURNING *
+      SELECT ${runId}::uuid, "id", 'RUNNING', "input", NOW(), NOW() FROM claimed RETURNING *
     ` as unknown[];
     return rows[0] ?? null;
   }
@@ -83,7 +84,7 @@ export class DatabasePersistentScheduler implements PersistentScheduler {
 export async function executeClaimedRun(
   scheduler: DatabasePersistentScheduler,
   run: { id: string; workflow: string; input: Record<string, unknown> },
-  execute: (workflow: string, input: Record<string, unknown>) => Promise<WorkflowResult>,
+  execute: (workflow: string, input: Record<string, unknown>) => Promise<WorkflowExecutionResult>,
 ) {
   try {
     const result = await execute(run.workflow, run.input);
