@@ -1,5 +1,6 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { leadService } from '@nexor/core';
+import { LeadStatus } from '@nexor/database';
 import { CreateLeadSchema } from '@/lib/validators/lead';
 
 export async function GET() {
@@ -19,4 +20,18 @@ export async function POST(request: Request) {
     console.error('LEADS API ERROR:', error);
     return NextResponse.json({ success: false, message: error instanceof Error ? error.message : String(error) }, { status: 400 });
   }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const id = typeof body.id === 'string' ? body.id : '';
+    if (!id) return NextResponse.json({ success: false, message: 'id is required' }, { status: 400 });
+    const status = body.status as LeadStatus | undefined;
+    if (status && !Object.values(LeadStatus).includes(status)) return NextResponse.json({ success: false, message: 'Invalid lead status' }, { status: 400 });
+    const auditScore = body.auditScore === undefined ? undefined : Number(body.auditScore);
+    if (auditScore !== undefined && (!Number.isInteger(auditScore) || auditScore < 0 || auditScore > 100)) return NextResponse.json({ success: false, message: 'auditScore must be an integer from 0 to 100' }, { status: 400 });
+    const lead = await leadService.update(id, { ...(status ? { status } : {}), ...(auditScore !== undefined ? { auditScore } : {}), ...(typeof body.notes === 'string' ? { notes: body.notes } : {}) });
+    return NextResponse.json({ success: true, lead });
+  } catch (error) { return NextResponse.json({ success: false, message: error instanceof Error ? error.message : String(error) }, { status: 400 }); }
 }
