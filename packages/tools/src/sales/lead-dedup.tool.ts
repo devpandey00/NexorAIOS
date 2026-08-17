@@ -20,7 +20,8 @@ export const leadDedupTool: Tool = {
   category: 'sales',
   async execute(input: ToolInput): Promise<ToolOutput> {
     const raw = Array.isArray(input.leads) ? input.leads : [];
-    const seen = new Set<string>();
+    const seenDomains = new Set<string>();
+    const seenBusinesses = new Set<string>();
     const unique: Record<string, unknown>[] = [];
     const duplicates: Record<string, unknown>[] = [];
 
@@ -29,13 +30,16 @@ export const leadDedupTool: Tool = {
       const lead = item as Record<string, unknown>;
       const business = normalizeBusiness(lead.businessName ?? lead.name);
       const domain = normalizeDomain(lead.website);
-      const key = domain || business;
-      if (!key) continue;
-      if (seen.has(key)) {
+      if (!business && !domain) continue;
+
+      const duplicate = (domain && seenDomains.has(domain)) || (business && seenBusinesses.has(business));
+      if (duplicate) {
         duplicates.push(lead);
         continue;
       }
-      seen.add(key);
+
+      if (domain) seenDomains.add(domain);
+      if (business) seenBusinesses.add(business);
       unique.push({
         ...lead,
         businessName: typeof lead.businessName === 'string' ? lead.businessName.trim() : typeof lead.name === 'string' ? lead.name.trim() : undefined,
