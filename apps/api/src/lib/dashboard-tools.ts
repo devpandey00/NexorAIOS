@@ -12,7 +12,7 @@ const groups: Array<[string, string[]]> = [
   ['Command & Autopilot', ['Autopilot','AI Command Center','Automation Center','Message Drafter']],
   ['Lead Generation', ['Lead Finder','Google Maps Prospecting','Directory Prospecting','Query Generator','Industry Rotation','Location Rotation','Service Rotation','Search Intent Rotation','Lead Import','Lead Deduplication','Company Prospecting','Influencer Prospecting','Job Search']],
   ['Sales & CRM', ['Lead Inbox','Lead Scoring','ICP Scoring','Requirement Detector','Service Matcher','CRM Pipeline','Deal Tracker','Task Manager','Meeting Tracker','Proposal Tracker']],
-  ['WhatsApp & Email', ['WhatsApp Drafts','WhatsApp Approval','WhatsApp Sending','WhatsApp Inbox','Reply Classifier','Email Drafts','Email Approval','Email Sending','Email Inbox','Follow-up Manager']],
+  ['WhatsApp & Email', ['WhatsApp Automation','WhatsApp Drafts','WhatsApp Approval','WhatsApp Sending','WhatsApp Inbox','Reply Classifier','Email Drafts','Email Approval','Email Sending','Email Inbox','Follow-up Manager']],
   ['Social Media', ['Social Media Manager','Content Calendar','Instagram Manager','Facebook Manager','LinkedIn Manager','X Manager','YouTube Manager','Social Scheduler','Social Inbox','Social Analytics','Hashtag Research']],
   ['Content Studio', ['Content Ideas','Caption Writer','Hook Generator','CTA Generator','Carousel Writer','Reel Script Writer','Blog Writer','LinkedIn Writer','Newsletter Writer','Content Repurposer']],
   ['Creative Studio', ['Graphic Briefs','Social Post Designer','Carousel Designer','Ad Creative Designer','Story Designer','Thumbnail Designer','Brand Kit','Creative Variants','Image Prompt Studio','Creative Library']],
@@ -24,9 +24,9 @@ const groups: Array<[string, string[]]> = [
 
 const readyTools = new Set([
   'Autopilot','AI Command Center','Automation Center','Message Drafter','Lead Finder','Lead Inbox','Lead Scoring','ICP Scoring',
-  'Requirement Detector','Service Matcher','CRM Pipeline','WhatsApp Drafts','WhatsApp Approval','WhatsApp Sending','WhatsApp Inbox',
+  'Requirement Detector','Service Matcher','CRM Pipeline','WhatsApp Automation','WhatsApp Drafts','WhatsApp Approval','WhatsApp Sending','WhatsApp Inbox',
   'Reply Classifier','Email Drafts','Email Approval','Email Sending','Email Inbox','Follow-up Manager','Social Media Manager',
-  'Content Calendar','Content Ideas','Caption Writer','Instagram Manager','Facebook Manager','LinkedIn Manager','Social Scheduler',
+  'Content Calendar','Content Ideas','Instagram Manager','Facebook Manager','LinkedIn Manager','Social Scheduler',
   'Meta Ads Overview','Google Ads Overview','SEO Audit','AI Agents','Company Prospecting','Influencer Prospecting','Job Search',
 ]);
 
