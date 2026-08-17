@@ -96,7 +96,7 @@ export async function runAutopilot() {
           social: Object.fromEntries(Object.entries(research.social ?? {})),
           seo: Object.fromEntries(Object.entries(research.seo ?? {})),
         });
-        const contacts = research.contacts as { emails?: unknown; phones?: unknown } | undefined;
+        const contacts = (research as unknown as { contacts?: { emails?: unknown; phones?: unknown } }).contacts;
         const email = firstValidEmail(contacts?.emails);
         const phone = firstValidPhone(contacts?.phones);
         await prisma.lead.update({
