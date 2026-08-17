@@ -5,18 +5,17 @@ export async function runSalesMachineWorkflow(input: ToolInput): Promise<Workflo
   return runWorkflow([
     {
       id: 'discover',
-      tool: 'search',
-      input: { query: String(input.query ?? input.command ?? 'qualified digital marketing prospects') },
+      tool: 'lead_discovery',
+      input: {
+        query: String(input.query ?? input.command ?? 'qualified digital marketing prospects'),
+        limit: typeof input.limit === 'number' ? input.limit : 25,
+      },
     },
     {
       id: 'dedup',
       tool: 'lead_dedup',
       input: ({ results }) => ({
-        leads: Array.isArray(results.discover?.data?.leads)
-          ? results.discover.data.leads
-          : Array.isArray(results.discover?.data)
-            ? results.discover.data
-            : [],
+        leads: Array.isArray(results.discover?.data?.leads) ? results.discover.data.leads : [],
       }),
     },
     {
@@ -50,6 +49,7 @@ export async function runSalesMachineWorkflow(input: ToolInput): Promise<Workflo
           action: 'create',
           lead: {
             ...lead,
+            businessName: typeof lead.businessName === 'string' ? lead.businessName : typeof lead.name === 'string' ? lead.name : undefined,
             niche: typeof lead.niche === 'string' ? lead.niche : String(input.niche ?? 'digital marketing prospect'),
             country: typeof lead.country === 'string' ? lead.country : String(input.country ?? 'India'),
             source: 'sales-machine',
