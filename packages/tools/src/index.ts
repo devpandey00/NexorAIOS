@@ -3,6 +3,8 @@ export * from './registry/tool-registry.js';
 export * from './registry/default-tools.js';
 export * from './runtime/tool-runner.js';
 export * from './runtime/workflow-runner.js';
+export * from './workflows/workflow-executor.js';
+export * from './workflows/lead-to-outreach.workflow.js';
 export * from './calendar/calendar.tool.js';
 export * from './crm/crm.tool.js';
 export * from './email/email.tool.js';
