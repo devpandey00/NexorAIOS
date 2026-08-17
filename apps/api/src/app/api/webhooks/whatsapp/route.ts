@@ -20,11 +20,9 @@ function verifySignature(rawBody: string, signature: string | null) {
   const secret = process.env.WHATSAPP_APP_SECRET;
   if (!secret) return true;
   if (!signature?.startsWith('sha256=')) return false;
-
   const expected = createHmac('sha256', secret).update(rawBody).digest('hex');
   const supplied = signature.slice(7);
   if (expected.length !== supplied.length) return false;
-
   return timingSafeEqual(Buffer.from(expected), Buffer.from(supplied));
 }
 
@@ -32,17 +30,14 @@ export async function GET(req: NextRequest) {
   const mode = req.nextUrl.searchParams.get('hub.mode');
   const token = req.nextUrl.searchParams.get('hub.verify_token');
   const challenge = req.nextUrl.searchParams.get('hub.challenge');
-
   if (mode === 'subscribe' && challenge && process.env.WHATSAPP_VERIFY_TOKEN && token === process.env.WHATSAPP_VERIFY_TOKEN) {
     return new NextResponse(challenge, { status: 200 });
   }
-
   return NextResponse.json({ success: false, error: 'Verification failed' }, { status: 403 });
 }
 
 export async function POST(req: NextRequest) {
   const rawBody = await req.text();
-
   if (!verifySignature(rawBody, req.headers.get('x-hub-signature-256'))) {
     return NextResponse.json({ success: false, error: 'Invalid signature' }, { status: 401 });
   }
@@ -59,6 +54,11 @@ export async function POST(req: NextRequest) {
 
         for (const incoming of messages) {
           if (incoming?.type !== 'text' || typeof incoming?.text?.body !== 'string') continue;
+          const providerMessageId = incoming.id ? String(incoming.id) : undefined;
+          if (providerMessageId) {
+            const duplicate = await prisma.message.findFirst({ where: { providerMessageId }, select: { id: true } });
+            if (duplicate) continue;
+          }
 
           const from = String(incoming.from ?? '').replace(/\D/g, '');
           const text = incoming.text.body.trim();
@@ -67,7 +67,6 @@ export async function POST(req: NextRequest) {
           const lead =
             (await prisma.lead.findFirst({ where: { whatsapp: from } })) ??
             (await prisma.lead.findFirst({ where: { whatsapp: { endsWith: from } } }));
-
           if (!lead) {
             console.warn(`[WHATSAPP WEBHOOK] No lead matched ${from}`);
             continue;
@@ -80,15 +79,7 @@ export async function POST(req: NextRequest) {
             update: { status: 'REPLIED', lastMessageAt: now },
           });
 
-          await prisma.message.create({
-            data: {
-              conversationId: conversation.id,
-              direction: MessageDirection.INBOUND,
-              content: text,
-              providerMessageId: incoming.id ? String(incoming.id) : undefined,
-            },
-          });
-
+          await prisma.message.create({ data: { conversationId: conversation.id, direction: MessageDirection.INBOUND, content: text, providerMessageId } });
           await prisma.lead.update({ where: { id: lead.id }, data: { status: LeadStatus.REPLIED } });
           await prisma.followUp.updateMany({
             where: { leadId: lead.id, status: { in: [FollowUpStatus.PENDING, FollowUpStatus.SCHEDULED] } },
@@ -102,7 +93,6 @@ export async function POST(req: NextRequest) {
               take: 10,
               select: { direction: true, content: true },
             });
-
             const classification = await replyClassifierService.classify({
               businessName: lead.businessName,
               leadContext: { niche: lead.niche, country: lead.country, website: lead.website, auditScore: lead.auditScore },
@@ -114,13 +104,13 @@ export async function POST(req: NextRequest) {
 
             const needsReply = ['REPLY_NOW', 'BOOK_MEETING', 'SEND_PRICING', 'ASK_CLARIFYING_QUESTION'].includes(classification.nextAction);
             if (needsReply && classification.suggestedReply.trim()) {
-              await prisma.outreach.create({
-                data: {
-                  leadId: lead.id,
-                  channel: OutreachChannel.WHATSAPP,
-                  status: OutreachStatus.DRAFT,
-                  message: classification.suggestedReply.trim(),
-                },
+              await prisma.outreach.create({ data: { leadId: lead.id, channel: OutreachChannel.WHATSAPP, status: OutreachStatus.DRAFT, message: classification.suggestedReply.trim() } });
+            }
+
+            if (classification.nextAction === 'STOP_OUTREACH') {
+              await prisma.followUp.updateMany({
+                where: { leadId: lead.id, status: { in: [FollowUpStatus.PENDING, FollowUpStatus.SCHEDULED] } },
+                data: { status: FollowUpStatus.CANCELLED, notes: 'Cancelled because AI classified the reply as STOP_OUTREACH' },
               });
             }
 
@@ -128,13 +118,7 @@ export async function POST(req: NextRequest) {
               data: {
                 leadId: lead.id,
                 title: `${classification.nextAction}: ${lead.businessName}`,
-                description: [
-                  `AI intent: ${classification.intent}`,
-                  `Confidence: ${classification.confidence}`,
-                  `Summary: ${classification.summary}`,
-                  `Suggested reply: ${classification.suggestedReply}`,
-                  `Incoming message: ${text}`,
-                ].join('\n'),
+                description: [`AI intent: ${classification.intent}`, `Confidence: ${classification.confidence}`, `Summary: ${classification.summary}`, `Suggested reply: ${classification.suggestedReply}`, `Incoming message: ${text}`].join('\n'),
                 status: classification.nextAction === 'STOP_OUTREACH' ? TaskStatus.COMPLETED : TaskStatus.TODO,
                 priority: classification.intent === 'MEETING_REQUEST' ? 1 : classification.intent === 'INTERESTED' ? 2 : 3,
               },
@@ -151,7 +135,6 @@ export async function POST(req: NextRequest) {
               },
             });
           }
-
           processed++;
         }
       }
@@ -160,9 +143,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, processed });
   } catch (error) {
     console.error('[WHATSAPP WEBHOOK ERROR]', error);
-    return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : String(error) },
-      { status: 500 },
-    );
+    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }
