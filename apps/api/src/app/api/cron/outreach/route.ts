@@ -12,8 +12,8 @@ export async function GET(req: Request) {
     return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   }
 
-  const perRun = Math.min(Math.max(Number(process.env.OUTREACH_MAX_PER_RUN ?? 5), 1), 50);
-  const minDelayMs = Math.max(Number(process.env.OUTREACH_MIN_DELAY_MS ?? 30000), 0);
+  const perRun = Math.min(Math.max(Number(process.env.OUTREACH_MAX_PER_RUN ?? 2), 1), 20);
+  const minDelayMs = Math.max(Number(process.env.OUTREACH_MIN_DELAY_MS ?? 2000), 0);
 
   try {
     const scheduled = await prisma.outreach.findMany({
@@ -31,7 +31,6 @@ export async function GET(req: Request) {
         where: { id: item.id, status: OutreachStatus.SCHEDULED },
         data: { status: OutreachStatus.APPROVED, error: null },
       });
-
       if (claimed.count !== 1) continue;
 
       try {
@@ -51,9 +50,6 @@ export async function GET(req: Request) {
     return NextResponse.json({ success: true, queued: scheduled.length, sent, failed, results });
   } catch (error) {
     console.error('[CRON OUTREACH ERROR]', error);
-    return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : String(error) },
-      { status: 500 },
-    );
+    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }
