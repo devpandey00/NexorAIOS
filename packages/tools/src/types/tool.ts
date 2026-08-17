@@ -1,5 +1,5 @@
 export type ToolCategory =
-  'research' | 'communication' | 'crm' | 'productivity' | 'automation' | 'files';
+  'research' | 'communication' | 'crm' | 'productivity' | 'automation' | 'files' | 'sales';
 
 export interface ToolInput {
   [key: string]: unknown;
