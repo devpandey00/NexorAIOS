@@ -4,6 +4,7 @@ export * from './registry/default-tools.js';
 export * from './runtime/tool-runner.js';
 export * from './runtime/workflow-runner.js';
 export * from './runtime/workflow-executor.js';
+export * from './runtime/automation-scheduler.js';
 export * from './workflows/lead-to-outreach.workflow.js';
 export * from './workflows/social-content.workflow.js';
 export * from './workflows/opportunity-discovery.workflow.js';
