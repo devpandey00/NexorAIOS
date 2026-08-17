@@ -1,5 +1,7 @@
 import type { ToolInput } from '../types/tool.js';
 import { runLeadToOutreachWorkflow } from '../workflows/lead-to-outreach.workflow.js';
+import { runSocialContentWorkflow } from '../workflows/social-content.workflow.js';
+import { runOpportunityDiscoveryWorkflow } from '../workflows/opportunity-discovery.workflow.js';
 import { toolRegistry } from '../registry/tool-registry.js';
 import { registerDefaultTools } from '../registry/default-tools.js';
 import { runWorkflow, type WorkflowResult } from './workflow-runner.js';
@@ -37,8 +39,23 @@ export async function executeWorkflow(workflow: SupportedWorkflow, input: ToolIn
     case 'proposal':
       return runWorkflow([{ id: 'proposal', tool: 'proposal', input }], input);
     case 'social_content':
-      return { success: false, results: {}, failedStep: 'social_content_not_implemented' };
+      return runSocialContentWorkflow(input);
     case 'opportunity_discovery':
-      return { success: false, results: {}, failedStep: 'opportunity_discovery_not_implemented' };
+      return runOpportunityDiscoveryWorkflow(input);
   }
+}
+
+export function isSupportedWorkflow(value: string): value is SupportedWorkflow {
+  return [
+    'lead_generation',
+    'lead_to_outreach',
+    'social_content',
+    'opportunity_discovery',
+    'crm',
+    'research',
+    'website_audit',
+    'whatsapp',
+    'email',
+    'proposal',
+  ].includes(value);
 }
