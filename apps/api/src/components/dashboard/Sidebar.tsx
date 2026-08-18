@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const groups = [
-  { title: 'COMMAND', items: [['Overview', '/dashboard', '⌂'], ['Autopilot', '/dashboard/command', '✦'], ['Tool Universe', '/dashboard', '◈']] },
+  { title: 'COMMAND', items: [['Overview', '/dashboard', '⌂'], ['Autopilot', '/dashboard/tools/autopilot', '✦'], ['Workflows', '/dashboard/workflows', '⌘'], ['Tool Universe', '/dashboard', '◈']] },
   { title: 'ACQUISITION', items: [['Lead Generation', '/dashboard/tools/lead-finder', '◎'], ['Leads', '/dashboard/tools/lead-inbox', '◉'], ['Research', '/dashboard/tools/seo-audit', '⌕'], ['Campaigns', '/dashboard/command', '◌']] },
   { title: 'SALES', items: [['Outreach', '/dashboard/tools/whatsapp-drafts', '↗'], ['WhatsApp', '/dashboard/tools/whatsapp-sending', '◍'], ['Email', '/dashboard/tools/email-drafts', '✉'], ['Inbox', '/dashboard/tools/whatsapp-inbox', '□'], ['CRM', '/dashboard/tools/crm-pipeline', '◫'], ['Follow-ups', '/dashboard/tools/follow-up-manager', '↻']] },
   { title: 'SOCIAL', items: [['Social Hub', '/dashboard/tools/social-scheduler', '✦'], ['Content Calendar', '/dashboard/tools/content-calendar', '◫'], ['Instagram', '/dashboard/tools/instagram-manager', '◎'], ['Facebook', '/dashboard/tools/facebook-manager', '●'], ['LinkedIn', '/dashboard/tools/linkedin-manager', 'in']] },
