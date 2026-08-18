@@ -1,3 +1,6 @@
 {
+  "buildCommand": "pnpm --filter @nexor/api build",
+  "installCommand": "pnpm install --frozen-lockfile",
+  "framework": "nextjs",
   "crons": []
 }
