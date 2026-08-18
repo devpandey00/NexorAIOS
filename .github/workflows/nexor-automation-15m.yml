@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
+  NEXOR_BASE_URL: https://nexoraios-main-diwakarpandeyitwa-3531s-projects.vercel.app
 
 jobs:
   run:
