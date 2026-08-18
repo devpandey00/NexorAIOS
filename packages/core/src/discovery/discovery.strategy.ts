@@ -49,7 +49,8 @@ const FALLBACK_QUERY_TEMPLATE: QueryTemplate = (industry, location, service, int
   `${industry} in ${location} ${service} ${intent}`;
 
 function getQueryTemplate(index: number): QueryTemplate {
-  return QUERY_TEMPLATES[index % QUERY_TEMPLATES.length] ?? FALLBACK_QUERY_TEMPLATE;
+  const template = QUERY_TEMPLATES[index % QUERY_TEMPLATES.length];
+  return template ?? FALLBACK_QUERY_TEMPLATE;
 }
 
 export class DiscoveryStrategyService {
@@ -78,7 +79,7 @@ export class DiscoveryStrategyService {
       }
 
       const template = getQueryTemplate(templateIndex);
-      const query = (template ?? FALLBACK_QUERY_TEMPLATE)(industry, location, service, intent).replace(/\s+/g, ' ').trim();
+      const query = template(industry, location, service, intent).replace(/\s+/g, ' ').trim();
       const key = query.toLowerCase();
 
       if (!seen.has(key)) {
