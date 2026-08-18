@@ -9,7 +9,7 @@ function configured(keys: string[]) {
 
 export async function GET() {
   const integrations: Record<string, { status: 'OPERATIONAL' | 'NOT_CONFIGURED' | 'DEGRADED'; reason?: string }> = {
-    search: configured(['TAVILY_API_KEY']) || configured(['SERPER_API_KEY']) ? { status: 'OPERATIONAL' } : { status: 'NOT_CONFIGURED', reason: 'No search provider key configured' },
+    search: { status: 'OPERATIONAL', reason: 'Built-in web search provider does not require an API key' },
     ai: configured(['OPENAI_API_KEY']) ? { status: 'OPERATIONAL' } : { status: 'NOT_CONFIGURED', reason: 'OPENAI_API_KEY is not configured' },
     whatsapp: configured(['WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID']) ? { status: 'OPERATIONAL' } : { status: 'NOT_CONFIGURED', reason: 'WhatsApp credentials are not configured' },
     email: configured(['RESEND_API_KEY', 'OUTREACH_FROM_EMAIL']) ? { status: 'OPERATIONAL' } : { status: 'NOT_CONFIGURED', reason: 'Resend outreach credentials are not configured' },
