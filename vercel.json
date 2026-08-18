@@ -1,5 +1,5 @@
 {
-  "buildCommand": "pnpm --filter web build && rm -rf .next && cp -R apps/web/.next .next",
+  "buildCommand": "pnpm --filter @nexor/api build && rm -rf .next && cp -R apps/api/.next .next",
   "installCommand": "pnpm install --frozen-lockfile",
   "framework": "nextjs",
   "crons": []
