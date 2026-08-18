@@ -11,22 +11,34 @@ import { leadSearchService } from '@nexor/search';
 import { researchService } from '@nexor/research';
 import { assessLead, buildPersonalizedPitch } from '@nexor/core';
 
-const prisma = getDatabaseClients().write;
-
 function normalizeWebsite(url: string): string {
   try {
     const parsed = new URL(url);
-    return `${parsed.protocol}//${parsed.hostname.replace(/^www\./, '').toLowerCase()}${parsed.pathname.replace(/\/$/, '')}`;
+    return `https://${parsed.hostname.replace(/^www\./, '').toLowerCase()}`;
   } catch {
-    return url.trim().toLowerCase().replace(/\/$/, '');
+    return url.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
   }
+}
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
 }
 
 function normalizePhone(phone: string): string {
   return phone.replace(/\D/g, '');
 }
 
+function normalizeSocial(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.protocol}//${parsed.hostname.toLowerCase()}${parsed.pathname.replace(/\/$/, '')}`;
+  } catch {
+    return url.trim().toLowerCase().replace(/\/$/, '');
+  }
+}
+
 export async function runCampaign(campaignId: string) {
+  const prisma = getDatabaseClients().write;
   const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
   if (!campaign) throw new Error('Campaign not found');
 
@@ -58,13 +70,22 @@ export async function runCampaign(campaignId: string) {
       try {
         const normalizedWebsite = result.website ? normalizeWebsite(result.website) : '';
         const normalizedPhone = result.phone ? normalizePhone(result.phone) : '';
-        const existing = normalizedWebsite
-          ? await prisma.lead.findFirst({ where: { website: normalizedWebsite } })
-          : normalizedPhone
-            ? await prisma.lead.findFirst({ where: { whatsapp: normalizedPhone } })
-            : await prisma.lead.findFirst({
-                where: { businessName: { equals: result.name, mode: 'insensitive' } },
-              });
+        const normalizedEmail = result.email ? normalizeEmail(result.email) : '';
+        const socialCandidates = Object.values(result.social ?? {})
+          .filter((value): value is string => typeof value === 'string' && value.length > 0)
+          .map(normalizeSocial);
+
+        const existing = await prisma.lead.findFirst({
+          where: {
+            OR: [
+              ...(normalizedWebsite ? [{ website: normalizedWebsite }] : []),
+              ...(normalizedEmail ? [{ email: normalizedEmail }] : []),
+              ...(normalizedPhone ? [{ whatsapp: normalizedPhone }] : []),
+              ...(socialCandidates.length ? [{ socialProfiles: { some: { url: { in: socialCandidates } } } }] : []),
+              { businessName: { equals: result.name, mode: 'insensitive' } },
+            ],
+          },
+        });
 
         let lead = existing;
         if (!lead) {
@@ -72,12 +93,19 @@ export async function runCampaign(campaignId: string) {
             data: {
               businessName: result.name,
               niche: campaign.query,
-              country: 'Unknown',
+              country: typeof result.location === 'string' && result.location.trim() ? result.location.trim() : 'Unknown',
               website: normalizedWebsite || undefined,
+              email: normalizedEmail || undefined,
               whatsapp: normalizedPhone || undefined,
               status: LeadStatus.NEW,
             },
           });
+        } else {
+          const updates: { website?: string; email?: string; whatsapp?: string } = {};
+          if (normalizedWebsite && !lead.website) updates.website = normalizedWebsite;
+          if (normalizedEmail && !lead.email) updates.email = normalizedEmail;
+          if (normalizedPhone && !lead.whatsapp) updates.whatsapp = normalizedPhone;
+          if (Object.keys(updates).length) lead = await prisma.lead.update({ where: { id: lead.id }, data: updates });
         }
 
         await prisma.campaignLead.upsert({
@@ -87,9 +115,6 @@ export async function runCampaign(campaignId: string) {
         });
 
         if (!result.website) {
-          if (normalizedPhone && !lead.whatsapp) {
-            await prisma.lead.update({ where: { id: lead.id }, data: { whatsapp: normalizedPhone } });
-          }
           processed++;
           successful++;
           continue;
@@ -116,7 +141,7 @@ export async function runCampaign(campaignId: string) {
         await prisma.lead.update({
           where: { id: lead.id },
           data: {
-            email: email ?? lead.email,
+            email: email ? normalizeEmail(email) : lead.email,
             whatsapp: phone ? normalizePhone(phone) : lead.whatsapp,
             auditScore: intelligence.score,
             status: intelligence.score >= 60 ? LeadStatus.QUALIFIED : LeadStatus.RESEARCHED,
@@ -132,14 +157,16 @@ export async function runCampaign(campaignId: string) {
           ['FACEBOOK', social.facebook],
           ['LINKEDIN', social.linkedin],
           ['YOUTUBE', social.youtube],
+          ['TIKTOK', social.tiktok],
+          ['X', social.x ?? social.twitter],
         ] as const;
 
         for (const [platform, url] of socialEntries) {
           if (typeof url !== 'string' || !url) continue;
           await prisma.socialProfile.upsert({
             where: { leadId_platform: { leadId: lead.id, platform } },
-            create: { leadId: lead.id, platform, url, confidence: 100, source: 'website-research' },
-            update: { url, confidence: 100 },
+            create: { leadId: lead.id, platform, url: normalizeSocial(url), confidence: 100, source: 'website-research' },
+            update: { url: normalizeSocial(url), confidence: 100 },
           });
         }
 
@@ -169,13 +196,13 @@ export async function runCampaign(campaignId: string) {
             orderBy: { createdAt: 'desc' },
           });
 
-          if (!existingWhatsAppDraft) {
+          if (!existingWhatsAppDraft && lead.whatsapp) {
             await prisma.outreach.create({
               data: {
                 leadId: lead.id,
                 campaignId,
                 channel: OutreachChannel.WHATSAPP,
-                status: OutreachStatus.DRAFT,
+                status: OutreachStatus.APPROVAL_REQUIRED,
                 message: whatsappMessage,
               },
             });
@@ -205,7 +232,7 @@ export async function runCampaign(campaignId: string) {
                   leadId: lead.id,
                   campaignId,
                   channel: OutreachChannel.EMAIL,
-                  status: OutreachStatus.DRAFT,
+                  status: OutreachStatus.APPROVAL_REQUIRED,
                   message: buildPersonalizedPitch({
                     businessName: result.name,
                     requirement: intelligence.requirement,
