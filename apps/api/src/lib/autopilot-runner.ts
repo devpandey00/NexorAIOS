@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { getDatabaseClients, OutreachChannel, OutreachStatus, JobStatus } from '@nexor/database';
+import { getDatabaseClients, OutreachChannel, OutreachStatus } from '@nexor/database';
 import { campaignPlannerService } from '@nexor/search';
 import { researchService } from '@nexor/research';
 import { campaignService, assessLead, buildPersonalizedPitch } from '@nexor/core';
@@ -30,7 +30,7 @@ function firstValidPhone(value: unknown): string | null {
 
 async function getOrCreateSchedule(prisma: ReturnType<typeof getDatabaseClients>['write']) {
   const existing = await prisma.$queryRawUnsafe<Array<{ id: string; run_count: number }>>(
-    `SELECT "id", "run_count" FROM "public"."automation_schedules" WHERE "name" = $1 AND "workflow" = 'sales_machine' AND "status" = 'ACTIVE' ORDER BY "created_at" ASC LIMIT 1`,
+    `SELECT "id", "run_count" FROM "public"."automation_schedules" WHERE "name" = $1 AND "workflow" = 'sales_machine' AND "status" IN ('ACTIVE','FAILED') ORDER BY "created_at" ASC LIMIT 1`,
     WORKFLOW_NAME,
   );
 
@@ -186,7 +186,7 @@ export async function runAutopilot() {
       runId,
     );
     await prisma.$queryRawUnsafe(
-      `UPDATE "public"."automation_schedules" SET "last_run_at"=NOW(),"next_run_at"=NOW() + INTERVAL '2 hours',"run_count"="run_count"+1,"last_error"=NULL,"updated_at"=NOW() WHERE "id"=$1::uuid`,
+      `UPDATE "public"."automation_schedules" SET "last_run_at"=NOW(),"next_run_at"=NOW() + INTERVAL '2 hours',"run_count"="run_count"+1,"last_error"=NULL,"status"='ACTIVE',"updated_at"=NOW() WHERE "id"=$1::uuid`,
       schedule.id,
     );
 
@@ -199,7 +199,7 @@ export async function runAutopilot() {
       runId,
     ).catch(() => undefined);
     await prisma.$queryRawUnsafe(
-      `UPDATE "public"."automation_schedules" SET "last_run_at"=NOW(),"next_run_at"=NOW() + INTERVAL '2 hours',"run_count"="run_count"+1,"last_error"=$1,"status"='FAILED',"updated_at"=NOW() WHERE "id"=$2::uuid`,
+      `UPDATE "public"."automation_schedules" SET "last_run_at"=NOW(),"next_run_at"=NOW() + INTERVAL '2 hours',"run_count"="run_count"+1,"last_error"=$1,"status"='ACTIVE',"updated_at"=NOW() WHERE "id"=$2::uuid`,
       message,
       schedule.id,
     ).catch(() => undefined);
