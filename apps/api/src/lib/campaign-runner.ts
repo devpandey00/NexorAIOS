@@ -42,21 +42,12 @@ export async function runCampaign(campaignId: string) {
   const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
   if (!campaign) throw new Error('Campaign not found');
 
-  const job = await prisma.job.findFirst({
-    where: { campaignId, status: JobStatus.QUEUED },
-    orderBy: { createdAt: 'asc' },
-  });
+  const job = await prisma.job.findFirst({ where: { campaignId, status: JobStatus.QUEUED }, orderBy: { createdAt: 'asc' } });
   if (!job) throw new Error('No queued discovery job found');
 
   await prisma.$transaction([
-    prisma.campaign.update({
-      where: { id: campaignId },
-      data: { status: CampaignStatus.RUNNING, startedAt: new Date() },
-    }),
-    prisma.job.update({
-      where: { id: job.id },
-      data: { status: JobStatus.RUNNING, startedAt: new Date(), attempts: { increment: 1 } },
-    }),
+    prisma.campaign.update({ where: { id: campaignId }, data: { status: CampaignStatus.RUNNING, startedAt: new Date() } }),
+    prisma.job.update({ where: { id: job.id }, data: { status: JobStatus.RUNNING, startedAt: new Date(), attempts: { increment: 1 } } }),
   ]);
 
   try {
@@ -68,12 +59,12 @@ export async function runCampaign(campaignId: string) {
 
     for (const result of searchResult.leads) {
       try {
+        const candidate = result as typeof result & Record<string, unknown>;
         const normalizedWebsite = result.website ? normalizeWebsite(result.website) : '';
         const normalizedPhone = result.phone ? normalizePhone(result.phone) : '';
-        const normalizedEmail = result.email ? normalizeEmail(result.email) : '';
-        const socialCandidates = Object.values(result.social ?? {})
-          .filter((value): value is string => typeof value === 'string' && value.length > 0)
-          .map(normalizeSocial);
+        const normalizedEmail = typeof candidate.email === 'string' ? normalizeEmail(candidate.email) : '';
+        const socialObject = candidate.social && typeof candidate.social === 'object' ? candidate.social as Record<string, unknown> : {};
+        const socialCandidates = Object.values(socialObject).filter((value): value is string => typeof value === 'string' && value.length > 0).map(normalizeSocial);
 
         const existing = await prisma.lead.findFirst({
           where: {
@@ -93,7 +84,7 @@ export async function runCampaign(campaignId: string) {
             data: {
               businessName: result.name,
               niche: campaign.query,
-              country: typeof result.location === 'string' && result.location.trim() ? result.location.trim() : 'Unknown',
+              country: typeof candidate.location === 'string' && candidate.location.trim() ? candidate.location.trim() : 'Unknown',
               website: normalizedWebsite || undefined,
               email: normalizedEmail || undefined,
               whatsapp: normalizedPhone || undefined,
@@ -108,11 +99,7 @@ export async function runCampaign(campaignId: string) {
           if (Object.keys(updates).length) lead = await prisma.lead.update({ where: { id: lead.id }, data: updates });
         }
 
-        await prisma.campaignLead.upsert({
-          where: { campaignId_leadId: { campaignId, leadId: lead.id } },
-          create: { campaignId, leadId: lead.id },
-          update: {},
-        });
+        await prisma.campaignLead.upsert({ where: { campaignId_leadId: { campaignId, leadId: lead.id } }, create: { campaignId, leadId: lead.id }, update: {} });
 
         if (!result.website) {
           processed++;
@@ -121,7 +108,6 @@ export async function runCampaign(campaignId: string) {
         }
 
         const research = await researchService.analyze(result.website);
-
         if (!research.success) {
           failed++;
           processed++;
@@ -145,10 +131,7 @@ export async function runCampaign(campaignId: string) {
             whatsapp: phone ? normalizePhone(phone) : lead.whatsapp,
             auditScore: intelligence.score,
             status: intelligence.score >= 60 ? LeadStatus.QUALIFIED : LeadStatus.RESEARCHED,
-            notes: JSON.stringify({
-              research,
-              intelligence,
-            }),
+            notes: JSON.stringify({ research, intelligence }),
           },
         });
 
@@ -172,57 +155,19 @@ export async function runCampaign(campaignId: string) {
 
         if (intelligence.score >= 60) {
           qualified++;
-          const whatsappMessage = buildPersonalizedPitch({
-            businessName: result.name,
-            requirement: intelligence.requirement,
-            service: intelligence.service,
-            findings: intelligence.findings,
-          });
-
+          const whatsappMessage = buildPersonalizedPitch({ businessName: result.name, requirement: intelligence.requirement, service: intelligence.service, findings: intelligence.findings });
           const existingWhatsAppDraft = await prisma.outreach.findFirst({
-            where: {
-              leadId: lead.id,
-              channel: OutreachChannel.WHATSAPP,
-              status: {
-                in: [
-                  OutreachStatus.DRAFT,
-                  OutreachStatus.APPROVAL_REQUIRED,
-                  OutreachStatus.APPROVED,
-                  OutreachStatus.SCHEDULED,
-                  OutreachStatus.SENT,
-                ],
-              },
-            },
+            where: { leadId: lead.id, channel: OutreachChannel.WHATSAPP, status: { in: [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED, OutreachStatus.APPROVED, OutreachStatus.SCHEDULED, OutreachStatus.SENT] } },
             orderBy: { createdAt: 'desc' },
           });
 
           if (!existingWhatsAppDraft && lead.whatsapp) {
-            await prisma.outreach.create({
-              data: {
-                leadId: lead.id,
-                campaignId,
-                channel: OutreachChannel.WHATSAPP,
-                status: OutreachStatus.APPROVAL_REQUIRED,
-                message: whatsappMessage,
-              },
-            });
+            await prisma.outreach.create({ data: { leadId: lead.id, campaignId, channel: OutreachChannel.WHATSAPP, status: OutreachStatus.APPROVAL_REQUIRED, message: whatsappMessage } });
           }
 
           if (email) {
             const existingEmailDraft = await prisma.outreach.findFirst({
-              where: {
-                leadId: lead.id,
-                channel: OutreachChannel.EMAIL,
-                status: {
-                  in: [
-                    OutreachStatus.DRAFT,
-                    OutreachStatus.APPROVAL_REQUIRED,
-                    OutreachStatus.APPROVED,
-                    OutreachStatus.SCHEDULED,
-                    OutreachStatus.SENT,
-                  ],
-                },
-              },
+              where: { leadId: lead.id, channel: OutreachChannel.EMAIL, status: { in: [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED, OutreachStatus.APPROVED, OutreachStatus.SCHEDULED, OutreachStatus.SENT] } },
               orderBy: { createdAt: 'desc' },
             });
 
@@ -233,13 +178,7 @@ export async function runCampaign(campaignId: string) {
                   campaignId,
                   channel: OutreachChannel.EMAIL,
                   status: OutreachStatus.APPROVAL_REQUIRED,
-                  message: buildPersonalizedPitch({
-                    businessName: result.name,
-                    requirement: intelligence.requirement,
-                    service: intelligence.service,
-                    findings: intelligence.findings,
-                    email: true,
-                  }),
+                  message: buildPersonalizedPitch({ businessName: result.name, requirement: intelligence.requirement, service: intelligence.service, findings: intelligence.findings, email: true }),
                 },
               });
             }
@@ -254,49 +193,19 @@ export async function runCampaign(campaignId: string) {
         console.error(`[CAMPAIGN LEAD ERROR] ${result.name}`, error);
       }
 
-      await prisma.campaign.update({
-        where: { id: campaignId },
-        data: { processedLeads: processed, successfulLeads: successful, failedLeads: failed },
-      });
+      await prisma.campaign.update({ where: { id: campaignId }, data: { processedLeads: processed, successfulLeads: successful, failedLeads: failed } });
     }
 
     await prisma.$transaction([
-      prisma.job.update({
-        where: { id: job.id },
-        data: {
-          status: JobStatus.COMPLETED,
-          completedAt: new Date(),
-          result: { discovered: searchResult.count, processed, successful, failed, qualified },
-        },
-      }),
-      prisma.campaign.update({
-        where: { id: campaignId },
-        data: {
-          status: failed > 0 ? CampaignStatus.PARTIALLY_COMPLETED : CampaignStatus.COMPLETED,
-          completedAt: new Date(),
-          totalLeads: searchResult.count,
-          processedLeads: processed,
-          successfulLeads: successful,
-          failedLeads: failed,
-        },
-      }),
+      prisma.job.update({ where: { id: job.id }, data: { status: JobStatus.COMPLETED, completedAt: new Date(), result: { discovered: searchResult.count, processed, successful, failed, qualified } } }),
+      prisma.campaign.update({ where: { id: campaignId }, data: { status: failed > 0 ? CampaignStatus.PARTIALLY_COMPLETED : CampaignStatus.COMPLETED, completedAt: new Date(), totalLeads: searchResult.count, processedLeads: processed, successfulLeads: successful, failedLeads: failed } }),
     ]);
 
     return { success: true, campaignId, discovered: searchResult.count, processed, successful, failed, qualified };
   } catch (error) {
     await prisma.$transaction([
-      prisma.job.update({
-        where: { id: job.id },
-        data: {
-          status: JobStatus.FAILED,
-          completedAt: new Date(),
-          error: error instanceof Error ? error.message : String(error),
-        },
-      }),
-      prisma.campaign.update({
-        where: { id: campaignId },
-        data: { status: CampaignStatus.FAILED, completedAt: new Date() },
-      }),
+      prisma.job.update({ where: { id: job.id }, data: { status: JobStatus.FAILED, completedAt: new Date(), error: error instanceof Error ? error.message : String(error) } }),
+      prisma.campaign.update({ where: { id: campaignId }, data: { status: CampaignStatus.FAILED, completedAt: new Date() } }),
     ]);
     throw error;
   }
