@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
-    "build": "next build && rm -rf ../../.next && cp -R .next ../../.next",
+    "build": "next build && rm -rf ../web/.next && cp -R .next ../web/.next",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit"
