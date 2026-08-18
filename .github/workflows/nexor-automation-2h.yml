@@ -15,10 +15,9 @@ jobs:
     steps:
       - name: Run canonical 2-hour prospecting workflow
         env:
-          NEXOR_BASE_URL: ${{ secrets.NEXOR_BASE_URL }}
+          NEXOR_BASE_URL: ${{ secrets.NEXOR_BASE_URL || 'https://nexoraios-main-1.vercel.app' }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          test -n "$NEXOR_BASE_URL"
           test -n "$CRON_SECRET"
           curl --fail-with-body --silent --show-error --max-time 300 \
             -H "Authorization: Bearer $CRON_SECRET" \
