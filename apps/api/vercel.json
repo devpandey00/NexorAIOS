@@ -1,0 +1,6 @@
+{
+  "buildCommand": "cd ../.. && pnpm --filter web build && rm -rf apps/api/.next && cp -R apps/web/.next apps/api/.next",
+  "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
+  "framework": "nextjs",
+  "crons": []
+}
