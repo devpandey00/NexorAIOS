@@ -7,7 +7,7 @@ const db = getDatabaseClients().write;
 export async function GET() {
   try {
     const [leads, drafts, scheduled, sent, followups] = await Promise.all([
-      db.lead.findMany({ orderBy: { updatedAt: 'desc' }, take: 50, select: { id: true, businessName: true, website: true, email: true, whatsapp: true, auditScore: true, status: true, notes: true, updatedAt: true } }),
+      db.lead.findMany({ orderBy: { updatedAt: 'desc' }, take: 50, select: { id: true, businessName: true, website: true, email: true, whatsapp: true, auditScore: true, status: true, notes: true, updatedAt: true, outreach: { orderBy: { createdAt: 'desc' }, take: 1, select: { id: true, channel: true, status: true, message: true, scheduledAt: true } } } }),
       db.outreach.count({ where: { status: OutreachStatus.DRAFT } }),
       db.outreach.count({ where: { status: OutreachStatus.SCHEDULED } }),
       db.outreach.count({ where: { status: OutreachStatus.SENT } }),
