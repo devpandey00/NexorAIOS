@@ -1,0 +1,35 @@
+name: Nexor Daily Report
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 4 * * *'
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check production site
+        env:
+          SITE_URL: https://nexoraios-main-1.vercel.app
+        run: |
+          set -e
+          status=$(curl -L -s -o /tmp/site.html -w '%{http_code}' "$SITE_URL")
+          echo "Production HTTP status: $status"
+          test "$status" = "200"
+          grep -qi '<html' /tmp/site.html
+
+      - name: Create report
+        run: |
+          {
+            echo "NexorAIOS Daily Health Report"
+            echo "Date: $(date -u '+%Y-%m-%d %H:%M UTC')"
+            echo "Production URL: https://nexoraios-main-1.vercel.app"
+            echo "Status: HEALTHY"
+          } > nexor-report.txt
+
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexor-daily-report
+          path: nexor-report.txt
