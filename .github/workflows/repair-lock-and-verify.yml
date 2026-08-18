@@ -1,6 +1,8 @@
 name: Repair lockfile and verify
 
 on:
+  push:
+    branches: [claude/nexoraios-production-workflow]
   workflow_dispatch:
 
 permissions:
