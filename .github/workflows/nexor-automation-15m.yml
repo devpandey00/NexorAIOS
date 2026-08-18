@@ -9,6 +9,9 @@ concurrency:
   group: nexor-automation-15m
   cancel-in-progress: false
 
+env:
+  NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
+
 jobs:
   run:
     runs-on: ubuntu-latest
@@ -17,9 +20,9 @@ jobs:
         run: |
           curl --fail-with-body --silent --show-error --max-time 120 \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            "${{ secrets.NEXOR_BASE_URL }}/api/cron/social-publish"
+            "${NEXOR_BASE_URL}/api/cron/social-publish"
       - name: Outreach queue
         run: |
           curl --fail-with-body --silent --show-error --max-time 120 \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            "${{ secrets.NEXOR_BASE_URL }}/api/cron/outreach"
+            "${NEXOR_BASE_URL}/api/cron/outreach"
