@@ -366,6 +366,10 @@ importers:
         version: 2.1.9(@types/node@22.20.1)(lightningcss@1.32.0)
 
   packages/tools:
+    dependencies:
+      '@nexor/search':
+        specifier: workspace:*
+        version: link:../search
     devDependencies:
       '@types/node':
         specifier: ^22
