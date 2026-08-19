@@ -5,7 +5,7 @@
   "buildCommand": "pnpm --filter @nexor/api... build",
   "outputDirectory": "apps/api/.next",
   "crons": [
-    { "path": "/api/cron/autopilot", "schedule": "0 */2 * * *" },
+    { "path": "/api/cron/autopilot", "schedule": "0 0 * * *" },
     { "path": "/api/automations/run", "schedule": "15 * * * *" },
     { "path": "/api/cron/jobs", "schedule": "0 */6 * * *" },
     { "path": "/api/cron/outreach", "schedule": "30 * * * *" },
