@@ -2,7 +2,9 @@ import Link from 'next/link';
 import DashboardLayout from '@/components/dashboard/DashboardLayout';
 import LeadFinderWorkspace from '@/components/dashboard/LeadFinderWorkspace';
 import SocialContentWorkspace from '@/components/dashboard/SocialContentWorkspace';
+import SocialLeadQueue from '@/components/dashboard/SocialLeadQueue';
 import GrowthAutomationClient from '@/components/dashboard/GrowthAutomationClient';
+import WhatsAppAutomationPage from '../whatsapp-automation/page';
 import { getTool } from '@/lib/dashboard-tools';
 
 const customModes: Record<string, 'AUTOPILOT' | 'JOB' | 'COMPANY' | 'INFLUENCER' | 'MESSAGE' | 'SOCIAL'> = {
@@ -28,12 +30,20 @@ export default async function ToolPage({ params }: { params: Promise<{ slug: str
   const customMode = customModes[slug];
   const tool = getTool(slug);
 
+  if (slug === 'social-growth') {
+    return <DashboardLayout><main className="space-y-5"><section className="nexor-panel p-6"><div className="font-mono text-[7px] tracking-[0.18em] text-[var(--accent)]">NEXOR GROWTH ENGINE</div><h1 className="mt-2 text-2xl font-semibold text-[var(--text)]">Social media → leads → outreach → content</h1><p className="mt-2 max-w-3xl text-[9px] leading-5 text-[var(--text-secondary)]">Unified social lead discovery, public-profile research, AI content and approval-first outreach.</p></section><SocialLeadQueue /><SocialContentWorkspace /></main></DashboardLayout>;
+  }
+
   if (slug === 'lead-finder') {
     return <DashboardLayout><main className="space-y-5"><section className="nexor-fade nexor-panel p-7"><Link href="/dashboard" className="font-mono text-[7px] tracking-[0.16em] text-[var(--text-muted)]">← COMMAND CENTER</Link><div className="mt-5"><div className="font-mono text-[7px] tracking-[0.16em] text-[var(--text-muted)]">LEAD GENERATION</div><h1 className="mt-1 text-3xl font-semibold tracking-[-0.04em]">Lead Finder</h1><p className="mt-4 max-w-2xl text-[10px] leading-5 text-[var(--text-secondary)]">Targeted discovery → research → scoring → requirement matching → personalized drafts.</p></div></section><LeadFinderWorkspace /></main></DashboardLayout>;
   }
 
   if (slug === 'content-calendar') {
     return <DashboardLayout><main className="space-y-5"><section className="nexor-fade nexor-panel p-7"><Link href="/dashboard" className="font-mono text-[7px] tracking-[0.16em] text-[var(--text-muted)]">← COMMAND CENTER</Link><div className="mt-5"><div className="font-mono text-[7px] tracking-[0.16em] text-[var(--text-muted)]">SOCIAL MEDIA</div><h1 className="mt-1 text-3xl font-semibold tracking-[-0.04em]">Content Calendar</h1></div></section><SocialContentWorkspace /></main></DashboardLayout>;
+  }
+
+  if (slug === 'whatsapp-automation') {
+    return <DashboardLayout><WhatsAppAutomationPage /></DashboardLayout>;
   }
 
   if (customMode) {
