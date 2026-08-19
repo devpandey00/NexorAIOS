@@ -2,11 +2,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { commandExecutorService } from '@nexor/ai';
 import { getDatabaseClients } from '@nexor/database';
 import { MemoryService } from '@nexor/core';
+import { runAutopilot } from '@/lib/autopilot-runner';
 
 export const maxDuration = 300;
 
 const db = getDatabaseClients().write;
 const memoryService = new MemoryService(db);
+
+function isStartCommand(query: string) {
+  return /^(?:let(?:'|’)s\s+)?(?:start|begin|run|launch)(?:\s+(?:nexor|everything|all|autopilot|the\s+workflow))?[.!\s]*$/i.test(query)
+    || /^(?:let(?:'|’)s\s+)?start\s+(?:the\s+)?(?:full|complete|autonomous)\s+(?:workflow|system|nexor)[.!\s]*$/i.test(query);
+}
 
 export async function POST(req: NextRequest) {
   const startedAt = Date.now();
@@ -20,8 +26,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Query is required' }, { status: 400 });
     }
 
-    // Persistent memory is injected into every command so Nexor can retain
-    // durable business context, preferences, decisions and prior outcomes.
+    if (isStartCommand(query)) {
+      const result = await runAutopilot();
+      return NextResponse.json({
+        success: true,
+        query,
+        route: {
+          workflow: 'autopilot',
+          confidence: 1,
+          reason: 'Explicit Nexor start command routed to the autonomous cloud workflow.',
+        },
+        execution: {
+          success: Boolean(result.success),
+          results: result as unknown as Record<string, unknown>,
+          executionTime: Date.now() - startedAt,
+        },
+        durationMs: Date.now() - startedAt,
+      });
+    }
+
     const memoryContext = await memoryService.buildContext(30);
     const context = {
       ...memoryContext,
