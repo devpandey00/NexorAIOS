@@ -6,40 +6,19 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const url = typeof body?.url === 'string' ? body.url.trim() : '';
-
-    if (!url) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'URL is required',
-        },
-        { status: 400 },
-      );
-    }
+    if (!url) return NextResponse.json({ success: false, error: 'URL is required' }, { status: 400 });
 
     const research = await researchService.analyze(url);
+    let report: unknown = null;
+    try {
+      if (research.success) report = await businessReportService.generate({ url, research });
+    } catch (error) {
+      console.warn('BUSINESS REPORT FALLBACK:', error instanceof Error ? error.message : error);
+    }
 
-    const report = await businessReportService.generate({
-      url,
-      research,
-    });
-
-    return NextResponse.json({
-      success: true,
-      result: {
-        research,
-        report,
-      },
-    });
+    return NextResponse.json({ success: true, result: { research, report } });
   } catch (error) {
     console.error('RESEARCH API ERROR:', error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        error: error instanceof Error ? error.message : 'Research failed',
-      },
-      { status: 500 },
-    );
+    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Research failed' }, { status: 500 });
   }
 }
