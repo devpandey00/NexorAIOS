@@ -5,15 +5,10 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "prebuild": "pnpm --filter @nexor/database build && pnpm --filter @nexor/search build && pnpm --filter @nexor/research build && pnpm --filter @nexor/core build",
     "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
-    "@nexor/core": "workspace:*",
-    "@nexor/database": "workspace:*",
-    "@nexor/research": "workspace:*",
-    "@nexor/search": "workspace:*",
     "next": "16.2.12",
     "react": "19.2.4",
     "react-dom": "19.2.4"

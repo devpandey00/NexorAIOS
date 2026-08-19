@@ -49,8 +49,7 @@ const FALLBACK_QUERY_TEMPLATE: QueryTemplate = (industry, location, service, int
   `${industry} in ${location} ${service} ${intent}`;
 
 function getQueryTemplate(index: number): QueryTemplate {
-  const template = QUERY_TEMPLATES[index % QUERY_TEMPLATES.length];
-  return template ?? FALLBACK_QUERY_TEMPLATE;
+  return QUERY_TEMPLATES[index % QUERY_TEMPLATES.length] ?? FALLBACK_QUERY_TEMPLATE;
 }
 
 export class DiscoveryStrategyService {

@@ -11,6 +11,11 @@ interface ProspectResult {
   outreach?: ToolOutput;
 }
 
+function firstString(value: unknown): string | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.find((item): item is string => typeof item === 'string' && item.trim().length > 0)?.trim();
+}
+
 export async function runSalesMachineWorkflow(input: ToolInput): Promise<WorkflowResult> {
   const discovery = await toolRegistry.execute('lead_discovery', {
     query: String(input.query ?? input.command ?? 'qualified digital marketing prospects'),
@@ -38,57 +43,84 @@ export async function runSalesMachineWorkflow(input: ToolInput): Promise<Workflo
   const errors: Record<string, string>[] = [];
 
   for (const [index, lead] of unique.entries()) {
-    const website = typeof lead.website === 'string' ? lead.website : '';
-    const research = website
-      ? await toolRegistry.execute('website', { url: website })
-      : { success: true, data: {} };
+    try {
+      const website = typeof lead.website === 'string' ? lead.website : '';
+      const research = website
+        ? await toolRegistry.execute('website', { url: website })
+        : { success: true, data: {} };
+      const researchData = (research.data ?? {}) as Record<string, unknown>;
+      const contacts = (researchData.contacts ?? {}) as Record<string, unknown>;
+      const email = typeof lead.email === 'string' && lead.email.trim() ? lead.email.trim() : firstString(contacts.emails);
+      const phone = typeof lead.phone === 'string' && lead.phone.trim() ? lead.phone.trim() : firstString(contacts.phones);
 
-    const score = await toolRegistry.execute('lead_scoring', {
-      lead,
-      research: research.data ?? {},
-      businessFit: input.businessFit,
-      growthSignals: input.growthSignals,
-    });
+      const enrichedLead = {
+        ...lead,
+        ...(email ? { email } : {}),
+        ...(phone ? { whatsapp: phone } : {}),
+      };
 
-    if (!score.success) {
-      errors.push({ lead: String(lead.name ?? index + 1), error: score.error ?? 'Scoring failed' });
-      continue;
-    }
+      const score = await toolRegistry.execute('lead_scoring', {
+        lead: enrichedLead,
+        research: researchData,
+        businessFit: input.businessFit,
+        growthSignals: input.growthSignals,
+      });
 
-    const scoreData = (score.data ?? {}) as Record<string, unknown>;
-    const crmLead = {
-      ...lead,
-      businessName: typeof lead.businessName === 'string' ? lead.businessName : typeof lead.name === 'string' ? lead.name : undefined,
-      niche: typeof lead.niche === 'string' ? lead.niche : String(input.niche ?? 'digital marketing prospect'),
-      country: typeof lead.country === 'string' ? lead.country : String(input.country ?? 'India'),
-      source: 'sales-machine',
-      auditScore: typeof scoreData.score === 'number' ? scoreData.score : undefined,
-      notes: JSON.stringify({ research: research.data ?? {}, score: scoreData }),
-    };
+      if (!score.success) {
+        errors.push({ lead: String(lead.name ?? index + 1), error: score.error ?? 'Scoring failed' });
+        continue;
+      }
 
-    const crm = await toolRegistry.execute('crm', { action: 'create', lead: crmLead });
-    if (!crm.success) {
-      errors.push({ lead: String(lead.name ?? index + 1), error: crm.error ?? 'CRM persistence failed' });
-      continue;
-    }
-
-    const crmData = (crm.data ?? {}) as Record<string, unknown>;
-    const persistedLead = (crmData.lead ?? crmData) as Record<string, unknown>;
-    const leadId = typeof input.leadId === 'string' ? input.leadId : typeof persistedLead.id === 'string' ? persistedLead.id : '';
-
-    let outreach: ToolOutput | undefined;
-    if (leadId && input.createDrafts !== false) {
+      const scoreData = (score.data ?? {}) as Record<string, unknown>;
       const services = Array.isArray(scoreData.recommendedServices)
         ? scoreData.recommendedServices.join(', ')
         : 'digital marketing';
-      outreach = await toolRegistry.execute('outreach_draft', {
-        leadId,
-        channel: input.channel === 'EMAIL' ? 'EMAIL' : 'WHATSAPP',
-        context: `We identified ${services} as the strongest initial opportunity for this business.`,
-      });
-    }
+      const rationale = typeof scoreData.rationale === 'string' ? scoreData.rationale : '';
+      const crmLead = {
+        ...enrichedLead,
+        businessName: typeof lead.businessName === 'string' ? lead.businessName : typeof lead.name === 'string' ? lead.name : undefined,
+        niche: typeof lead.niche === 'string' ? lead.niche : String(input.niche ?? 'digital marketing prospect'),
+        country: typeof lead.country === 'string' ? lead.country : String(input.country ?? 'India'),
+        source: 'sales-machine',
+        auditScore: typeof scoreData.score === 'number' ? scoreData.score : undefined,
+        notes: JSON.stringify({ research: researchData, score: scoreData }),
+      };
 
-    prospects.push({ lead, research, score, crm, outreach });
+      const crm = await toolRegistry.execute('crm', { action: 'create', lead: crmLead });
+      if (!crm.success) {
+        errors.push({ lead: String(lead.name ?? index + 1), error: crm.error ?? 'CRM persistence failed' });
+        continue;
+      }
+
+      const crmData = (crm.data ?? {}) as Record<string, unknown>;
+      const persistedLead = (crmData.lead ?? crmData) as Record<string, unknown>;
+      const leadId = typeof persistedLead.id === 'string' ? persistedLead.id : '';
+
+      let outreach: ToolOutput | undefined;
+      if (leadId && input.createDrafts !== false) {
+        const channel = input.channel === 'EMAIL'
+          ? 'EMAIL'
+          : input.channel === 'WHATSAPP'
+            ? 'WHATSAPP'
+            : email
+              ? 'EMAIL'
+              : phone
+                ? 'WHATSAPP'
+                : '';
+
+        if (channel) {
+          outreach = await toolRegistry.execute('outreach_draft', {
+            leadId,
+            channel,
+            context: `Research findings: ${rationale}. Recommended services: ${services}. Use only these verified findings and do not invent claims.`,
+          });
+        }
+      }
+
+      prospects.push({ lead: enrichedLead, research, score, crm, outreach });
+    } catch (error) {
+      errors.push({ lead: String(lead.name ?? index + 1), error: error instanceof Error ? error.message : String(error) });
+    }
   }
 
   const success = prospects.length > 0 || unique.length === 0;
