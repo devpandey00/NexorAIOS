@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 import MobileNav from './MobileNav';
+import NexorVoiceAssistant from './NexorVoiceAssistant';
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -26,6 +27,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       </div>
 
       <MobileNav />
+      <NexorVoiceAssistant />
     </div>
   );
 }
