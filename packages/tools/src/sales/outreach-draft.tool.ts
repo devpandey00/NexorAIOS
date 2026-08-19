@@ -2,6 +2,11 @@ import type { Tool, ToolInput, ToolOutput } from '../types/tool.js';
 
 type ApiData = { error?: string; message?: string } & Record<string, unknown>;
 
+const base = () => {
+  const configured = process.env.NEXOR_API_URL?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim();
+  return (configured || 'http://localhost:3000').replace(/\/$/, '');
+};
+
 export const outreachDraftTool: Tool = {
   id: 'outreach_draft',
   name: 'Outreach Draft',
@@ -11,11 +16,8 @@ export const outreachDraftTool: Tool = {
     const leadId = typeof input.leadId === 'string' ? input.leadId : '';
     const channel = input.channel === 'EMAIL' ? 'EMAIL' : input.channel === 'WHATSAPP' ? 'WHATSAPP' : '';
     if (!leadId || !channel) return { success: false, error: 'leadId and channel are required' };
-    const configured = process.env.NEXOR_API_URL?.trim();
-    const port = process.env.PORT?.trim() || '3000';
-    const base = (configured || `http://localhost:${port}`).replace(/\/$/, '');
     try {
-      const response = await fetch(`${base}/api/outreach/drafts`, {
+      const response = await fetch(`${base()}/api/outreach/drafts`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ leadId, channel, context: typeof input.context === 'string' ? input.context : '' }),
