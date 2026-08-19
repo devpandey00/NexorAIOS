@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import DashboardLayout from '@/components/dashboard/DashboardLayout';
 import LeadFinderWorkspace from '@/components/dashboard/LeadFinderWorkspace';
+import LeadPipelineWorkspace from '@/components/dashboard/LeadPipelineWorkspace';
 import SocialContentWorkspace from '@/components/dashboard/SocialContentWorkspace';
 import GrowthAutomationClient from '@/components/dashboard/GrowthAutomationClient';
 import { getTool } from '@/lib/dashboard-tools';
@@ -30,6 +31,10 @@ export default async function ToolPage({ params }: { params: Promise<{ slug: str
 
   if (slug === 'lead-finder') {
     return <DashboardLayout><main className="space-y-5"><section className="nexor-fade nexor-panel p-7"><Link href="/dashboard" className="font-mono text-[7px] tracking-[0.16em] text-[var(--text-muted)]">← COMMAND CENTER</Link><div className="mt-5"><div className="font-mono text-[7px] tracking-[0.16em] text-[var(--text-muted)]">LEAD GENERATION</div><h1 className="mt-1 text-3xl font-semibold tracking-[-0.04em]">Lead Finder</h1><p className="mt-4 max-w-2xl text-[10px] leading-5 text-[var(--text-secondary)]">Targeted discovery → research → scoring → requirement matching → personalized drafts.</p></div></section><LeadFinderWorkspace /></main></DashboardLayout>;
+  }
+
+  if (slug === 'lead-inbox' || slug === 'leads') {
+    return <DashboardLayout><main className="space-y-5"><section className="nexor-fade nexor-panel p-7"><Link href="/dashboard" className="font-mono text-[7px] tracking-[0.16em] text-[var(--text-muted)]">← COMMAND CENTER</Link><div className="mt-5"><div className="font-mono text-[7px] tracking-[0.16em] text-[var(--text-muted)]">SALES & CRM</div><h1 className="mt-1 text-3xl font-semibold tracking-[-0.04em]">{slug === 'lead-inbox' ? 'Lead Inbox' : 'Leads'}</h1><p className="mt-4 max-w-2xl text-[10px] leading-5 text-[var(--text-secondary)]">Live CRM records, qualification scores and personalized outreach approval queue.</p></div><div className="mt-5 inline-flex rounded-full border border-emerald-500/15 bg-emerald-500/[0.04] px-3 py-1.5 font-mono text-[7px] tracking-[0.14em] text-emerald-500">LIVE DATABASE</div></section><LeadPipelineWorkspace /></main></DashboardLayout>;
   }
 
   if (slug === 'content-calendar') {
