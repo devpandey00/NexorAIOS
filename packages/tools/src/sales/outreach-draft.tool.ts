@@ -1,5 +1,7 @@
 import type { Tool, ToolInput, ToolOutput } from '../types/tool.js';
 
+type ApiData = { error?: string; message?: string } & Record<string, unknown>;
+
 export const outreachDraftTool: Tool = {
   id: 'outreach_draft',
   name: 'Outreach Draft',
@@ -15,7 +17,7 @@ export const outreachDraftTool: Tool = {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ leadId, channel, context: typeof input.context === 'string' ? input.context : '' }),
     });
-    const data = await response.json().catch(() => ({}));
-    return response.ok ? { success: true, data } : { success: false, error: data?.error ?? `Draft creation failed (${response.status})` };
+    const data = (await response.json().catch(() => ({}))) as ApiData;
+    return response.ok ? { success: true, data } : { success: false, error: data.error ?? data.message ?? `Draft creation failed (${response.status})` };
   },
 };
