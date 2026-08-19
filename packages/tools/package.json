@@ -16,6 +16,9 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "@nexor/search": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "^22",
     "typescript": "^5"
