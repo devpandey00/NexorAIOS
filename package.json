@@ -27,7 +27,6 @@
     "docker:reset": "docker compose -f docker/docker-compose.yml down -v && docker compose -f docker/docker-compose.yml up -d",
     "prepare": "husky"
   },
-  "dependencies": { "next": "16.2.12" },
   "devDependencies": {
     "@commitlint/cli": "^19.6.1",
     "@commitlint/config-conventional": "^19.6.0",

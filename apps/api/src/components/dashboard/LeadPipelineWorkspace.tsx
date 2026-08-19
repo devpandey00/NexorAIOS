@@ -31,6 +31,8 @@ export default function LeadPipelineWorkspace() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
+  const [autopilotBusy, setAutopilotBusy] = useState(false);
+  const [autopilotResult, setAutopilotResult] = useState('AUTOPILOT scheduled every 2 hours');
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -51,6 +53,24 @@ export default function LeadPipelineWorkspace() {
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => { const timer = setInterval(() => void refresh(), 15000); return () => clearInterval(timer); }, [refresh]);
+
+  async function runAutopilotNow() {
+    setAutopilotBusy(true);
+    setError('');
+    try {
+      const response = await fetch('/api/cron/autopilot', { cache: 'no-store' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.success) throw new Error(data.error ?? 'Autopilot could not start');
+      const result = data.leadAutomation;
+      setAutopilotResult(`Processed ${result?.processed ?? 0} · researched ${result?.researched ?? 0} · verified WA ${result?.verified ?? 0} · drafted ${result?.drafted ?? 0} · sent ${result?.sent ?? 0}`);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setAutopilotBusy(false);
+    }
+  }
 
   async function decide(id: string, action: 'approve' | 'reject') {
     setBusy(id);
@@ -78,24 +98,23 @@ export default function LeadPipelineWorkspace() {
         <Metric label="HIGH SCORE" value={leads.filter((lead) => (lead.auditScore ?? 0) >= 70).length} />
       </div>
 
+      <div className="nexor-panel flex flex-col justify-between gap-4 p-4 md:flex-row md:items-center">
+        <div><div className="text-[10px] font-semibold text-[var(--text)]">Nexor Sales Autopilot</div><div className="mt-1 text-[8px] text-[var(--text-muted)]">{autopilotResult}</div></div>
+        <button onClick={() => void runAutopilotNow()} disabled={autopilotBusy} className="rounded-xl bg-[var(--accent)] px-4 py-2.5 text-[8px] font-bold tracking-[0.08em] text-black disabled:opacity-50">{autopilotBusy ? 'RUNNING RESEARCH…' : 'RUN AUTOPILOT NOW'}</button>
+      </div>
+
       {error && <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4 text-[9px] text-red-500">{error}</div>}
 
       <div className="nexor-panel overflow-hidden">
         <div className="flex items-center justify-between border-b border-[var(--border)] p-5">
-          <div><div className="text-[11px] font-semibold text-[var(--text)]">Live Lead Pipeline</div><div className="mt-1 text-[8px] text-[var(--text-muted)]">Real database records created by discovery and sales workflows.</div></div>
+          <div><div className="text-[11px] font-semibold text-[var(--text)]">Live Lead Pipeline</div><div className="mt-1 text-[8px] text-[var(--text-muted)]">Research → qualify → personalised pitch → WhatsApp.</div></div>
           <button onClick={() => void refresh()} disabled={loading} className="rounded-lg border border-[var(--border)] px-3 py-2 text-[8px] font-semibold text-[var(--text)]">{loading ? 'Refreshing…' : 'Refresh'}</button>
         </div>
         <div className="divide-y divide-[var(--border)]">
           {!loading && leads.length === 0 && <div className="p-8 text-center text-[9px] text-[var(--text-muted)]">No leads in the database yet. Run Lead Finder or Sales Machine first.</div>}
           {leads.map((lead) => (
             <div key={lead.id} className="grid gap-3 p-5 lg:grid-cols-[1.4fr_.6fr_.7fr]">
-              <div>
-                <div className="text-[11px] font-semibold text-[var(--text)]">{lead.businessName}</div>
-                <div className="mt-1 text-[8px] text-[var(--text-muted)]">{lead.niche} · {lead.country}</div>
-                <div className="mt-2 flex flex-wrap gap-2 text-[8px] text-[var(--text-secondary)]">
-                  {lead.website && <span>Web ✓</span>}{lead.email && <span>Email ✓</span>}{lead.whatsapp && <span>WhatsApp ✓</span>}{lead.instagram && <span>Instagram ✓</span>}{lead.linkedin && <span>LinkedIn ✓</span>}
-                </div>
-              </div>
+              <div><div className="text-[11px] font-semibold text-[var(--text)]">{lead.businessName}</div><div className="mt-1 text-[8px] text-[var(--text-muted)]">{lead.niche} · {lead.country}</div><div className="mt-2 flex flex-wrap gap-2 text-[8px] text-[var(--text-secondary)]">{lead.website && <span>Web ✓</span>}{lead.email && <span>Email ✓</span>}{lead.whatsapp && <span>WhatsApp ✓</span>}{lead.instagram && <span>Instagram ✓</span>}{lead.linkedin && <span>LinkedIn ✓</span>}</div></div>
               <div><div className="font-mono text-[7px] text-[var(--text-muted)]">SCORE</div><div className="mt-1 text-xl font-semibold text-[var(--text)]">{lead.auditScore ?? '—'}<span className="text-[8px] text-[var(--text-muted)]">/100</span></div></div>
               <div><div className="font-mono text-[7px] text-[var(--text-muted)]">STATUS</div><div className="mt-1 inline-flex rounded-full border border-[var(--border)] px-2 py-1 text-[7px] font-semibold text-[var(--text)]">{lead.status}</div></div>
             </div>
@@ -104,17 +123,11 @@ export default function LeadPipelineWorkspace() {
       </div>
 
       <div className="nexor-panel overflow-hidden">
-        <div className="border-b border-[var(--border)] p-5"><div className="text-[11px] font-semibold text-[var(--text)]">Outreach Approval Queue</div><div className="mt-1 text-[8px] text-[var(--text-muted)]">Drafts are never sent automatically. Approve them explicitly before queueing.</div></div>
+        <div className="border-b border-[var(--border)] p-5"><div className="text-[11px] font-semibold text-[var(--text)]">Outreach Queue</div><div className="mt-1 text-[8px] text-[var(--text-muted)]">Verified WhatsApp leads can be auto-sent when AUTOPILOT_AUTO_SEND_WHATSAPP=true; otherwise they stay here for approval.</div></div>
         <div className="divide-y divide-[var(--border)]">
-          {!loading && drafts.length === 0 && <div className="p-8 text-center text-[9px] text-[var(--text-muted)]">No outreach drafts waiting for approval.</div>}
+          {!loading && drafts.length === 0 && <div className="p-8 text-center text-[9px] text-[var(--text-muted)]">No outreach drafts waiting.</div>}
           {drafts.map((draft) => (
-            <div key={draft.id} className="p-5">
-              <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
-                <div><div className="text-[10px] font-semibold text-[var(--text)]">{draft.lead.businessName}</div><div className="mt-1 font-mono text-[7px] tracking-[0.12em] text-[var(--accent)]">{draft.channel} · {draft.status}</div></div>
-                <div className="flex gap-2"><button disabled={busy === draft.id} onClick={() => void decide(draft.id, 'reject')} className="rounded-lg border border-red-500/20 px-3 py-2 text-[8px] text-red-500">Reject</button><button disabled={busy === draft.id} onClick={() => void decide(draft.id, 'approve')} className="rounded-lg bg-[var(--accent)] px-3 py-2 text-[8px] font-bold text-black">{busy === draft.id ? 'Working…' : 'Approve'}</button></div>
-              </div>
-              <div className="mt-3 whitespace-pre-wrap rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-4 text-[9px] leading-5 text-[var(--text-secondary)]">{draft.message}</div>
-            </div>
+            <div key={draft.id} className="p-5"><div className="flex flex-col justify-between gap-3 md:flex-row md:items-start"><div><div className="text-[10px] font-semibold text-[var(--text)]">{draft.lead.businessName}</div><div className="mt-1 font-mono text-[7px] tracking-[0.12em] text-[var(--accent)]">{draft.channel} · {draft.status}</div></div><div className="flex gap-2"><button disabled={busy === draft.id} onClick={() => void decide(draft.id, 'reject')} className="rounded-lg border border-red-500/20 px-3 py-2 text-[8px] text-red-500">Reject</button><button disabled={busy === draft.id} onClick={() => void decide(draft.id, 'approve')} className="rounded-lg bg-[var(--accent)] px-3 py-2 text-[8px] font-bold text-black">{busy === draft.id ? 'Working…' : 'Approve'}</button></div></div><div className="mt-3 whitespace-pre-wrap rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-4 text-[9px] leading-5 text-[var(--text-secondary)]">{draft.message}</div></div>
           ))}
         </div>
       </div>
