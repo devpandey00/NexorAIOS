@@ -39,14 +39,11 @@ export class MemoryService {
          "confidence" = EXCLUDED."confidence",
          "updated_at" = NOW()
        RETURNING "id","key","kind","value","source","confidence","last_used_at" AS "lastUsedAt","created_at" AS "createdAt","updated_at" AS "updatedAt"`,
-      id,
-      input.key,
-      input.kind,
-      JSON.stringify(input.value),
-      input.source ?? null,
-      confidence,
+      id, input.key, input.kind, JSON.stringify(input.value), input.source ?? null, confidence,
     );
-    return rows[0];
+    const record = rows[0];
+    if (!record) throw new Error('Failed to upsert memory item');
+    return record;
   }
 
   async recall(kind?: MemoryKind, limit = 20): Promise<MemoryRecord[]> {
@@ -55,16 +52,13 @@ export class MemoryService {
       return this.db.$queryRawUnsafe<MemoryRecord[]>(
         `SELECT "id","key","kind","value","source","confidence","last_used_at" AS "lastUsedAt","created_at" AS "createdAt","updated_at" AS "updatedAt"
          FROM "public"."memory_items" WHERE "kind" = $1
-         ORDER BY "confidence" DESC, "updated_at" DESC LIMIT $2`,
-        kind,
-        safeLimit,
+         ORDER BY "confidence" DESC, "updated_at" DESC LIMIT $2`, kind, safeLimit,
       );
     }
     return this.db.$queryRawUnsafe<MemoryRecord[]>(
       `SELECT "id","key","kind","value","source","confidence","last_used_at" AS "lastUsedAt","created_at" AS "createdAt","updated_at" AS "updatedAt"
        FROM "public"."memory_items"
-       ORDER BY "confidence" DESC, "updated_at" DESC LIMIT $1`,
-      safeLimit,
+       ORDER BY "confidence" DESC, "updated_at" DESC LIMIT $1`, safeLimit,
     );
   }
 
@@ -72,21 +66,18 @@ export class MemoryService {
     const rows = kind
       ? await this.db.$queryRawUnsafe<MemoryRecord[]>(
           `SELECT "id","key","kind","value","source","confidence","last_used_at" AS "lastUsedAt","created_at" AS "createdAt","updated_at" AS "updatedAt"
-           FROM "public"."memory_items" WHERE "key" = $1 AND "kind" = $2 LIMIT 1`,
-          key,
-          kind,
+           FROM "public"."memory_items" WHERE "key" = $1 AND "kind" = $2 LIMIT 1`, key, kind,
         )
       : await this.db.$queryRawUnsafe<MemoryRecord[]>(
           `SELECT "id","key","kind","value","source","confidence","last_used_at" AS "lastUsedAt","created_at" AS "createdAt","updated_at" AS "updatedAt"
-           FROM "public"."memory_items" WHERE "key" = $1 ORDER BY "confidence" DESC LIMIT 1`,
-          key,
+           FROM "public"."memory_items" WHERE "key" = $1 ORDER BY "confidence" DESC LIMIT 1`, key,
         );
-    if (!rows[0]) return null;
+    const record = rows[0];
+    if (!record) return null;
     await this.db.$executeRawUnsafe(
-      `UPDATE "public"."memory_items" SET "last_used_at" = NOW() WHERE "id" = $1::uuid`,
-      rows[0].id,
+      `UPDATE "public"."memory_items" SET "last_used_at" = NOW() WHERE "id" = $1::uuid`, record.id,
     );
-    return rows[0];
+    return record;
   }
 
   async buildContext(limit = 20): Promise<Record<string, unknown>> {
