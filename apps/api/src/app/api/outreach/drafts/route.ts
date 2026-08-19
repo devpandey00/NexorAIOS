@@ -9,8 +9,7 @@ function authorized(req: NextRequest) {
 }
 
 function normalizeChannel(value: unknown): OutreachChannel | null {
-  if (value === 'WHATSAPP') return OutreachChannel.WHATSAPP;
-  if (value === 'EMAIL') return OutreachChannel.EMAIL;
+  if (Object.values(OutreachChannel).includes(value as OutreachChannel)) return value as OutreachChannel;
   return null;
 }
 
@@ -19,17 +18,15 @@ function buildMessage(channel: OutreachChannel, lead: { businessName: string; ow
   if (channel === OutreachChannel.EMAIL) {
     return `Subject: A quick growth observation for ${lead.businessName}\n\nHi ${name},\n\nI had a look at ${lead.businessName} and noticed a few opportunities around online lead generation. ${context}\n\nI can share the specific opportunities and a practical action plan if useful.\n\nRegards,\nNexor Media`;
   }
-  return `Hi ${name}, I was looking at ${lead.businessName} and noticed a few opportunities to improve online lead generation. ${context} I can send you the specific ideas if you'd like. — Nexor Media`;
+  if (channel === OutreachChannel.WHATSAPP) {
+    return `Hi ${name}, I was looking at ${lead.businessName} and noticed a few opportunities to improve online lead generation. ${context} I can send you the specific ideas if you'd like. — Nexor Media`;
+  }
+  return `Hi ${name}, I came across ${lead.businessName} and noticed one thing worth improving in your online presence. ${context} Happy to send the specific observation if useful. — Nexor Media`;
 }
 
 export async function GET(req: NextRequest) {
   if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
-  const drafts = await prisma.outreach.findMany({
-    where: { status: { in: [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED] } },
-    include: { lead: true, campaign: true },
-    orderBy: { createdAt: 'asc' },
-    take: 200,
-  });
+  const drafts = await prisma.outreach.findMany({ where: { status: { in: [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED] } }, include: { lead: true, campaign: true }, orderBy: { createdAt: 'asc' }, take: 200 });
   return NextResponse.json({ success: true, count: drafts.length, drafts });
 }
 
@@ -40,17 +37,15 @@ export async function POST(req: NextRequest) {
     const leadId = typeof body.leadId === 'string' ? body.leadId : '';
     const channel = normalizeChannel(body.channel);
     const context = typeof body.context === 'string' ? body.context.trim() : '';
-    if (!leadId || !channel) return NextResponse.json({ success: false, error: 'leadId and channel (WHATSAPP or EMAIL) are required' }, { status: 400 });
+    const supported = [OutreachChannel.WHATSAPP, OutreachChannel.EMAIL, OutreachChannel.INSTAGRAM, OutreachChannel.FACEBOOK, OutreachChannel.LINKEDIN];
+    if (!leadId || !channel || !supported.includes(channel)) return NextResponse.json({ success: false, error: 'leadId and a supported outreach channel are required' }, { status: 400 });
 
     const lead = await prisma.lead.findUnique({ where: { id: leadId } });
     if (!lead) return NextResponse.json({ success: false, error: 'Lead not found' }, { status: 404 });
     if (channel === OutreachChannel.WHATSAPP && !lead.whatsapp) return NextResponse.json({ success: false, error: 'Lead has no WhatsApp number' }, { status: 422 });
     if (channel === OutreachChannel.EMAIL && !lead.email) return NextResponse.json({ success: false, error: 'Lead has no email address' }, { status: 422 });
 
-    const existing = await prisma.outreach.findFirst({
-      where: { leadId, channel, status: { in: [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED, OutreachStatus.APPROVED, OutreachStatus.SCHEDULED] } },
-      orderBy: { createdAt: 'desc' },
-    });
+    const existing = await prisma.outreach.findFirst({ where: { leadId, channel, status: { in: [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED, OutreachStatus.APPROVED, OutreachStatus.SCHEDULED] } }, orderBy: { createdAt: 'desc' } });
     if (existing) return NextResponse.json({ success: true, duplicate: true, outreach: existing });
 
     const outreach = await prisma.$transaction(async (tx) => {
