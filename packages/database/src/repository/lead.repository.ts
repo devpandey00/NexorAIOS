@@ -1,6 +1,6 @@
 import { LeadStatus } from '@prisma/client';
 import type { Lead, Prisma } from '@prisma/client';
-import { BaseRepository, type PaginatedResult, type PaginationParams } from './base.repository.js';
+import { BaseRepository, type PaginationParams } from './base.repository.js';
 
 export interface LeadFilters extends PaginationParams { search?: string; status?: LeadStatus; country?: string; niche?: string; }
 
@@ -21,7 +21,7 @@ export class LeadRepository extends BaseRepository {
     if (filters.status) where.status = filters.status;
     if (filters.country) where.country = filters.country;
     if (filters.niche) where.niche = filters.niche;
-    if (filters.search) where.OR = [{ businessName: { contains: filters.search, mode: 'insensitive' } }, { ownerName: { contains: filters.search, mode: 'insensitive' } }, { email: { contains: filters.search, mode: 'insensitive' } }];
+    if (filters.search) where.OR = [{ businessName: { contains: filters.search, mode: 'insensitive' } }, { ownerName: { contains: filters.search, mode: 'insensitive' } }, { email: { contains: filters.email, mode: 'insensitive' } }];
     const [data, total] = await this.readClient.$transaction([
       this.readClient.lead.findMany({ where, skip, take, orderBy: { createdAt: 'desc' }, include: { socialProfiles: true } }),
       this.readClient.lead.count({ where }),
