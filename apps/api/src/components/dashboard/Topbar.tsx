@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import VoiceAssistant from './VoiceAssistant';
 
 export default function Topbar() {
   const [dark, setDark] = useState(true);
@@ -43,6 +44,8 @@ export default function Topbar() {
       </div>
 
       <div className="flex items-center gap-2">
+        <VoiceAssistant compact />
+
         <div className="hidden items-center gap-2 rounded-full border border-emerald-500/15 bg-emerald-500/[0.04] px-3 py-1.5 sm:flex">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
 
