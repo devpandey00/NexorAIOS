@@ -123,6 +123,18 @@ importers:
 
   apps/web:
     dependencies:
+      '@nexor/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@nexor/database':
+        specifier: workspace:*
+        version: link:../../packages/database
+      '@nexor/research':
+        specifier: workspace:*
+        version: link:../../packages/research
+      '@nexor/search':
+        specifier: workspace:*
+        version: link:../../packages/search
       next:
         specifier: 16.2.12
         version: 16.2.12(@babel/core@7.29.7)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -166,6 +178,9 @@ importers:
       '@nexor/research':
         specifier: workspace:*
         version: link:../research
+      '@nexor/tools':
+        specifier: workspace:*
+        version: link:../tools
       openai:
         specifier: ^7.4.0
         version: 7.4.0(zod@4.4.3)

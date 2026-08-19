@@ -7,33 +7,36 @@ export interface NexorReportSummary {
   campaigns: number;
   runningCampaigns: number;
   outreachDrafts: number;
+  approvalRequired: number;
   scheduledOutreach: number;
   sentOutreach: number;
   replies: number;
   meetings: number;
   won: number;
+  failedOutreach: number;
   socialDrafts: number;
   scheduledSocial: number;
   publishedSocial: number;
   opportunities: number;
 }
 
-const prisma = getDatabaseClients().write;
-
 export async function getReportSummary(periodHours = 24): Promise<NexorReportSummary> {
+  const prisma = getDatabaseClients().write;
   const since = new Date(Date.now() - periodHours * 60 * 60 * 1000);
 
-  const [leads, qualifiedLeads, campaigns, runningCampaigns, outreachDrafts, scheduledOutreach, sentOutreach, replies, meetings, won, socialDrafts, scheduledSocial, publishedSocial, opportunities] = await Promise.all([
+  const [leads, qualifiedLeads, campaigns, runningCampaigns, outreachDrafts, approvalRequired, scheduledOutreach, sentOutreach, replies, meetings, won, failedOutreach, socialDrafts, scheduledSocial, publishedSocial, opportunities] = await Promise.all([
     prisma.lead.count({ where: { createdAt: { gte: since } } }),
     prisma.lead.count({ where: { status: 'QUALIFIED', updatedAt: { gte: since } } }),
     prisma.campaign.count({ where: { createdAt: { gte: since } } }),
     prisma.campaign.count({ where: { status: 'RUNNING' } }),
     prisma.outreach.count({ where: { status: 'DRAFT', createdAt: { gte: since } } }),
+    prisma.outreach.count({ where: { status: 'APPROVAL_REQUIRED', createdAt: { gte: since } } }),
     prisma.outreach.count({ where: { status: 'SCHEDULED' } }),
     prisma.outreach.count({ where: { status: 'SENT', updatedAt: { gte: since } } }),
     prisma.lead.count({ where: { status: 'REPLIED', updatedAt: { gte: since } } }),
     prisma.lead.count({ where: { status: 'MEETING_BOOKED', updatedAt: { gte: since } } }),
     prisma.lead.count({ where: { status: 'WON', updatedAt: { gte: since } } }),
+    prisma.outreach.count({ where: { status: 'FAILED', updatedAt: { gte: since } } }),
     prisma.$queryRaw<Array<{ count: bigint }>>`SELECT COUNT(*)::bigint AS count FROM public.content_posts WHERE status = 'DRAFT' AND created_at >= ${since}`,
     prisma.$queryRaw<Array<{ count: bigint }>>`SELECT COUNT(*)::bigint AS count FROM public.content_posts WHERE status = 'SCHEDULED'`,
     prisma.$queryRaw<Array<{ count: bigint }>>`SELECT COUNT(*)::bigint AS count FROM public.content_posts WHERE status = 'PUBLISHED' AND updated_at >= ${since}`,
@@ -49,11 +52,13 @@ export async function getReportSummary(periodHours = 24): Promise<NexorReportSum
     campaigns,
     runningCampaigns,
     outreachDrafts,
+    approvalRequired,
     scheduledOutreach,
     sentOutreach,
     replies,
     meetings,
     won,
+    failedOutreach,
     socialDrafts: toNumber(socialDrafts[0]?.count ?? 0n),
     scheduledSocial: toNumber(scheduledSocial[0]?.count ?? 0n),
     publishedSocial: toNumber(publishedSocial[0]?.count ?? 0n),
@@ -71,7 +76,10 @@ export function renderReportHtml(summary: NexorReportSummary) {
     ['Qualified', summary.qualifiedLeads],
     ['Campaigns', summary.campaigns],
     ['Drafts', summary.outreachDrafts],
+    ['Approval required', summary.approvalRequired],
+    ['Scheduled', summary.scheduledOutreach],
     ['Sent', summary.sentOutreach],
+    ['Failed', summary.failedOutreach],
     ['Replies', summary.replies],
     ['Meetings', summary.meetings],
     ['Won', summary.won],
@@ -96,12 +104,8 @@ export async function sendNexorReportEmail(periodHours = 24) {
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      from,
-      to: [to],
-      subject: `NexorAIOS report · ${summary.leads} leads · ${summary.qualifiedLeads} qualified · ${summary.won} won`,
-      html: renderReportHtml(summary),
-    }),
+    body: JSON.stringify({ from, to: [to], subject: `NexorAIOS report · ${summary.leads} leads · ${summary.qualifiedLeads} qualified · ${summary.won} won`, html: renderReportHtml(summary) }),
+    signal: AbortSignal.timeout(20_000),
   });
 
   const data = await response.json().catch(() => ({}));

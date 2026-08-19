@@ -9,6 +9,7 @@ const nextConfig: NextConfig = {
     '@nexor/research',
     '@nexor/search',
     '@nexor/shared',
+    '@nexor/tools',
   ],
   serverExternalPackages: ['@prisma/client', 'prisma'],
 };
