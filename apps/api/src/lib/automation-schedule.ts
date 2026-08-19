@@ -9,12 +9,7 @@ export type AutomationScheduleRow = {
   timezone: string | null;
 };
 
-/**
- * Advance a schedule after a run. Uses a conservative parser for the cron
- * expressions Nexor itself creates/needs today: hourly, every N minutes,
- * daily and weekly forms. Unknown expressions are deactivated instead of
- * being retried forever at the same timestamp.
- */
+/** Advance supported recurring schedules after a run. Unknown cron forms are completed. */
 export function nextRunAt(schedule: AutomationScheduleRow, from = new Date()): Date | null {
   if (!schedule.cron) return null;
 
@@ -32,24 +27,20 @@ export function nextRunAt(schedule: AutomationScheduleRow, from = new Date()): D
     return next;
   }
 
-  if (minute === '0' && hour === '* ' .trim() && dayOfMonth === '*' && month === '*' && dayOfWeek === '*') {
+  if (minute === '0' && hour === '*' && dayOfMonth === '*' && month === '*' && dayOfWeek === '*') {
     next.setHours(next.getHours() + 1, 0, 0, 0);
     return next;
   }
 
   if (/^\d+$/.test(minute) && /^\d+$/.test(hour) && dayOfMonth === '*' && month === '*' && dayOfWeek === '*') {
-    const targetHour = Number(hour);
-    const targetMinute = Number(minute);
-    next.setHours(targetHour, targetMinute, 0, 0);
+    next.setHours(Number(hour), Number(minute), 0, 0);
     if (next <= from) next.setDate(next.getDate() + 1);
     return next;
   }
 
   if (/^\d+$/.test(minute) && /^\d+$/.test(hour) && dayOfMonth === '*' && month === '*' && /^\d+$/.test(dayOfWeek)) {
-    const targetHour = Number(hour);
-    const targetMinute = Number(minute);
+    next.setHours(Number(hour), Number(minute), 0, 0);
     const targetDay = Number(dayOfWeek) % 7;
-    next.setHours(targetHour, targetMinute, 0, 0);
     let delta = (targetDay - next.getDay() + 7) % 7;
     if (delta === 0 && next <= from) delta = 7;
     next.setDate(next.getDate() + delta);
@@ -61,6 +52,7 @@ export function nextRunAt(schedule: AutomationScheduleRow, from = new Date()): D
 
 export async function advanceAutomationSchedule(schedule: AutomationScheduleRow): Promise<void> {
   const next = nextRunAt(schedule, new Date());
+
   if (!next) {
     await db.$executeRawUnsafe(
       `UPDATE "public"."automation_schedules"
