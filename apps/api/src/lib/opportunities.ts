@@ -21,7 +21,12 @@ const prisma = getDatabaseClients().write;
 
 const QUERY_TEMPLATES: Record<OpportunityKind, string[]> = {
   JOB: [
-    'digital marketing remote jobs hiring',
+    'site:linkedin.com/jobs digital marketing remote jobs hiring',
+    'site:indeed.com digital marketing remote jobs hiring',
+    'site:naukri.com digital marketing remote jobs hiring',
+    'site:internshala.com digital marketing remote jobs hiring',
+    'site:cutshort.io digital marketing remote jobs hiring',
+    'site:wellfound.com digital marketing remote jobs hiring',
     'performance marketing manager remote jobs hiring',
     'social media manager remote jobs hiring',
     'SEO specialist remote jobs hiring',
@@ -60,14 +65,18 @@ export async function discoverOpportunities(kind: OpportunityKind, location?: st
     seen.add(url);
 
     const title = String(result.name ?? '').trim() || url;
+    const source = kind === 'JOB'
+      ? (url.includes('linkedin.com') ? 'LinkedIn' : url.includes('indeed.com') ? 'Indeed' : url.includes('naukri.com') ? 'Naukri' : url.includes('internshala.com') ? 'Internshala' : url.includes('cutshort.io') ? 'Cutshort' : url.includes('wellfound.com') ? 'Wellfound' : 'web-search')
+      : 'web-search';
+
     const inserted = await prisma.$queryRaw<Opportunity[]>`
       INSERT INTO public.opportunities
         (kind, title, organization, url, source, location, notes)
       VALUES
-        (${kind}, ${title}, ${title}, ${url}, 'web-search', ${location ?? null}, ${`Discovered by Nexor ${kind.toLowerCase()} autopilot.`})
-      ON CONFLICT (kind, url) DO UPDATE SET updated_at = now()
+        (${kind}, ${title}, ${title}, ${url}, ${source}, ${location ?? null}, ${kind === 'JOB' ? `Discovered by Nexor job-search autopilot. Application requires an authenticated portal session.` : `Discovered by Nexor ${kind.toLowerCase()} autopilot.`})
+      ON CONFLICT (kind, url) DO UPDATE SET updated_at = now(), source = EXCLUDED.source
       RETURNING
-        id, kind, title, organization, url, source, location, contact, notes, status,
+        id, kind, title, organization, url, source, location, notes, contact, status,
         created_at AS "createdAt"
     `;
 
