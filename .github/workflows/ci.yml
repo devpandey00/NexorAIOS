@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, restore-kal-dashboard, claude/nexoraios-production-workflow]
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, restore-kal-dashboard]
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
