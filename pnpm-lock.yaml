@@ -169,6 +169,9 @@ importers:
       '@nexor/research':
         specifier: workspace:*
         version: link:../research
+      '@nexor/tools':
+        specifier: workspace:*
+        version: link:../tools
       openai:
         specifier: ^7.4.0
         version: 7.4.0(zod@4.4.3)
