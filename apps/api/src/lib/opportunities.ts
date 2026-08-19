@@ -14,6 +14,10 @@ export interface Opportunity {
   contact: string | null;
   notes: string | null;
   status: string;
+  applicationUrl?: string | null;
+  applicationStatus?: string;
+  appliedAt?: string | null;
+  applicationError?: string | null;
   createdAt: string;
 }
 
@@ -45,9 +49,20 @@ const QUERY_TEMPLATES: Record<OpportunityKind, string[]> = {
   ],
 };
 
+function sourceFor(kind: OpportunityKind, url: string) {
+  if (kind !== 'JOB') return 'web-search';
+  if (url.includes('linkedin.com')) return 'LinkedIn';
+  if (url.includes('indeed.com')) return 'Indeed';
+  if (url.includes('naukri.com')) return 'Naukri';
+  if (url.includes('internshala.com')) return 'Internshala';
+  if (url.includes('cutshort.io')) return 'Cutshort';
+  if (url.includes('wellfound.com')) return 'Wellfound';
+  return 'web-search';
+}
+
 export async function discoverOpportunities(kind: OpportunityKind, location?: string, limit = 10) {
   const templates = QUERY_TEMPLATES[kind];
-  const queryResults = [] as Array<{ name: string; website?: string }>;
+  const queryResults: Array<{ name: string; website?: string }> = [];
 
   for (const template of templates) {
     const query = location ? `${template} ${location}` : template;
@@ -65,23 +80,29 @@ export async function discoverOpportunities(kind: OpportunityKind, location?: st
     seen.add(url);
 
     const title = String(result.name ?? '').trim() || url;
-    const source = kind === 'JOB'
-      ? (url.includes('linkedin.com') ? 'LinkedIn' : url.includes('indeed.com') ? 'Indeed' : url.includes('naukri.com') ? 'Naukri' : url.includes('internshala.com') ? 'Internshala' : url.includes('cutshort.io') ? 'Cutshort' : url.includes('wellfound.com') ? 'Wellfound' : 'web-search')
-      : 'web-search';
-
+    const source = sourceFor(kind, url);
     const inserted = await prisma.$queryRaw<Opportunity[]>`
       INSERT INTO public.opportunities
-        (kind, title, organization, url, source, location, notes)
+        (kind, title, organization, url, source, location, notes, application_url)
       VALUES
-        (${kind}, ${title}, ${title}, ${url}, ${source}, ${location ?? null}, ${kind === 'JOB' ? `Discovered by Nexor job-search autopilot. Application requires an authenticated portal session.` : `Discovered by Nexor ${kind.toLowerCase()} autopilot.`})
-      ON CONFLICT (kind, url) DO UPDATE SET updated_at = now(), source = EXCLUDED.source
+        (${kind}, ${title}, ${title}, ${url}, ${source}, ${location ?? null},
+         ${kind === 'JOB' ? 'Discovered by Nexor job-search autopilot. Application is queued for an authenticated portal session.' : `Discovered by Nexor ${kind.toLowerCase()} autopilot.`},
+         ${kind === 'JOB' ? url : null})
+      ON CONFLICT (kind, url) DO UPDATE SET
+        updated_at = now(), source = EXCLUDED.source, application_url = COALESCE(public.opportunities.application_url, EXCLUDED.application_url)
       RETURNING
         id, kind, title, organization, url, source, location, notes, contact, status,
+        application_url AS "applicationUrl", application_status AS "applicationStatus",
+        applied_at AS "appliedAt", application_error AS "applicationError",
         created_at AS "createdAt"
     `;
 
     const row = inserted[0];
-    if (row) opportunities.push({ ...row, createdAt: new Date(row.createdAt).toISOString() });
+    if (row) opportunities.push({
+      ...row,
+      createdAt: new Date(row.createdAt).toISOString(),
+      appliedAt: row.appliedAt ? new Date(row.appliedAt).toISOString() : null,
+    });
     if (opportunities.length >= limit) break;
   }
 
@@ -92,6 +113,8 @@ export async function listOpportunities(input?: { kind?: OpportunityKind; status
   const limit = Math.min(Math.max(input?.limit ?? 100, 1), 200);
   return prisma.$queryRaw<Opportunity[]>`
     SELECT id, kind, title, organization, url, source, location, contact, notes, status,
+           application_url AS "applicationUrl", application_status AS "applicationStatus",
+           applied_at AS "appliedAt", application_error AS "applicationError",
            created_at AS "createdAt"
     FROM public.opportunities
     WHERE (${input?.kind ?? null}::text IS NULL OR kind = ${input?.kind ?? null})
