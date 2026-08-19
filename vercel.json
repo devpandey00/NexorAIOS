@@ -4,6 +4,9 @@
   "installCommand": "pnpm install --no-frozen-lockfile",
   "buildCommand": "pnpm --filter @nexor/search build && pnpm --filter @nexor/api... build",
   "outputDirectory": "apps/api/.next",
+  "git": {
+    "deploymentEnabled": false
+  },
   "crons": [
     { "path": "/api/cron/autopilot", "schedule": "0 3 * * *" },
     { "path": "/api/cron/reports/email", "schedule": "0 13 * * *" }
