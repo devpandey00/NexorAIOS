@@ -51,16 +51,13 @@ async function processExistingLeadBatch() {
       if (whatsappVerified) verified++;
       if (score >= 70) qualified++;
 
-      await prisma.lead.update({
-        where: { id: lead.id },
-        data: { auditScore: score, status: score >= 70 ? LeadStatus.QUALIFIED : LeadStatus.RESEARCHED, notes: JSON.stringify({ autopilot: true, whatsappVerified, verifiedAt: new Date().toISOString(), research, intelligence }) },
-      });
-
+      await prisma.lead.update({ where: { id: lead.id }, data: { auditScore: score, status: score >= 70 ? LeadStatus.QUALIFIED : LeadStatus.RESEARCHED, notes: JSON.stringify({ autopilot: true, whatsappVerified, verifiedAt: new Date().toISOString(), research, intelligence }) } });
       if (!whatsappVerified) continue;
+
       const existing = await prisma.outreach.findFirst({ where: { leadId: lead.id, channel: OutreachChannel.WHATSAPP, status: { notIn: [OutreachStatus.CANCELLED, OutreachStatus.FAILED] } } });
       if (existing) continue;
 
-      const autoSendEnabled = process.env.AUTOPILOT_AUTO_SEND_WHATSAPP === 'true' && Boolean(process.env.WHATSAPP_ACCESS_TOKEN) && Boolean(process.env.WHATSAPP_PHONE_NUMBER_ID);
+      const autoSendEnabled = process.env.AUTOPILOT_AUTO_SEND_WHATSAPP === 'true' && Boolean(process.env.WHATSAPP_ACCESS_TOKEN) && Boolean(process.env.WHATSAPP_PHONE_NUMBER_ID) && Boolean(process.env.WHATSAPP_TEMPLATE_NAME);
       const outreach = await prisma.outreach.create({ data: { leadId: lead.id, channel: OutreachChannel.WHATSAPP, status: autoSendEnabled ? OutreachStatus.APPROVED : OutreachStatus.APPROVAL_REQUIRED, message } });
       drafted++;
       if (autoSendEnabled) {
