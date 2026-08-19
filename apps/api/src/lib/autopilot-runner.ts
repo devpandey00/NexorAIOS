@@ -57,7 +57,7 @@ async function processExistingLeadBatch() {
       const existing = await prisma.outreach.findFirst({ where: { leadId: lead.id, channel: OutreachChannel.WHATSAPP, status: { notIn: [OutreachStatus.CANCELLED, OutreachStatus.FAILED] } } });
       if (existing) continue;
 
-      const autoSendEnabled = process.env.AUTOPILOT_AUTO_SEND_WHATSAPP === 'true' && Boolean(process.env.WHATSAPP_ACCESS_TOKEN) && Boolean(process.env.WHATSAPP_PHONE_NUMBER_ID) && Boolean(process.env.WHATSAPP_TEMPLATE_NAME);
+      const autoSendEnabled = process.env.AUTOPILOT_AUTO_SEND_WHATSAPP !== 'false' && Boolean(process.env.WHATSAPP_ACCESS_TOKEN) && Boolean(process.env.WHATSAPP_PHONE_NUMBER_ID) && Boolean(process.env.WHATSAPP_TEMPLATE_NAME);
       const outreach = await prisma.outreach.create({ data: { leadId: lead.id, channel: OutreachChannel.WHATSAPP, status: autoSendEnabled ? OutreachStatus.APPROVED : OutreachStatus.APPROVAL_REQUIRED, message } });
       drafted++;
       if (autoSendEnabled) {
