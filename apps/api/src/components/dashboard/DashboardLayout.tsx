@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 
+import NexorVoiceAssistant from './NexorVoiceAssistant';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 import MobileNav from './MobileNav';
@@ -26,6 +27,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       </div>
 
       <MobileNav />
+      <NexorVoiceAssistant />
     </div>
   );
 }
