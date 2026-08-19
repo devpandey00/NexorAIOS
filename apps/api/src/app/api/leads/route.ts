@@ -3,9 +3,17 @@ import { leadService } from '@nexor/core';
 import { LeadStatus } from '@nexor/database';
 import { CreateLeadSchema } from '@/lib/validators/lead';
 
+function isValidOperationalLead(lead: { businessName: string; status: LeadStatus }) {
+  if (lead.status === LeadStatus.LOST) return false;
+  return ![/\bbest\b/i,/\btop\b/i,/\blist\b/i,/\bdirectory\b/i,/\bguide\b/i,/\broundup\b/i,/\barticles?\b/i,/\bhow to\b/i,/\bstrategy\b/i,/\bpatients?\b/i,/\bget \d+x\b/i].some((pattern) => pattern.test(lead.businessName));
+}
+
 export async function GET() {
-  try { return NextResponse.json(await leadService.findAll()); }
-  catch (error) { return NextResponse.json({ success: false, message: error instanceof Error ? error.message : String(error) }, { status: 500 }); }
+  try {
+    const result = await leadService.findAll({ page: 1, pageSize: 100 });
+    const data = result.data.filter(isValidOperationalLead);
+    return NextResponse.json({ ...result, data, total: data.length });
+  } catch (error) { return NextResponse.json({ success: false, message: error instanceof Error ? error.message : String(error) }, { status: 500 }); }
 }
 
 export async function POST(request: Request) {
@@ -16,17 +24,12 @@ export async function POST(request: Request) {
     if (exact) return NextResponse.json({ success: true, duplicate: true, lead: exact }, { status: 200 });
     const lead = await leadService.create(body);
     return NextResponse.json({ success: true, duplicate: false, lead }, { status: 201 });
-  } catch (error) {
-    console.error('LEADS API ERROR:', error);
-    return NextResponse.json({ success: false, message: error instanceof Error ? error.message : String(error) }, { status: 400 });
-  }
+  } catch (error) { console.error('LEADS API ERROR:', error); return NextResponse.json({ success: false, message: error instanceof Error ? error.message : String(error) }, { status: 400 }); }
 }
 
 export async function PATCH(request: NextRequest) {
   try {
-    const body = await request.json();
-    const id = typeof body.id === 'string' ? body.id : '';
-    if (!id) return NextResponse.json({ success: false, message: 'id is required' }, { status: 400 });
+    const body = await request.json(); const id = typeof body.id === 'string' ? body.id : ''; if (!id) return NextResponse.json({ success: false, message: 'id is required' }, { status: 400 });
     const status = body.status as LeadStatus | undefined;
     if (status && !Object.values(LeadStatus).includes(status)) return NextResponse.json({ success: false, message: 'Invalid lead status' }, { status: 400 });
     const auditScore = body.auditScore === undefined ? undefined : Number(body.auditScore);
