@@ -1,11 +1,17 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getDatabaseClients } from '@nexor/database';
 import { executeWorkflow, isSupportedWorkflow } from '@nexor/tools';
 import { advanceAutomationSchedule } from '@/lib/automation-schedule';
 
 const db = getDatabaseClients().write;
 
-export async function POST() {
+function authorized(req: NextRequest) {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return process.env.NODE_ENV !== 'production';
+  return req.headers.get('authorization') === `Bearer ${secret}`;
+}
+
+async function runDueAutomations() {
   const claimed = await db.$queryRawUnsafe<Array<{
     id: string;
     schedule_id: string;
@@ -41,44 +47,44 @@ export async function POST() {
 
   for (const run of claimed) {
     try {
-      if (!isSupportedWorkflow(run.workflow)) {
-        throw new Error(`Unsupported workflow: ${run.workflow}`);
-      }
-
+      if (!isSupportedWorkflow(run.workflow)) throw new Error(`Unsupported workflow: ${run.workflow}`);
       const execution = await executeWorkflow(run.workflow, run.input ?? {});
-
-      if (!execution.success) {
-        throw new Error(`Workflow failed at ${execution.failedStep ?? 'unknown step'}`);
-      }
+      if (!execution.success) throw new Error(`Workflow failed at ${execution.failedStep ?? 'unknown step'}`);
 
       await db.$executeRawUnsafe(
-        `UPDATE "public"."automation_runs"
-         SET "status"='COMPLETED',"output"=$1::jsonb,"completed_at"=NOW()
-         WHERE "id"=$2::uuid`,
-        JSON.stringify(execution),
-        run.id,
+        `UPDATE "public"."automation_runs" SET "status"='COMPLETED',"output"=$1::jsonb,"completed_at"=NOW() WHERE "id"=$2::uuid`,
+        JSON.stringify(execution), run.id,
       );
-
       await advanceAutomationSchedule(run);
-
       results.push({ id: run.id, workflow: run.workflow, success: true, execution });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-
       await db.$executeRawUnsafe(
-        `UPDATE "public"."automation_runs"
-         SET "status"='FAILED',"error"=$1,"completed_at"=NOW()
-         WHERE "id"=$2::uuid`,
-        message,
-        run.id,
+        `UPDATE "public"."automation_runs" SET "status"='FAILED',"error"=$1,"completed_at"=NOW() WHERE "id"=$2::uuid`,
+        message, run.id,
       );
-
-      // Advance even after failure so a broken recurring job cannot hot-loop.
       await advanceAutomationSchedule(run).catch(() => undefined);
-
       results.push({ id: run.id, workflow: run.workflow, success: false, error: message });
     }
   }
 
-  return NextResponse.json({ success: true, claimed: claimed.length, results });
+  return { success: true, claimed: claimed.length, results };
+}
+
+export async function GET(req: NextRequest) {
+  if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  try {
+    return NextResponse.json(await runDueAutomations());
+  } catch (error) {
+    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+  }
+}
+
+export async function POST(req: NextRequest) {
+  if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  try {
+    return NextResponse.json(await runDueAutomations());
+  } catch (error) {
+    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+  }
 }
