@@ -5,12 +5,7 @@ import type { WorkflowResult } from '../runtime/workflow-runner.js';
 
 interface ProspectResult { lead: Record<string, unknown>; research: ToolOutput; score: ToolOutput; crm: ToolOutput; outreach?: ToolOutput; }
 function firstString(value: unknown): string | undefined { if (!Array.isArray(value)) return undefined; return value.find((item): item is string => typeof item === 'string' && item.trim().length > 0)?.trim(); }
-function researchPayload(output: ToolOutput): Record<string, unknown> {
-  const data = (output.data ?? {}) as Record<string, unknown>;
-  const result = (data.result ?? {}) as Record<string, unknown>;
-  const research = (result.research ?? {}) as Record<string, unknown>;
-  return research;
-}
+function researchPayload(output: ToolOutput): Record<string, unknown> { const data = (output.data ?? {}) as Record<string, unknown>; const result = (data.result ?? {}) as Record<string, unknown>; return (result.research ?? {}) as Record<string, unknown>; }
 
 export async function runSalesMachineWorkflow(input: ToolInput): Promise<WorkflowResult> {
   const discovery = await toolRegistry.execute('lead_discovery', { query: String(input.query ?? input.command ?? 'qualified digital marketing prospects'), limit: typeof input.limit === 'number' ? input.limit : 25 });
@@ -19,9 +14,8 @@ export async function runSalesMachineWorkflow(input: ToolInput): Promise<Workflo
   const dedup = await toolRegistry.execute('lead_dedup', { leads: discovered });
   if (!dedup.success) return { success: false, results: { discover: discovery, dedup }, failedStep: 'dedup' };
   const unique = Array.isArray((dedup.data as Record<string, unknown> | undefined)?.unique) ? ((dedup.data as Record<string, unknown>).unique as Record<string, unknown>[]) : [];
-  const prospects: ProspectResult[] = []; const errors: Record<string, string>[] = [];
 
-  for (const [index, lead] of unique.entries()) {
+  const processLead = async (lead: Record<string, unknown>, index: number): Promise<{ prospect?: ProspectResult; error?: Record<string, string> }> => {
     try {
       const website = typeof lead.website === 'string' ? lead.website : '';
       const research = website ? await toolRegistry.execute('website', { url: website }) : { success: true, data: { result: { research: {} } } };
@@ -32,21 +26,29 @@ export async function runSalesMachineWorkflow(input: ToolInput): Promise<Workflo
       const enrichedLead = { ...lead, ...(email ? { email } : {}), ...(phone ? { whatsapp: phone } : {}) };
 
       const score = await toolRegistry.execute('lead_scoring', { lead: enrichedLead, research: researchData, businessFit: input.businessFit, growthSignals: input.growthSignals });
-      if (!score.success) { errors.push({ lead: String(lead.name ?? index + 1), error: score.error ?? 'Scoring failed' }); continue; }
+      if (!score.success) return { error: { lead: String(lead.name ?? index + 1), error: score.error ?? 'Scoring failed' } };
       const scoreData = (score.data ?? {}) as Record<string, unknown>;
       const services = Array.isArray(scoreData.recommendedServices) ? scoreData.recommendedServices.join(', ') : 'digital marketing';
       const rationale = typeof scoreData.rationale === 'string' ? scoreData.rationale : '';
       const crmLead = { ...enrichedLead, businessName: typeof lead.businessName === 'string' ? lead.businessName : typeof lead.name === 'string' ? lead.name : undefined, niche: typeof lead.niche === 'string' ? lead.niche : String(input.niche ?? 'digital marketing prospect'), country: typeof lead.country === 'string' ? lead.country : String(input.country ?? 'India'), source: 'sales-machine', auditScore: typeof scoreData.score === 'number' ? scoreData.score : undefined, notes: JSON.stringify({ research: researchData, score: scoreData }) };
       const crm = await toolRegistry.execute('crm', { action: 'create', lead: crmLead });
-      if (!crm.success) { errors.push({ lead: String(lead.name ?? index + 1), error: crm.error ?? 'CRM persistence failed' }); continue; }
+      if (!crm.success) return { error: { lead: String(lead.name ?? index + 1), error: crm.error ?? 'CRM persistence failed' } };
       const crmData = (crm.data ?? {}) as Record<string, unknown>; const persistedLead = (crmData.lead ?? crmData) as Record<string, unknown>; const leadId = typeof persistedLead.id === 'string' ? persistedLead.id : '';
       let outreach: ToolOutput | undefined;
       if (leadId && input.createDrafts !== false) {
         const channel = input.channel === 'EMAIL' ? 'EMAIL' : input.channel === 'WHATSAPP' ? 'WHATSAPP' : email ? 'EMAIL' : phone ? 'WHATSAPP' : '';
         if (channel) outreach = await toolRegistry.execute('outreach_draft', { leadId, channel, context: `Verified website research: ${rationale}. Recommended services: ${services}. Do not invent claims.` });
       }
-      prospects.push({ lead: enrichedLead, research, score, crm, outreach });
-    } catch (error) { errors.push({ lead: String(lead.name ?? index + 1), error: error instanceof Error ? error.message : String(error) }); }
+      return { prospect: { lead: enrichedLead, research, score, crm, outreach } };
+    } catch (error) { return { error: { lead: String(lead.name ?? index + 1), error: error instanceof Error ? error.message : String(error) } }; }
+  };
+
+  const prospects: ProspectResult[] = []; const errors: Record<string, string>[] = [];
+  // Four workers keep the local API responsive while cutting serial research time dramatically.
+  for (let start = 0; start < unique.length; start += 4) {
+    const batch = unique.slice(start, start + 4);
+    const results = await Promise.all(batch.map((lead, offset) => processLead(lead, start + offset)));
+    for (const result of results) { if (result.prospect) prospects.push(result.prospect); if (result.error) errors.push(result.error); }
   }
 
   const success = prospects.length > 0 || unique.length === 0;
