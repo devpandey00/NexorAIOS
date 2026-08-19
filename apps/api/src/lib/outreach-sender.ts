@@ -10,6 +10,25 @@ import {
 
 const prisma = getDatabaseClients().write;
 
+const BLOCKED_NAME_PATTERNS = [/\bjobs?\b/i, /\bvacanc(?:y|ies)\b/i, /\bcareers?\b/i, /\bhiring\b/i, /\bsalary\b/i, /\bapply now\b/i, /\bresume\b/i, /\bcv\b/i, /\binternship\b/i, /\btop\b/i, /\bbest\b/i, /\blist\b/i, /\bdirectory\b/i, /\bguide\b/i, /\barticle\b/i, /\bnews\b/i];
+const BLOCKED_SOURCES = new Set(['JOB', 'JOB_SEARCH', 'JOB-SEARCH', 'RECRUITMENT', 'CAREER', 'JOB_PORTAL']);
+const VALID_LEAD_TYPES = new Set(['BUSINESS', 'COMPANY', 'LOCAL_BUSINESS', 'AGENCY', 'PROFESSIONAL_SERVICE']);
+
+function leadIsSendable(lead: { businessName: string; whatsapp: string | null; notes: string | null }) {
+  if (!lead.whatsapp) return { ok: false, reason: 'NOT CONTACTABLE: WhatsApp number missing' };
+  if (BLOCKED_NAME_PATTERNS.some((pattern) => pattern.test(lead.businessName))) return { ok: false, reason: 'Blocked non-business/job/content lead' };
+  try {
+    const metadata = lead.notes ? JSON.parse(lead.notes)?.metadata ?? JSON.parse(lead.notes) : {};
+    const source = typeof metadata?.source === 'string' ? metadata.source.toUpperCase() : '';
+    const leadType = typeof metadata?.leadType === 'string' ? metadata.leadType.toUpperCase() : '';
+    if (BLOCKED_SOURCES.has(source)) return { ok: false, reason: `Blocked source: ${source}` };
+    if (leadType && !VALID_LEAD_TYPES.has(leadType)) return { ok: false, reason: `Blocked lead type: ${leadType}` };
+  } catch {
+    // Free-form legacy notes are allowed; name/contact checks still apply.
+  }
+  return { ok: true, reason: 'Contactable operational business lead' };
+}
+
 async function sendWhatsApp(to: string, message: string) {
   const token = process.env.WHATSAPP_ACCESS_TOKEN;
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
@@ -51,6 +70,11 @@ export async function sendApprovedOutreach(id: string) {
   if (outreach.status === OutreachStatus.SENT) return { outreach, recipient: outreach.channel === OutreachChannel.WHATSAPP ? outreach.lead.whatsapp : outreach.lead.email, alreadySent: true };
   if (outreach.status !== OutreachStatus.APPROVED) throw new Error('Outreach must be approved before sending');
 
+  if (outreach.channel === OutreachChannel.WHATSAPP) {
+    const validation = leadIsSendable(outreach.lead);
+    if (!validation.ok) throw new Error(validation.reason);
+  }
+
   let providerMessageId: string | undefined;
   let channel: ConversationChannel;
   let recipient: string;
@@ -58,7 +82,6 @@ export async function sendApprovedOutreach(id: string) {
   if (outreach.channel === OutreachChannel.WHATSAPP) {
     recipient = outreach.lead.whatsapp ?? '';
     channel = ConversationChannel.WHATSAPP;
-    if (!recipient) throw new Error('Lead has no WhatsApp number');
     providerMessageId = await sendWhatsApp(recipient, outreach.message);
   } else if (outreach.channel === OutreachChannel.EMAIL) {
     recipient = outreach.lead.email ?? '';
