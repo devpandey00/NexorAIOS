@@ -22,89 +22,25 @@ const prisma = getDatabaseClients().write;
 
 export async function getReportSummary(periodHours = 24): Promise<NexorReportSummary> {
   const since = new Date(Date.now() - periodHours * 60 * 60 * 1000);
-
   const [leads, qualifiedLeads, campaigns, runningCampaigns, outreachDrafts, scheduledOutreach, sentOutreach, replies, meetings, won, socialDrafts, scheduledSocial, publishedSocial, opportunities] = await Promise.all([
-    prisma.lead.count({ where: { createdAt: { gte: since } } }),
-    prisma.lead.count({ where: { status: 'QUALIFIED', updatedAt: { gte: since } } }),
-    prisma.campaign.count({ where: { createdAt: { gte: since } } }),
-    prisma.campaign.count({ where: { status: 'RUNNING' } }),
-    prisma.outreach.count({ where: { status: 'DRAFT', createdAt: { gte: since } } }),
-    prisma.outreach.count({ where: { status: 'SCHEDULED' } }),
-    prisma.outreach.count({ where: { status: 'SENT', updatedAt: { gte: since } } }),
-    prisma.lead.count({ where: { status: 'REPLIED', updatedAt: { gte: since } } }),
-    prisma.lead.count({ where: { status: 'MEETING_BOOKED', updatedAt: { gte: since } } }),
-    prisma.lead.count({ where: { status: 'WON', updatedAt: { gte: since } } }),
+    prisma.lead.count({ where: { createdAt: { gte: since } } }), prisma.lead.count({ where: { status: 'QUALIFIED', updatedAt: { gte: since } } }), prisma.campaign.count({ where: { createdAt: { gte: since } } }), prisma.campaign.count({ where: { status: 'RUNNING' } }), prisma.outreach.count({ where: { status: 'DRAFT', createdAt: { gte: since } } }), prisma.outreach.count({ where: { status: 'SCHEDULED' } }), prisma.outreach.count({ where: { status: 'SENT', updatedAt: { gte: since } } }), prisma.lead.count({ where: { status: 'REPLIED', updatedAt: { gte: since } } }), prisma.lead.count({ where: { status: 'MEETING_BOOKED', updatedAt: { gte: since } } }), prisma.lead.count({ where: { status: 'WON', updatedAt: { gte: since } } }),
     prisma.$queryRaw<Array<{ count: bigint }>>`SELECT COUNT(*)::bigint AS count FROM public.content_posts WHERE status = 'DRAFT' AND created_at >= ${since}`,
     prisma.$queryRaw<Array<{ count: bigint }>>`SELECT COUNT(*)::bigint AS count FROM public.content_posts WHERE status = 'SCHEDULED'`,
     prisma.$queryRaw<Array<{ count: bigint }>>`SELECT COUNT(*)::bigint AS count FROM public.content_posts WHERE status = 'PUBLISHED' AND updated_at >= ${since}`,
     prisma.$queryRaw<Array<{ count: bigint }>>`SELECT COUNT(*)::bigint AS count FROM public.opportunities WHERE created_at >= ${since}`,
   ]);
-
   const toNumber = (value: bigint | number) => Number(value);
-
-  return {
-    periodHours,
-    leads,
-    qualifiedLeads,
-    campaigns,
-    runningCampaigns,
-    outreachDrafts,
-    scheduledOutreach,
-    sentOutreach,
-    replies,
-    meetings,
-    won,
-    socialDrafts: toNumber(socialDrafts[0]?.count ?? 0n),
-    scheduledSocial: toNumber(scheduledSocial[0]?.count ?? 0n),
-    publishedSocial: toNumber(publishedSocial[0]?.count ?? 0n),
-    opportunities: toNumber(opportunities[0]?.count ?? 0n),
-  };
+  return { periodHours, leads, qualifiedLeads, campaigns, runningCampaigns, outreachDrafts, scheduledOutreach, sentOutreach, replies, meetings, won, socialDrafts: toNumber(socialDrafts[0]?.count ?? 0), scheduledSocial: toNumber(scheduledSocial[0]?.count ?? 0), publishedSocial: toNumber(publishedSocial[0]?.count ?? 0), opportunities: toNumber(opportunities[0]?.count ?? 0) };
 }
 
-function esc(value: string) {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');
-}
-
+function esc(value: string) { return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;'); }
 export function renderReportHtml(summary: NexorReportSummary) {
-  const cards = [
-    ['Leads', summary.leads],
-    ['Qualified', summary.qualifiedLeads],
-    ['Campaigns', summary.campaigns],
-    ['Drafts', summary.outreachDrafts],
-    ['Sent', summary.sentOutreach],
-    ['Replies', summary.replies],
-    ['Meetings', summary.meetings],
-    ['Won', summary.won],
-    ['Social drafts', summary.socialDrafts],
-    ['Social scheduled', summary.scheduledSocial],
-    ['Social published', summary.publishedSocial],
-    ['Opportunities', summary.opportunities],
-  ];
-
+  const cards = [['Leads', summary.leads], ['Qualified', summary.qualifiedLeads], ['Campaigns', summary.campaigns], ['Drafts', summary.outreachDrafts], ['Sent', summary.sentOutreach], ['Replies', summary.replies], ['Meetings', summary.meetings], ['Won', summary.won], ['Social drafts', summary.socialDrafts], ['Social scheduled', summary.scheduledSocial], ['Social published', summary.publishedSocial], ['Opportunities', summary.opportunities]];
   return `<!doctype html><html><body style="margin:0;background:#f5f2ea;color:#171717;font-family:Arial,sans-serif"><div style="max-width:760px;margin:0 auto;padding:32px"><div style="background:#fff;border:1px solid #e7e0d2;border-radius:24px;padding:28px"><div style="font-size:11px;letter-spacing:2px;color:#a87928;font-weight:700">NEXORAIOS · SALES & GROWTH REPORT</div><h1 style="font-size:30px;margin:12px 0 8px">Last ${summary.periodHours} hours</h1><p style="color:#6d6a63;margin:0 0 24px">Automated operational report generated by NexorAIOS.</p><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">${cards.map(([label, value]) => `<div style="border:1px solid #eee7dc;border-radius:16px;padding:16px;background:#fcfbf8"><div style="font-size:11px;color:#8a867d">${esc(String(label))}</div><div style="font-size:28px;font-weight:700;margin-top:6px">${value}</div></div>`).join('')}</div><div style="margin-top:24px;border-top:1px solid #eee7dc;padding-top:18px;color:#6d6a63;font-size:12px">Running campaigns: <strong>${summary.runningCampaigns}</strong> · Scheduled outreach: <strong>${summary.scheduledOutreach}</strong> · Scheduled social: <strong>${summary.scheduledSocial}</strong></div></div></div></body></html>`;
 }
-
 export async function sendNexorReportEmail(periodHours = 24) {
-  const apiKey = process.env.RESEND_API_KEY?.trim();
-  const from = process.env.REPORT_FROM_EMAIL?.trim();
-  const to = process.env.REPORT_EMAIL_TO?.trim();
-  if (!apiKey) throw new Error('RESEND_API_KEY is not configured');
-  if (!from) throw new Error('REPORT_FROM_EMAIL is not configured');
-  if (!to) throw new Error('REPORT_EMAIL_TO is not configured');
-
-  const summary = await getReportSummary(periodHours);
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      from,
-      to: [to],
-      subject: `NexorAIOS report · ${summary.leads} leads · ${summary.qualifiedLeads} qualified · ${summary.won} won`,
-      html: renderReportHtml(summary),
-    }),
-  });
-
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data?.message ?? `Report email failed (${response.status})`);
-  return { success: true, summary, messageId: data?.id ?? null };
+  const apiKey = process.env.RESEND_API_KEY?.trim(); const from = process.env.REPORT_FROM_EMAIL?.trim(); const to = process.env.REPORT_EMAIL_TO?.trim();
+  if (!apiKey) throw new Error('RESEND_API_KEY is not configured'); if (!from) throw new Error('REPORT_FROM_EMAIL is not configured'); if (!to) throw new Error('REPORT_EMAIL_TO is not configured');
+  const summary = await getReportSummary(periodHours); const response = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ from, to: [to], subject: `NexorAIOS report · ${summary.leads} leads · ${summary.qualifiedLeads} qualified · ${summary.won} won`, html: renderReportHtml(summary) }) });
+  const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data?.message ?? `Report email failed (${response.status})`); return { success: true, summary, messageId: data?.id ?? null };
 }

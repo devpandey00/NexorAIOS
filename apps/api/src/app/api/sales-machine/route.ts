@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { runSalesMachineWorkflow } from '@nexor/tools';
+import { registerDefaultTools, runSalesMachineWorkflow } from '@nexor/tools';
 
 export const maxDuration = 300;
 
@@ -9,6 +9,8 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const query = typeof body?.query === 'string' ? body.query.trim() : '';
     if (!query) return NextResponse.json({ success: false, error: 'query is required' }, { status: 400 });
+
+    registerDefaultTools();
 
     const result = await runSalesMachineWorkflow({
       query,

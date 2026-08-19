@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, develop, restore-kal-dashboard, claude/nexoraios-production-workflow]
+    branches: [main, develop]
   pull_request:
-    branches: [main, develop, restore-kal-dashboard]
+    branches: [main, develop]
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -34,7 +34,7 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Generate Prisma Client
         run: pnpm db:generate
@@ -83,7 +83,7 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Generate Prisma Client
         run: pnpm db:generate

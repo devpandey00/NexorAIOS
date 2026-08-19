@@ -21,7 +21,7 @@ type Post = {
 const platforms: Platform[] = ['INSTAGRAM', 'FACEBOOK', 'LINKEDIN', 'YOUTUBE', 'X', 'TIKTOK'];
 const statuses: Status[] = ['DRAFT', 'REVIEW', 'APPROVED', 'SCHEDULED', 'PUBLISHED', 'FAILED'];
 
-function startOfDay(value = new Date()) {
+function startOfDay(value: string | Date = new Date()) {
   const date = new Date(value);
   date.setHours(0, 0, 0, 0);
   return date;

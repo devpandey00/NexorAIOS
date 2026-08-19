@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "pnpm --filter @nexor/logger build && pnpm --filter @nexor/database build && pnpm --filter @nexor/search build && pnpm --filter @nexor/research build && pnpm --filter @nexor/core build && next build",
+    "build": "next build",
     "start": "next start",
     "lint": "eslint"
   },
