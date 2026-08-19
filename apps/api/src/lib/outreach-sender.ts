@@ -8,7 +8,7 @@ import {
   OutreachStatus,
 } from '@nexor/database';
 
-const SEND_TIMEOUT_MS = 20_000;
+const prisma = getDatabaseClients().write;
 
 async function sendWhatsApp(to: string, message: string) {
   const token = process.env.WHATSAPP_ACCESS_TOKEN;
@@ -20,7 +20,6 @@ async function sendWhatsApp(to: string, message: string) {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: to.replace(/\D/g, ''), type: 'text', text: { preview_url: false, body: message } }),
-    signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data?.error?.message ?? `WhatsApp send failed (${response.status})`);
@@ -40,7 +39,6 @@ async function sendEmail(to: string, message: string) {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ from, to: [to], subject, text }),
-    signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data?.message ?? `Email send failed (${response.status})`);
@@ -48,7 +46,6 @@ async function sendEmail(to: string, message: string) {
 }
 
 export async function sendApprovedOutreach(id: string) {
-  const prisma = getDatabaseClients().write;
   const outreach = await prisma.outreach.findUnique({ where: { id }, include: { lead: true } });
   if (!outreach) throw new Error('Outreach not found');
   if (outreach.status === OutreachStatus.SENT) return { outreach, recipient: outreach.channel === OutreachChannel.WHATSAPP ? outreach.lead.whatsapp : outreach.lead.email, alreadySent: true };

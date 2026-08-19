@@ -5,6 +5,7 @@ on:
     branches:
       - claude/nexoraios-production-workflow
     paths:
+      - 'package.json'
       - 'packages/ai/package.json'
       - 'packages/tools/package.json'
       - '.github/workflows/repair-lockfile.yml'

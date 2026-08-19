@@ -1,7 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "installCommand": "pnpm install --frozen-lockfile",
+  "installCommand": "pnpm install --no-frozen-lockfile",
   "buildCommand": "pnpm --filter @nexor/api... build",
-  "outputDirectory": "apps/api/.next"
+  "outputDirectory": "apps/api/.next",
+  "crons": [
+    { "path": "/api/cron/autopilot", "schedule": "0 */2 * * *" },
+    { "path": "/api/cron/reports/email", "schedule": "0 13 * * *" }
+  ]
 }

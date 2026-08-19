@@ -4,7 +4,7 @@ import { leadSearchService } from '@nexor/search';
 export const leadDiscoveryTool: Tool = {
   id: 'lead_discovery',
   name: 'Lead Discovery',
-  description: 'Find real prospect websites through the configured search provider.',
+  description: 'Find real prospect websites and contact data through the configured discovery provider.',
   category: 'sales',
   async execute(input: ToolInput): Promise<ToolOutput> {
     const query = typeof input.query === 'string' ? input.query.trim() : String(input.command ?? '').trim();
@@ -16,6 +16,8 @@ export const leadDiscoveryTool: Tool = {
       const leads = result.leads.slice(0, limit).map((lead) => ({
         name: lead.name,
         website: lead.website,
+        ...(lead.phone ? { phone: lead.phone } : {}),
+        ...(lead.address ? { address: lead.address } : {}),
       }));
       return { success: true, data: { query, count: leads.length, leads } };
     } catch (error) {
