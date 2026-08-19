@@ -21,7 +21,7 @@ export class LeadRepository extends BaseRepository {
     if (filters.status) where.status = filters.status;
     if (filters.country) where.country = filters.country;
     if (filters.niche) where.niche = filters.niche;
-    if (filters.search) where.OR = [{ businessName: { contains: filters.search, mode: 'insensitive' } }, { ownerName: { contains: filters.search, mode: 'insensitive' } }, { email: { contains: filters.email, mode: 'insensitive' } }];
+    if (filters.search) where.OR = [{ businessName: { contains: filters.search, mode: 'insensitive' } }, { ownerName: { contains: filters.search, mode: 'insensitive' } }, { email: { contains: filters.search, mode: 'insensitive' } }];
     const [data, total] = await this.readClient.$transaction([
       this.readClient.lead.findMany({ where, skip, take, orderBy: { createdAt: 'desc' }, include: { socialProfiles: true } }),
       this.readClient.lead.count({ where }),
