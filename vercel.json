@@ -7,6 +7,7 @@
   "crons": [
     { "path": "/api/cron/autopilot", "schedule": "0 */2 * * *" },
     { "path": "/api/automations/run", "schedule": "15 * * * *" },
+    { "path": "/api/cron/jobs", "schedule": "0 */6 * * *" },
     { "path": "/api/cron/outreach", "schedule": "30 * * * *" },
     { "path": "/api/cron/followups", "schedule": "45 * * * *" },
     { "path": "/api/cron/social-publish", "schedule": "0 * * * *" },
