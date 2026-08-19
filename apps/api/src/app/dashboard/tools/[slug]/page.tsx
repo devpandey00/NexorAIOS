@@ -47,7 +47,7 @@ export default async function ToolPage({ params }: { params: Promise<{ slug: str
     return <DashboardLayout><main className="space-y-5"><section className="nexor-fade nexor-panel p-7"><Link href="/dashboard" className="font-mono text-[7px] tracking-[0.16em] text-[var(--text-muted)]">← COMMAND CENTER</Link><div className="mt-5"><div className="font-mono text-[7px] tracking-[0.16em] text-[var(--text-muted)]">SOCIAL MEDIA</div><h1 className="mt-1 text-3xl font-semibold tracking-[-0.04em]">Content Calendar</h1></div></section><SocialContentWorkspace /></main></DashboardLayout>;
   }
 
-  if (slug === 'whatsapp-automation') {
+  if (slug === 'whatsapp-automation' || slug === 'whatsapp-drafts') {
     return <DashboardLayout><WhatsAppAutomationPage /></DashboardLayout>;
   }
 
