@@ -74,7 +74,8 @@ export async function PATCH(req: NextRequest) {
     if (!id || !action) return NextResponse.json({ success: false, error: 'id and action are required' }, { status: 400 });
     const existing = await prisma.outreach.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ success: false, error: 'Outreach not found' }, { status: 404 });
-    if (![OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED].includes(existing.status)) return NextResponse.json({ success: false, error: `Outreach is not awaiting approval. Current status: ${existing.status}` }, { status: 409 });
+    const awaitingApproval: OutreachStatus[] = [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED];
+    if (!awaitingApproval.includes(existing.status)) return NextResponse.json({ success: false, error: `Outreach is not awaiting approval. Current status: ${existing.status}` }, { status: 409 });
     const status = action === 'approve' ? OutreachStatus.APPROVED : OutreachStatus.CANCELLED;
     const draft = await prisma.outreach.update({ where: { id }, data: { status, approvedAt: action === 'approve' ? new Date() : null } });
     return NextResponse.json({ success: true, draft });
