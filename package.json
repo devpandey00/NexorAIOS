@@ -1,6 +1,6 @@
 {
   "name": "nexor-ai-os",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
   "description": "NexorAIOS — Enterprise AI Operating System for Businesses",
   "packageManager": "pnpm@9.15.4",
