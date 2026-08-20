@@ -25,7 +25,7 @@
     "db:seed": "pnpm --filter @nexor/database db:seed",
     "db:studio": "pnpm --filter @nexor/database db:studio",
     "docker:up": "docker compose -f docker/docker-compose.yml up -d",
-    "docker:down": "docker compose -f docker/docker-compose.yml down -d",
+    "docker:down": "docker compose -f docker/docker-compose.yml down",
     "docker:logs": "docker compose -f docker/docker-compose.yml logs -f",
     "docker:reset": "docker compose -f docker/docker-compose.yml down -v && docker compose -f docker/docker-compose.yml up -d",
     "prepare": "husky"
