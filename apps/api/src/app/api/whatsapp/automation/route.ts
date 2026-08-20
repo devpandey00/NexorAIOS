@@ -67,13 +67,32 @@ export async function GET() {
       prisma.task.findMany({ where: { status: TaskStatus.TODO, leadId: { not: null } }, include: { lead: true }, orderBy: [{ priority: 'asc' }, { createdAt: 'desc' }], take: 50 }),
     ]);
 
-    const drafts = rawDrafts.filter((item) => leadEligibility(item.lead).ok);
+    const validDrafts = rawDrafts.filter((item) => leadEligibility(item.lead).ok);
+    const drafts = validDrafts.filter((item) => Boolean(item.lead.whatsapp));
     const approved = rawApproved.filter((item) => leadEligibility(item.lead).ok && Boolean(item.lead.whatsapp));
-    const rejected = [...rawDrafts, ...rawApproved].filter((item) => !leadEligibility(item.lead).ok).map((item) => ({ id: item.id, businessName: item.lead.businessName, reason: leadEligibility(item.lead).reason }));
     const existingOutreachLeadIds = new Set([...rawDrafts, ...rawApproved, ...scheduled].map((item) => item.leadId));
-    const notContactable = rawLeads.filter((lead) => leadEligibility(lead).ok && !lead.whatsapp && !existingOutreachLeadIds.has(lead.id)).slice(0, 50).map((lead) => ({ id: lead.id, businessName: lead.businessName, reason: 'NOT CONTACTABLE: WhatsApp number missing' }));
 
-    return NextResponse.json({ success: true, stats: { drafts: drafts.length, approved: approved.length, scheduled: scheduled.length, sent, failed, replies: replies.length, notContactable: notContactable.length, rejected: rejected.length }, drafts, approved, scheduled, rejected, notContactable, replies, tasks });
+    const rejected = [...rawDrafts, ...rawApproved, ...scheduled]
+      .filter((item) => !leadEligibility(item.lead).ok)
+      .map((item) => ({ id: item.id, businessName: item.lead.businessName, reason: leadEligibility(item.lead).reason }));
+
+    const notContactable = [
+      ...validDrafts.filter((item) => !item.lead.whatsapp).map((item) => ({ id: item.id, businessName: item.lead.businessName, reason: 'NOT CONTACTABLE: WhatsApp number missing' })),
+      ...rawApproved.filter((item) => leadEligibility(item.lead).ok && !item.lead.whatsapp).map((item) => ({ id: item.id, businessName: item.lead.businessName, reason: 'NOT CONTACTABLE: WhatsApp number missing; approval cannot be sent' })),
+      ...rawLeads.filter((lead) => leadEligibility(lead).ok && !lead.whatsapp && !existingOutreachLeadIds.has(lead.id)).slice(0, 50).map((lead) => ({ id: lead.id, businessName: lead.businessName, reason: 'NOT CONTACTABLE: WhatsApp number missing' })),
+    ];
+
+    return NextResponse.json({
+      success: true,
+      stats: { drafts: drafts.length, approved: approved.length, scheduled: scheduled.length, sent, failed, replies: replies.length, notContactable: notContactable.length, rejected: rejected.length },
+      drafts,
+      approved,
+      scheduled,
+      rejected,
+      notContactable,
+      replies,
+      tasks,
+    });
   } catch (error) {
     return jsonError(error instanceof Error ? error.message : String(error), 500);
   }
