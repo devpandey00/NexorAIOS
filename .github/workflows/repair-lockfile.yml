@@ -3,11 +3,15 @@ name: Repair Workspace Lockfile
 on:
   push:
     branches:
+      - main
       - claude/nexoraios-production-workflow
     paths:
       - 'package.json'
-      - 'packages/ai/package.json'
-      - 'packages/tools/package.json'
+      - 'apps/api/package.json'
+      - 'apps/web/package.json'
+      - 'packages/*/package.json'
+      - 'pnpm-workspace.yaml'
+      - 'pnpm-lock.yaml'
       - '.github/workflows/repair-lockfile.yml'
   workflow_dispatch:
 
@@ -37,7 +41,7 @@ jobs:
           cache: pnpm
 
       - name: Regenerate lockfile
-        run: pnpm install --lockfile-only
+        run: pnpm install --lockfile-only --no-frozen-lockfile
 
       - name: Commit lockfile
         run: |
