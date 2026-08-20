@@ -26,9 +26,14 @@ function buildFollowUpMessage(lead: { businessName: string; notes: string | null
   ].join(' ');
 }
 
-export async function GET(req: Request) {
+function authorized(req: Request) {
   const secret = process.env.CRON_SECRET;
-  if (secret && req.headers.get('authorization') !== `Bearer ${secret}`) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  if (!secret) return process.env.NODE_ENV !== 'production';
+  return req.headers.get('authorization') === `Bearer ${secret}`;
+}
+
+export async function GET(req: Request) {
+  if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
 
   try {
     const due = await prisma.followUp.findMany({ where: { status: FollowUpStatus.PENDING, scheduledAt: { lte: new Date() } }, include: { lead: true }, orderBy: { scheduledAt: 'asc' }, take: 100 });
