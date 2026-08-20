@@ -140,8 +140,9 @@ export async function PATCH(req: NextRequest) {
     }
 
     const status = action === 'approve' ? OutreachStatus.APPROVED : OutreachStatus.CANCELLED;
-    const draft = await prisma.outreach.update({ where: { id }, data: { status, approvedAt: action === 'approve' ? new Date() : null } });
-    return NextResponse.json({ success: true, draft });
+    const scheduledAt = action === 'approve' ? new Date(Date.now() + 5 * 60 * 1000) : null;
+    const draft = await prisma.outreach.update({ where: { id }, data: { status, approvedAt: action === 'approve' ? new Date() : null, scheduledAt, error: null } });
+    return NextResponse.json({ success: true, draft, autoSendAt: scheduledAt });
   } catch (error) {
     return NextResponse.json({ success: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
