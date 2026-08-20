@@ -5,7 +5,7 @@ const db = getDatabaseClients().write;
 const secret = process.env.CRON_SECRET || process.env.OUTREACH_API_SECRET || '';
 const profile = {
   name: process.env.JOB_APPLICANT_NAME || 'Diwakar Pandey',
-  email: process.env.JOB_APPLICANT_EMAIL || '',
+  email: process.env.JOB_APPLICANT_EMAIL || process.env.REPORT_EMAIL_TO || '',
   phone: process.env.JOB_APPLICANT_PHONE || '',
   portfolio: process.env.JOB_PORTFOLIO_URL || '',
   resume: process.env.JOB_RESUME_URL || '',
@@ -64,8 +64,9 @@ async function apply(limit = 10) {
   const jobs = await db.job.findMany({ where: { type: JobType.ANALYTICS, status: { in: [JobStatus.QUEUED, JobStatus.RETRYING] } }, orderBy: { createdAt: 'asc' }, take: 150 }); let applied = 0; let confirmation = 0;
   for (const job of jobs) {
     const p = (job.payload || {}) as any; if (p.kind !== 'JOB_OPPORTUNITY' || ['APPLIED', 'REJECTED'].includes(p.applicationState)) continue;
-    if (!p.contactEmail || !process.env.RESEND_API_KEY || !profile.email) { await db.job.update({ where: { id: job.id }, data: { payload: { ...p, applicationState: 'NEEDS_CONFIRMATION', confirmationReason: !p.contactEmail ? 'No verified application email found' : 'Email provider/profile not configured' } } }); confirmation++; continue; }
-    const response = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ from: process.env.JOB_FROM_EMAIL || profile.email, to: p.contactEmail, reply_to: profile.email, subject: p.application.subject, text: p.application.body }) });
+    const missing = !p.contactEmail ? 'No verified application email found' : !profile.email ? 'Applicant email is not configured' : !profile.resume ? 'Resume URL is not configured' : !process.env.RESEND_API_KEY ? 'RESEND_API_KEY is not configured' : '';
+    if (missing) { await db.job.update({ where: { id: job.id }, data: { payload: { ...p, applicationState: 'NEEDS_CONFIRMATION', confirmationReason: missing } } }); confirmation++; continue; }
+    const response = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ from: process.env.JOB_FROM_EMAIL || process.env.REPORT_FROM_EMAIL, to: p.contactEmail, reply_to: profile.email, subject: p.application.subject, text: p.application.body }) });
     if (response.ok) { await db.job.update({ where: { id: job.id }, data: { status: JobStatus.COMPLETED, payload: { ...p, applicationState: 'APPLIED', appliedAt: new Date().toISOString() }, result: { applicationState: 'APPLIED', provider: 'resend' } } }); applied++; } else { await db.job.update({ where: { id: job.id }, data: { status: JobStatus.RETRYING, error: `Application provider returned ${response.status}` } }); }
     if (applied >= limit) break;
   }
