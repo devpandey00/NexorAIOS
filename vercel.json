@@ -8,6 +8,7 @@
     "deploymentEnabled": false
   },
   "crons": [
+    { "path": "/api/cron/outreach", "schedule": "*/5 * * * *" },
     { "path": "/api/cron/autopilot", "schedule": "0 3 * * *" },
     { "path": "/api/cron/reports/email", "schedule": "0 13 * * *" }
   ]
