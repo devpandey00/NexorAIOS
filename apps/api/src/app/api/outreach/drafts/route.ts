@@ -72,7 +72,13 @@ export async function POST(req: NextRequest) {
     const leadId = typeof body.leadId === 'string' ? body.leadId : '';
     const channel = normalizeChannel(body.channel);
     const context = typeof body.context === 'string' ? body.context.trim() : '';
-    const supported = [OutreachChannel.WHATSAPP, OutreachChannel.EMAIL, OutreachChannel.INSTAGRAM, OutreachChannel.FACEBOOK, OutreachChannel.LINKEDIN];
+    const supported: OutreachChannel[] = [
+      OutreachChannel.WHATSAPP,
+      OutreachChannel.EMAIL,
+      OutreachChannel.INSTAGRAM,
+      OutreachChannel.FACEBOOK,
+      OutreachChannel.LINKEDIN,
+    ];
     if (!leadId || !channel || !supported.includes(channel)) return NextResponse.json({ success: false, error: 'leadId and a supported outreach channel are required' }, { status: 400 });
 
     const lead = await prisma.lead.findUnique({ where: { id: leadId } });
