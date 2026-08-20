@@ -5,9 +5,14 @@ import { sendApprovedOutreach } from '@/lib/outreach-sender';
 export const runtime = 'nodejs';
 const prisma = getDatabaseClients().write;
 
-export async function GET(req: Request) {
+function authorized(req: Request) {
   const secret = process.env.CRON_SECRET;
-  if (secret && req.headers.get('authorization') !== `Bearer ${secret}`) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  if (!secret) return process.env.NODE_ENV !== 'production';
+  return req.headers.get('authorization') === `Bearer ${secret}`;
+}
+
+export async function GET(req: Request) {
+  if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   const perRun = Math.min(Math.max(Number(process.env.OUTREACH_MAX_PER_RUN ?? 2), 1), 20);
   const minDelayMs = Math.max(Number(process.env.OUTREACH_MIN_DELAY_MS ?? 2000), 0);
   try {
