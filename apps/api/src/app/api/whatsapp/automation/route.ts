@@ -4,7 +4,6 @@ import { outreachService } from '@nexor/ai';
 import { sendApprovedOutreach } from '@/lib/outreach-sender';
 
 export const runtime = 'nodejs';
-
 const prisma = getDatabaseClients().write;
 
 const JOB_OR_CONTENT_PATTERNS = [
@@ -22,9 +21,7 @@ function parseNotes(notes: string | null) {
   try {
     const parsed = JSON.parse(notes);
     return parsed && typeof parsed === 'object' ? parsed as Record<string, any> : {};
-  } catch {
-    return {} as Record<string, any>;
-  }
+  } catch { return {} as Record<string, any>; }
 }
 
 function leadEligibility(lead: { businessName: string; website: string | null; notes: string | null }) {
@@ -38,9 +35,7 @@ function leadEligibility(lead: { businessName: string; website: string | null; n
   if (lead.website) {
     try {
       if (NON_BUSINESS_PATHS.test(new URL(lead.website).pathname)) return { ok: false, reason: 'Website is a job/content/listing page' };
-    } catch {
-      return { ok: false, reason: 'Invalid lead website' };
-    }
+    } catch { return { ok: false, reason: 'Invalid lead website' }; }
   }
   return { ok: true, reason: 'Operational business lead', leadType: leadType || 'BUSINESS', source: source || 'UNKNOWN' };
 }
@@ -50,9 +45,7 @@ function researchContext(notes: string | null) {
   return { research: parsed.research ?? {}, score: parsed.score ?? {}, metadata: parsed.metadata ?? {} };
 }
 
-function jsonError(message: string, status = 400) {
-  return NextResponse.json({ success: false, error: message }, { status });
-}
+function jsonError(message: string, status = 400) { return NextResponse.json({ success: false, error: message }, { status }); }
 
 export async function GET() {
   try {
@@ -68,34 +61,19 @@ export async function GET() {
     ]);
 
     const validDrafts = rawDrafts.filter((item) => leadEligibility(item.lead).ok);
-    const drafts = validDrafts.filter((item) => Boolean(item.lead.whatsapp));
+    const drafts = validDrafts;
     const approved = rawApproved.filter((item) => leadEligibility(item.lead).ok && Boolean(item.lead.whatsapp));
     const existingOutreachLeadIds = new Set([...rawDrafts, ...rawApproved, ...scheduled].map((item) => item.leadId));
-
     const rejected = [...rawDrafts, ...rawApproved, ...scheduled]
       .filter((item) => !leadEligibility(item.lead).ok)
       .map((item) => ({ id: item.id, businessName: item.lead.businessName, reason: leadEligibility(item.lead).reason }));
-
     const notContactable = [
       ...validDrafts.filter((item) => !item.lead.whatsapp).map((item) => ({ id: item.id, businessName: item.lead.businessName, reason: 'NOT CONTACTABLE: WhatsApp number missing' })),
       ...rawApproved.filter((item) => leadEligibility(item.lead).ok && !item.lead.whatsapp).map((item) => ({ id: item.id, businessName: item.lead.businessName, reason: 'NOT CONTACTABLE: WhatsApp number missing; approval cannot be sent' })),
       ...rawLeads.filter((lead) => leadEligibility(lead).ok && !lead.whatsapp && !existingOutreachLeadIds.has(lead.id)).slice(0, 50).map((lead) => ({ id: lead.id, businessName: lead.businessName, reason: 'NOT CONTACTABLE: WhatsApp number missing' })),
     ];
-
-    return NextResponse.json({
-      success: true,
-      stats: { drafts: drafts.length, approved: approved.length, scheduled: scheduled.length, sent, failed, replies: replies.length, notContactable: notContactable.length, rejected: rejected.length },
-      drafts,
-      approved,
-      scheduled,
-      rejected,
-      notContactable,
-      replies,
-      tasks,
-    });
-  } catch (error) {
-    return jsonError(error instanceof Error ? error.message : String(error), 500);
-  }
+    return NextResponse.json({ success: true, stats: { drafts: drafts.length, approved: approved.length, scheduled: scheduled.length, sent, failed, replies: replies.length, notContactable: notContactable.length, rejected: rejected.length }, drafts, approved, scheduled, rejected, notContactable, replies, tasks });
+  } catch (error) { return jsonError(error instanceof Error ? error.message : String(error), 500); }
 }
 
 export async function POST(req: NextRequest) {
@@ -107,7 +85,6 @@ export async function POST(req: NextRequest) {
       const limit = Math.min(Math.max(Number(body.limit ?? 10), 1), 25);
       const ids = Array.isArray(body.leadIds) ? body.leadIds.filter((id: unknown): id is string => typeof id === 'string') : [];
       const leads = await prisma.lead.findMany({ where: { ...(ids.length ? { id: { in: ids } } : {}), status: { in: ['NEW', 'RESEARCHED', 'QUALIFIED', 'PITCH_READY'] } }, orderBy: { updatedAt: 'desc' }, take: Math.min(limit * 4, 100) });
-
       let created = 0;
       let skipped = 0;
       const errors: string[] = [];
@@ -119,7 +96,7 @@ export async function POST(req: NextRequest) {
         if (created >= limit) break;
         const eligibility = leadEligibility(lead);
         if (!eligibility.ok) { rejected.push(`${lead.businessName}: ${eligibility.reason}`); continue; }
-        if (!lead.whatsapp) { notContactable.push(`${lead.businessName}: NOT CONTACTABLE — WhatsApp number missing`); continue; }
+        if (!lead.whatsapp) notContactable.push(`${lead.businessName}: draft created without WhatsApp number; sending remains blocked until a number is available`);
         const existing = await prisma.outreach.findFirst({ where: { leadId: lead.id, channel: OutreachChannel.WHATSAPP, status: { in: [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED, OutreachStatus.APPROVED, OutreachStatus.SCHEDULED] } } });
         if (existing) { skipped++; continue; }
 
@@ -139,9 +116,7 @@ export async function POST(req: NextRequest) {
           generatedMessages.add(message.toLowerCase());
           await prisma.outreach.create({ data: { leadId: lead.id, channel: OutreachChannel.WHATSAPP, status: OutreachStatus.DRAFT, message } });
           created++;
-        } catch (error) {
-          errors.push(`${lead.businessName}: ${error instanceof Error ? error.message : String(error)}`);
-        }
+        } catch (error) { errors.push(`${lead.businessName}: ${error instanceof Error ? error.message : String(error)}`); }
       }
       return NextResponse.json({ success: true, action, considered: leads.length, created, skipped, notContactable, rejected, errors });
     }
@@ -184,7 +159,5 @@ export async function POST(req: NextRequest) {
     }
 
     return jsonError('Unknown action. Use generate, approve, cancel, schedule or send.');
-  } catch (error) {
-    return jsonError(error instanceof Error ? error.message : String(error), 500);
-  }
+  } catch (error) { return jsonError(error instanceof Error ? error.message : String(error), 500); }
 }
