@@ -15,7 +15,7 @@ const profile = {
 const locations = (process.env.JOB_TARGET_LOCATIONS || 'India,Remote,Lucknow').split(',').map(s => s.trim()).filter(Boolean);
 
 function authorized(req: NextRequest) {
-  if (!secret) return true;
+  if (!secret) return process.env.NODE_ENV !== 'production';
   return req.headers.get('authorization') === `Bearer ${secret}` || req.headers.get('x-cron-secret') === secret;
 }
 function domain(url: string) { try { return new URL(url).hostname.replace(/^www\./, '').toLowerCase(); } catch { return ''; } }
@@ -44,7 +44,7 @@ async function searchJobs() {
   }}
   return found;
 }
-async function draft(job: { title: string; company: string; text: string }) {
+async function draft(job: { title: string; company: string }) {
   const body = `Hi,\n\nI’m ${profile.name} and I’m interested in the ${job.title} opportunity at ${job.company}. My relevant skills include ${profile.skills.slice(0, 7).join(', ')}.\n\nPortfolio: ${profile.portfolio || '[configure JOB_PORTFOLIO_URL]'}\nResume: ${profile.resume || '[configure JOB_RESUME_URL]'}\n\nI’d be glad to discuss the role and how I can contribute.\n\nRegards,\n${profile.name}`;
   return { subject: `Application — ${job.title}`, body };
 }
@@ -54,24 +54,56 @@ async function discover() {
   const seen = new Set(recent.map(j => (j.payload as any)?.url).filter(Boolean));
   for (const item of results) {
     if (seen.has(item.url)) continue; const text = await html(item.url); const s = score(item.title, text); const contactEmail = emailFrom(text); const company = item.title.split(/\s+[|·–—-]\s+/)[0].trim() || item.source;
-    const application = await draft({ title: item.title, company, text }); const state = s >= 55 ? 'READY_TO_APPLY' : 'REVIEW';
+    const application = await draft({ title: item.title, company }); const state = s >= 55 ? 'READY_TO_APPLY' : 'REVIEW';
     await db.job.create({ data: { type: JobType.ANALYTICS, status: JobStatus.QUEUED, payload: { kind: 'JOB_OPPORTUNITY', title: item.title, company, url: item.url, source: item.source, score: s, contactEmail, research: text.slice(0, 5000), application, applicationState: state, discoveredAt: new Date().toISOString() }, result: { score: s, applicationState: state } } });
     seen.add(item.url); created++; if (created >= 40) break;
   }
   return { discovered: results.length, created };
 }
 async function apply(limit = 10) {
-  const jobs = await db.job.findMany({ where: { type: JobType.ANALYTICS, status: { in: [JobStatus.QUEUED, JobStatus.RETRYING] } }, orderBy: { createdAt: 'asc' }, take: 150 }); let applied = 0; let confirmation = 0;
+  const jobs = await db.job.findMany({ where: { type: JobType.ANALYTICS, status: { in: [JobStatus.QUEUED, JobStatus.RETRYING] } }, orderBy: { createdAt: 'asc' }, take: 150 }); let sentByEmail = 0; let confirmation = 0;
   for (const job of jobs) {
-    const p = (job.payload || {}) as any; if (p.kind !== 'JOB_OPPORTUNITY' || ['APPLIED', 'REJECTED'].includes(p.applicationState)) continue;
+    const p = (job.payload || {}) as any;
+    if (p.kind !== 'JOB_OPPORTUNITY' || p.applicationState !== 'READY_TO_APPLY') continue;
     const missing = !p.contactEmail ? 'No verified application email found' : !profile.email ? 'Applicant email is not configured' : !profile.resume ? 'Resume URL is not configured' : !process.env.RESEND_API_KEY ? 'RESEND_API_KEY is not configured' : '';
     if (missing) { await db.job.update({ where: { id: job.id }, data: { payload: { ...p, applicationState: 'NEEDS_CONFIRMATION', confirmationReason: missing } } }); confirmation++; continue; }
     const response = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ from: process.env.JOB_FROM_EMAIL || process.env.REPORT_FROM_EMAIL, to: p.contactEmail, reply_to: profile.email, subject: p.application.subject, text: p.application.body }) });
-    if (response.ok) { await db.job.update({ where: { id: job.id }, data: { status: JobStatus.COMPLETED, payload: { ...p, applicationState: 'APPLIED', appliedAt: new Date().toISOString() }, result: { applicationState: 'APPLIED', provider: 'resend' } } }); applied++; } else { await db.job.update({ where: { id: job.id }, data: { status: JobStatus.RETRYING, error: `Application provider returned ${response.status}` } }); }
-    if (applied >= limit) break;
+    if (response.ok) {
+      const provider = await response.json().catch(() => ({}));
+      await db.job.update({ where: { id: job.id }, data: { status: JobStatus.COMPLETED, payload: { ...p, applicationState: 'APPLICATION_SENT_BY_EMAIL', sentAt: new Date().toISOString(), providerId: provider?.id ?? null }, result: { applicationState: 'APPLICATION_SENT_BY_EMAIL', provider: 'resend', providerId: provider?.id ?? null } } });
+      sentByEmail++;
+    } else {
+      await db.job.update({ where: { id: job.id }, data: { status: JobStatus.RETRYING, error: `Application email provider returned ${response.status}` } });
+    }
+    if (sentByEmail >= limit) break;
   }
-  return { applied, confirmation };
+  return { sentByEmail, confirmation };
 }
-export async function GET(req: NextRequest) { if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 }); const jobs = await db.job.findMany({ where: { type: JobType.ANALYTICS }, orderBy: { createdAt: 'desc' }, take: 250 }); return NextResponse.json({ success: true, profile, jobs: jobs.map(j => ({ id: j.id, ...((j.payload || {}) as any), status: j.status, error: j.error })).filter(j => j.kind === 'JOB_OPPORTUNITY') }); }
-export async function POST(req: NextRequest) { if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 }); try { const body = await req.json().catch(() => ({})); const result = body.mode === 'discover' ? await discover() : body.mode === 'apply' ? await apply(Number(body.limit || 10)) : { discovery: await discover(), application: await apply(Number(body.limit || 10)) }; return NextResponse.json({ success: true, result }); } catch (error) { return NextResponse.json({ success: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 }); } }
-export async function PATCH(req: NextRequest) { if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 }); const { id, action } = await req.json(); if (!id || !['approve', 'reject'].includes(action)) return NextResponse.json({ success: false, error: 'id and action are required' }, { status: 400 }); const job = await db.job.findUnique({ where: { id } }); if (!job) return NextResponse.json({ success: false, error: 'Opportunity not found' }, { status: 404 }); const p = (job.payload || {}) as any; await db.job.update({ where: { id }, data: { payload: { ...p, applicationState: action === 'approve' ? 'READY_TO_APPLY' : 'REJECTED', approvedAt: action === 'approve' ? new Date().toISOString() : null } } }); return NextResponse.json({ success: true }); }
+
+export async function GET(req: NextRequest) {
+  if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  const jobs = await db.job.findMany({ where: { type: JobType.ANALYTICS }, orderBy: { createdAt: 'desc' }, take: 250 });
+  return NextResponse.json({ success: true, profile, jobs: jobs.map(j => ({ id: j.id, ...((j.payload || {}) as any), status: j.status, error: j.error })).filter(j => j.kind === 'JOB_OPPORTUNITY') });
+}
+
+export async function POST(req: NextRequest) {
+  if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  try {
+    const body = await req.json().catch(() => ({}));
+    const result = body.mode === 'discover' ? await discover() : body.mode === 'apply' ? await apply(Number(body.limit || 10)) : { discovery: await discover(), application: await apply(Number(body.limit || 10)) };
+    return NextResponse.json({ success: true, result });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+  }
+}
+
+export async function PATCH(req: NextRequest) {
+  if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  const { id, action } = await req.json();
+  if (!id || !['approve', 'reject'].includes(action)) return NextResponse.json({ success: false, error: 'id and action are required' }, { status: 400 });
+  const job = await db.job.findUnique({ where: { id } });
+  if (!job) return NextResponse.json({ success: false, error: 'Opportunity not found' }, { status: 404 });
+  const p = (job.payload || {}) as any;
+  await db.job.update({ where: { id }, data: { payload: { ...p, applicationState: action === 'approve' ? 'READY_TO_APPLY' : 'REJECTED', approvedAt: action === 'approve' ? new Date().toISOString() : null } } });
+  return NextResponse.json({ success: true });
+}
