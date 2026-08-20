@@ -1,14 +1,18 @@
-import { researchAgent } from '../agents/research.agent.js';
-import { businessIntelligenceAgent } from '../agents/business-intelligence.agent.js';
 import { personalizationAgent } from '../agents/personalization.agent.js';
 
+/**
+ * Outreach generation is intentionally one AI pass per lead.
+ *
+ * The old implementation ran research -> BI -> personalization as three
+ * sequential model calls for every lead. With retry enabled in AnalyzerService,
+ * a 10-lead generation could trigger dozens of model calls and make the UI
+ * appear frozen. The sales pipeline already supplies verified research,
+ * scoring and lead metadata, so the personalization pass can use that context
+ * directly and produce the channel-specific drafts.
+ */
 export class OutreachService {
   async generate(data: unknown) {
-    const research = await researchAgent.execute(data);
-
-    const business = await businessIntelligenceAgent.execute(research);
-
-    return personalizationAgent.execute(business);
+    return personalizationAgent.execute(data);
   }
 }
 
