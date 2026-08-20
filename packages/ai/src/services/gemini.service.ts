@@ -10,14 +10,13 @@ const genAI = new GoogleGenerativeAI(apiKey);
 
 export async function geminiAnalyze(prompt: string): Promise<string> {
   const model = genAI.getGenerativeModel({
-    model: 'gemini-3.6-flash',
+    model: process.env['GEMINI_MODEL'] ?? 'gemini-2.5-flash',
     generationConfig: {
       responseMimeType: 'application/json',
     },
   });
 
   const result = await model.generateContent(prompt);
-
   const output = result.response.text().trim();
 
   if (!output) {
