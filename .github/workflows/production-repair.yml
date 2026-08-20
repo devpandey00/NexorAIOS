@@ -1,0 +1,73 @@
+name: Production Repair Guard
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/api/src/lib/campaign-runner.ts'
+      - 'apps/api/package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/production-repair.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: production-repair-main
+  cancel-in-progress: true
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Fix known campaign runner build error
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('apps/api/src/lib/campaign-runner.ts')
+          s = p.read_text()
+          old = "create: { leadId, platform, url, confidence: 100, source: 'website-research' }"
+          new = "create: { leadId: lead.id, platform, url, confidence: 100, source: 'website-research' }"
+          if old in s:
+              p.write_text(s.replace(old, new))
+              print('Fixed undefined leadId in campaign runner.')
+          else:
+              print('Campaign runner already fixed.')
+          PY
+
+      - name: Regenerate lockfile
+        run: pnpm install --lockfile-only --no-frozen-lockfile
+
+      - name: Commit repairs
+        shell: bash
+        run: |
+          if git diff --quiet -- apps/api/src/lib/campaign-runner.ts pnpm-lock.yaml; then
+            echo 'No production repair changes required.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/api/src/lib/campaign-runner.ts pnpm-lock.yaml
+          git commit -m 'fix: repair production build and synchronize lockfile'
+          git push origin main
