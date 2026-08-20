@@ -62,11 +62,14 @@ importers:
       '@nexor/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@nexor/tools':
+        specifier: workspace:*
+        version: link:../../packages/tools
       '@tailwindcss/postcss':
         specifier: ^4
         version: 4.3.3
       class-variance-authority:
-        specifier: ^0.7.1
+        specifier: ^0.7.0
         version: 0.7.1
       clsx:
         specifier: ^2.1.1
