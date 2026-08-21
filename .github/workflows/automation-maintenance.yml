@@ -1,0 +1,67 @@
+name: Nexor scheduled automation
+
+on:
+  schedule:
+    - cron: '0 */2 * * *'
+    - cron: '0 3 * * *'
+    - cron: '0 13 * * *'
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'Task to run'
+        required: true
+        default: 'job-autopilot'
+        type: choice
+        options:
+          - job-autopilot
+          - autopilot
+          - reports
+
+permissions: {}
+
+concurrency:
+  group: nexor-scheduled-automation
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Select scheduled task
+        id: task
+        env:
+          EVENT_SCHEDULE: ${{ github.event.schedule || '' }}
+          MANUAL_TASK: ${{ inputs.task || '' }}
+        run: |
+          set -euo pipefail
+          if [ -n "$MANUAL_TASK" ]; then
+            task="$MANUAL_TASK"
+          elif [ "$EVENT_SCHEDULE" = '0 3 * * *' ]; then
+            task="autopilot"
+          elif [ "$EVENT_SCHEDULE" = '0 13 * * *' ]; then
+            task="reports"
+          else
+            task="job-autopilot"
+          fi
+          echo "task=$task" >> "$GITHUB_OUTPUT"
+
+      - name: Run scheduled Nexor worker
+        env:
+          NEXOR_BASE_URL: ${{ vars.NEXOR_PRODUCTION_URL || 'https://nexoraios-main-1.vercel.app' }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          TASK: ${{ steps.task.outputs.task }}
+        run: |
+          set -euo pipefail
+          test -n "$CRON_SECRET"
+          case "$TASK" in
+            job-autopilot) path="/api/cron/job-autopilot" ;;
+            autopilot) path="/api/cron/autopilot" ;;
+            reports) path="/api/cron/reports/email" ;;
+            *) echo "Unknown task: $TASK"; exit 1 ;;
+          esac
+          echo "Running $path"
+          curl --fail-with-body --silent --show-error --max-time 120 \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$NEXOR_BASE_URL$path"
+          echo
