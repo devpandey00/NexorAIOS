@@ -3,6 +3,7 @@ import { getDatabaseClients, LeadStatus, OutreachChannel, OutreachStatus } from 
 
 const prisma = getDatabaseClients().write;
 const MAX_BATCH = 100;
+const SUPPORTED_CHANNELS: OutreachChannel[] = [OutreachChannel.EMAIL, OutreachChannel.WHATSAPP];
 
 function authorized(req: NextRequest) {
   const secret = process.env.OUTREACH_API_SECRET;
@@ -22,12 +23,15 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const requestedLimit = Number(body?.limit ?? MAX_BATCH);
     const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : MAX_BATCH, 1), MAX_BATCH);
-    const channels = Array.isArray(body?.channels) && body.channels.length ? body.channels.filter((value: unknown): value is string => [OutreachChannel.EMAIL, OutreachChannel.WHATSAPP].includes(value as OutreachChannel)) : [OutreachChannel.EMAIL, OutreachChannel.WHATSAPP];
+    const requestedChannels = Array.isArray(body?.channels) ? body.channels : [];
+    const channels: OutreachChannel[] = requestedChannels.length
+      ? requestedChannels.filter((value: unknown): value is OutreachChannel => SUPPORTED_CHANNELS.includes(value as OutreachChannel))
+      : SUPPORTED_CHANNELS;
     const leads = await prisma.lead.findMany({ where: { status: { in: [LeadStatus.QUALIFIED, LeadStatus.PITCH_READY] }, OR: [{ email: { not: null } }, { whatsapp: { not: null } }] }, orderBy: [{ auditScore: 'desc' }, { createdAt: 'desc' }], take: limit });
     let created = 0;
     let skipped = 0;
     for (const lead of leads) {
-      for (const channel of channels as OutreachChannel[]) {
+      for (const channel of channels) {
         if (channel === OutreachChannel.EMAIL && !lead.email) continue;
         if (channel === OutreachChannel.WHATSAPP && !lead.whatsapp) continue;
         const existing = await prisma.outreach.findFirst({ where: { leadId: lead.id, channel, status: { in: [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED, OutreachStatus.APPROVED, OutreachStatus.SCHEDULED, OutreachStatus.SENT] } }, select: { id: true } });
