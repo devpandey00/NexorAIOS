@@ -30,7 +30,7 @@ export async function runSalesMachineWorkflow(input: ToolInput): Promise<Workflo
   const processLead = async (lead: Record<string, unknown>, index: number): Promise<{ prospect?: ProspectResult; error?: Record<string, string> }> => {
     try {
       const website = typeof lead.website === 'string' ? lead.website : '';
-      const research = website ? await toolRegistry.execute('website', { url: website }) : { success: true, data: { result: { research: {} } } };
+      const research: ToolOutput = website ? await toolRegistry.execute('website', { url: website }) : { success: true, data: { result: { research: {} } }, executionTime: 0 };
       const researchData = research.success ? researchPayload(research) : {};
       const contacts = (researchData.contacts ?? {}) as Record<string, unknown>;
       const email = typeof lead.email === 'string' && lead.email.trim() ? lead.email.trim() : firstString(contacts.emails);
@@ -77,5 +77,14 @@ export async function runSalesMachineWorkflow(input: ToolInput): Promise<Workflo
   }
 
   const success = prospects.length > 0 || unique.length === 0;
-  return { success, results: { discover: discovery, dedup, filteredOut: discovered.length - operational.length, prospects: { success: true, data: { total: prospects.length, items: prospects, errors } } }, ...(success ? {} : { failedStep: 'prospects' }) };
+  return {
+    success,
+    results: {
+      discover: discovery,
+      dedup,
+      filteredOut: { success: true, data: { count: discovered.length - operational.length }, executionTime: 0 },
+      prospects: { success: true, data: { total: prospects.length, items: prospects, errors }, executionTime: 0 },
+    },
+    ...(success ? {} : { failedStep: 'prospects' }),
+  };
 }
