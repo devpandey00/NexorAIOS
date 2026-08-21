@@ -40,39 +40,51 @@ export async function GET(req: Request) {
     let queued = 0;
     let skipped = 0;
 
-    for (const followUp of due) {
-      if (followUp.attemptCount >= followUp.maxAttempts) {
-        await prisma.followUp.update({ where: { id: followUp.id }, data: { status: FollowUpStatus.CANCELLED } });
-        continue;
-      }
-
-      const terminal = await prisma.conversation.findFirst({ where: { leadId: followUp.leadId, status: { in: ['NOT_INTERESTED', 'WRONG_PERSON'] } }, select: { id: true } });
-      if (terminal) {
-        await prisma.followUp.update({ where: { id: followUp.id }, data: { status: FollowUpStatus.CANCELLED, notes: 'Cancelled because reply intelligence marked the lead as not contactable for follow-up.' } });
-        skipped++;
-        continue;
-      }
-
-      const channel = followUp.lead.whatsapp ? OutreachChannel.WHATSAPP : followUp.lead.email ? OutreachChannel.EMAIL : null;
-      if (!channel) {
-        await prisma.followUp.update({ where: { id: followUp.id }, data: { status: FollowUpStatus.CANCELLED, notes: 'No supported contact channel' } });
-        skipped++;
-        continue;
-      }
-
-      const existing = await prisma.outreach.findFirst({ where: { leadId: followUp.leadId, status: { in: [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED, OutreachStatus.APPROVED, OutreachStatus.SCHEDULED] }, createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } } });
-      if (existing) {
-        await prisma.followUp.update({ where: { id: followUp.id }, data: { status: FollowUpStatus.COMPLETED, attemptCount: { increment: 1 }, notes: `${followUp.notes ?? ''}\nSkipped because active outreach already exists.`.trim() } });
-        skipped++;
-        continue;
-      }
-
-      const scheduledAt = new Date(Date.now() + 5 * 60 * 1000);
-      await prisma.$transaction(async (tx) => {
-        await tx.outreach.create({ data: { leadId: followUp.leadId, channel, status: OutreachStatus.APPROVED, message: buildFollowUpMessage(followUp.lead), approvedAt: new Date(), scheduledAt } });
-        await tx.followUp.update({ where: { id: followUp.id }, data: { status: FollowUpStatus.COMPLETED, attemptCount: { increment: 1 }, notes: `${followUp.notes ?? ''}\nAutomatic follow-up queued for ${scheduledAt.toISOString()}`.trim() } });
+    for (const candidate of due) {
+      // Atomic claim: only one overlapping cron invocation may own this follow-up.
+      const claimed = await prisma.followUp.updateMany({
+        where: { id: candidate.id, status: FollowUpStatus.PENDING },
+        data: { status: FollowUpStatus.SCHEDULED, notes: `${candidate.notes ?? ''}\nClaimed by follow-up worker at ${new Date().toISOString()}`.trim() },
       });
-      queued++;
+      if (claimed.count !== 1) continue;
+
+      try {
+        if (candidate.attemptCount >= candidate.maxAttempts) {
+          await prisma.followUp.update({ where: { id: candidate.id }, data: { status: FollowUpStatus.CANCELLED } });
+          continue;
+        }
+
+        const terminal = await prisma.conversation.findFirst({ where: { leadId: candidate.leadId, status: { in: ['NOT_INTERESTED', 'WRONG_PERSON'] } }, select: { id: true } });
+        if (terminal) {
+          await prisma.followUp.update({ where: { id: candidate.id }, data: { status: FollowUpStatus.CANCELLED, notes: 'Cancelled because reply intelligence marked the lead as not contactable for follow-up.' } });
+          skipped++;
+          continue;
+        }
+
+        const channel = candidate.lead.whatsapp ? OutreachChannel.WHATSAPP : candidate.lead.email ? OutreachChannel.EMAIL : null;
+        if (!channel) {
+          await prisma.followUp.update({ where: { id: candidate.id }, data: { status: FollowUpStatus.CANCELLED, notes: 'No supported contact channel' } });
+          skipped++;
+          continue;
+        }
+
+        const existing = await prisma.outreach.findFirst({ where: { leadId: candidate.leadId, status: { in: [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED, OutreachStatus.APPROVED, OutreachStatus.SCHEDULED] }, createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } } });
+        if (existing) {
+          await prisma.followUp.update({ where: { id: candidate.id }, data: { status: FollowUpStatus.COMPLETED, attemptCount: { increment: 1 }, notes: `${candidate.notes ?? ''}\nSkipped because active outreach already exists.`.trim() } });
+          skipped++;
+          continue;
+        }
+
+        const scheduledAt = new Date(Date.now() + 5 * 60 * 1000);
+        await prisma.$transaction(async (tx) => {
+          await tx.outreach.create({ data: { leadId: candidate.leadId, channel, status: OutreachStatus.APPROVED, message: buildFollowUpMessage(candidate.lead), approvedAt: new Date(), scheduledAt } });
+          await tx.followUp.update({ where: { id: candidate.id }, data: { status: FollowUpStatus.COMPLETED, attemptCount: { increment: 1 }, notes: `${candidate.notes ?? ''}\nAutomatic follow-up queued for ${scheduledAt.toISOString()}`.trim() } });
+        });
+        queued++;
+      } catch (error) {
+        // Release the claim so a later cron run can retry safely.
+        await prisma.followUp.update({ where: { id: candidate.id }, data: { status: FollowUpStatus.PENDING, attemptCount: { increment: 1 }, notes: `${candidate.notes ?? ''}\nWorker error: ${error instanceof Error ? error.message : String(error)}`.trim() } }).catch(() => undefined);
+      }
     }
 
     return NextResponse.json({ success: true, due: due.length, queued, skipped });
