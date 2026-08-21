@@ -1,68 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabaseClients, LeadStatus, OutreachChannel, OutreachStatus } from '@nexor/database';
 import { outreachService } from '@nexor/ai';
+import { validateBusinessLead } from '@/lib/validators/lead';
 
 const prisma = getDatabaseClients().write;
 
-const JOB_OR_CONTENT_PATTERNS = [
-  /\bjobs?\b/i, /\bvacanc(?:y|ies)\b/i, /\bcareers?\b/i, /\bhiring\b/i, /\bsalary\b/i,
-  /\bapply now\b/i, /\bresume\b/i, /\bcv\b/i, /\binternship\b/i, /\brecruitment\b/i,
-  /\btop\b/i, /\bbest\b/i, /\blist\b/i, /\bdirectory\b/i, /\bguide\b/i,
-  /\broundup\b/i, /\barticle\b/i, /\bnews\b/i, /\bhow to\b/i,
-];
-const NON_BUSINESS_PATHS = /\/(jobs?|careers?|vacancies|blog|article|news|category|tag|search|directory|listing|forum|forums)(\/|$)/i;
-const VALID_LEAD_TYPES = new Set(['BUSINESS', 'COMPANY', 'LOCAL_BUSINESS', 'AGENCY', 'PROFESSIONAL_SERVICE']);
-const BLOCKED_SOURCES = new Set(['JOB', 'JOB_SEARCH', 'JOB-SEARCH', 'RECRUITMENT', 'CAREER', 'JOB_PORTAL']);
-
-function parseNotes(notes: string | null) {
-  if (!notes) return {} as Record<string, any>;
-  try {
-    const parsed = JSON.parse(notes);
-    return parsed && typeof parsed === 'object' ? parsed as Record<string, any> : {};
-  } catch {
-    return {} as Record<string, any>;
-  }
-}
-
-function validateBusinessLead(lead: { businessName: string; website: string | null; notes: string | null; whatsapp: string | null }) {
-  const parsed = parseNotes(lead.notes);
-  const metadata = parsed.metadata ?? parsed;
-  const leadType = typeof metadata.leadType === 'string' ? metadata.leadType.toUpperCase() : '';
-  const source = typeof metadata.source === 'string' ? metadata.source.toUpperCase() : '';
-  if (!lead.businessName.trim() || JOB_OR_CONTENT_PATTERNS.some((pattern) => pattern.test(lead.businessName))) return { ok: false, reason: 'Blocked job/content/non-business lead' };
-  if (BLOCKED_SOURCES.has(source) || (leadType && !VALID_LEAD_TYPES.has(leadType))) return { ok: false, reason: `Blocked lead type/source: ${leadType || 'unknown'} / ${source || 'unknown'}` };
-  if (lead.website) {
-    try {
-      if (NON_BUSINESS_PATHS.test(new URL(lead.website).pathname)) return { ok: false, reason: 'Blocked job/content/listing website' };
-    } catch {
-      return { ok: false, reason: 'Invalid lead website' };
-    }
-  }
-  return { ok: true, leadType: leadType || 'BUSINESS', source: source || 'UNKNOWN', parsed };
+function normalizeChannel(value: unknown): OutreachChannel | null {
+  if (typeof value !== 'string') return null;
+  return Object.values(OutreachChannel).includes(value as OutreachChannel) ? value as OutreachChannel : null;
 }
 
 function authorized(req: NextRequest) {
   const secret = process.env.OUTREACH_API_SECRET;
-  return !secret || req.headers.get('authorization') === `Bearer ${secret}`;
+  if (!secret) return process.env.NODE_ENV !== 'production';
+  return req.headers.get('authorization') === `Bearer ${secret}` || req.headers.get('x-outreach-secret') === secret;
 }
 
-function normalizeChannel(value: unknown): OutreachChannel | null {
-  if (Object.values(OutreachChannel).includes(value as OutreachChannel)) return value as OutreachChannel;
-  return null;
-}
-
-function buildMessage(channel: OutreachChannel, lead: { businessName: string; ownerName: string | null }, context: string) {
-  const name = lead.ownerName || lead.businessName;
-  if (channel === OutreachChannel.EMAIL) {
-    return `Subject: A quick growth observation for ${lead.businessName}\n\nHi ${name},\n\nI had a look at ${lead.businessName} and noticed a few opportunities around online lead generation. ${context}\n\nI can share the specific opportunities and a practical action plan if useful.\n\nRegards,\nNexor Media`;
-  }
-  return `Hi ${name}, I was looking at ${lead.businessName} and noticed a few opportunities to improve online lead generation. ${context} I can send you the specific ideas if you'd like. — Nexor Media`;
+function buildMessage(channel: OutreachChannel, lead: { businessName: string | null; ownerName: string | null }, context: string) {
+  const greeting = lead.ownerName ? `Hi ${lead.ownerName},` : `Hi ${lead.businessName || 'there'},`;
+  if (channel === OutreachChannel.EMAIL) return `${greeting}\n\nI came across ${lead.businessName || 'your business'} and noticed a few opportunities to improve its digital acquisition. ${context}\n\nIf useful, I can share a short audit with the highest-impact opportunities.\n\nRegards,\nNexor`;
+  return `${greeting} ${context} I can share a short, practical audit if useful.`;
 }
 
 export async function GET(req: NextRequest) {
   if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
-  const drafts = await prisma.outreach.findMany({ where: { status: { in: [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED] } }, include: { lead: true, campaign: true }, orderBy: { createdAt: 'asc' }, take: 200 });
-  return NextResponse.json({ success: true, count: drafts.length, drafts });
+  const leadId = req.nextUrl.searchParams.get('leadId');
+  const channel = normalizeChannel(req.nextUrl.searchParams.get('channel'));
+  if (!leadId) return NextResponse.json({ success: false, error: 'leadId is required' }, { status: 400 });
+  const where = { leadId, ...(channel ? { channel } : {}) };
+  const drafts = await prisma.outreach.findMany({ where, orderBy: { createdAt: 'desc' }, take: 100 });
+  return NextResponse.json({ success: true, drafts });
 }
 
 export async function POST(req: NextRequest) {
@@ -93,8 +60,9 @@ export async function POST(req: NextRequest) {
 
     let message = '';
     if (channel === OutreachChannel.WHATSAPP) {
-      const research = validation.parsed.research ?? {};
-      const score = validation.parsed.score ?? {};
+      const parsed = validation.parsed ?? {};
+      const research = parsed.research ?? {};
+      const score = parsed.score ?? {};
       const generated = await outreachService.generate({
         businessName: lead.businessName,
         ownerName: lead.ownerName,
@@ -123,33 +91,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, outreach }, { status: 201 });
   } catch (error) {
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 });
-  }
-}
-
-export async function PATCH(req: NextRequest) {
-  if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
-  try {
-    const body = await req.json();
-    const id = typeof body.id === 'string' ? body.id : '';
-    const action = body.action === 'approve' ? 'approve' : body.action === 'cancel' ? 'cancel' : '';
-    if (!id || !action) return NextResponse.json({ success: false, error: 'id and action are required' }, { status: 400 });
-    const existing = await prisma.outreach.findUnique({ where: { id }, include: { lead: true } });
-    if (!existing) return NextResponse.json({ success: false, error: 'Outreach not found' }, { status: 404 });
-    const awaitingApproval: OutreachStatus[] = [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED];
-    if (!awaitingApproval.includes(existing.status)) return NextResponse.json({ success: false, error: `Outreach is not awaiting approval. Current status: ${existing.status}` }, { status: 409 });
-
-    if (action === 'approve') {
-      const validation = validateBusinessLead(existing.lead);
-      if (!validation.ok) return NextResponse.json({ success: false, error: validation.reason }, { status: 422 });
-      if (existing.channel === OutreachChannel.WHATSAPP && !existing.lead.whatsapp) return NextResponse.json({ success: false, error: 'NOT CONTACTABLE: WhatsApp number missing' }, { status: 422 });
-    }
-
-    const status = action === 'approve' ? OutreachStatus.APPROVED : OutreachStatus.CANCELLED;
-    const scheduledAt = action === 'approve' ? new Date(Date.now() + 5 * 60 * 1000) : null;
-    const draft = await prisma.outreach.update({ where: { id }, data: { status, approvedAt: action === 'approve' ? new Date() : null, scheduledAt, error: null } });
-    return NextResponse.json({ success: true, draft, autoSendAt: scheduledAt });
-  } catch (error) {
+    console.error('[OUTREACH DRAFT ERROR]', error);
     return NextResponse.json({ success: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }
