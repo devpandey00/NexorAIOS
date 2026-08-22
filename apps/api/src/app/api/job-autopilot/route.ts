@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabaseClients, JobStatus, JobType } from '@nexor/database';
 
-const db = getDatabaseClients().write;
+function getDb() { return getDatabaseClients().write; }
 const secret = process.env.CRON_SECRET || process.env.OUTREACH_API_SECRET || '';
 const profile = {
   name: process.env.JOB_APPLICANT_NAME || 'Diwakar Pandey',
@@ -96,6 +96,7 @@ async function draft(job: { title: string; company: string }) {
 }
 
 async function discover() {
+  const db = getDb();
   const results = await searchJobs(); let created = 0;
   const recent = await db.job.findMany({ where: { type: JobType.ANALYTICS }, orderBy: { createdAt: 'desc' }, take: 1000 });
   const seen = new Set(recent.map(j => (j.payload as any)?.url).filter(Boolean));
@@ -109,6 +110,7 @@ async function discover() {
 }
 
 async function apply(limit = 10) {
+  const db = getDb();
   const staleBefore = new Date(Date.now() - 30 * 60 * 1000);
   await db.job.updateMany({ where: { type: JobType.ANALYTICS, status: JobStatus.RUNNING, startedAt: { lt: staleBefore } }, data: { status: JobStatus.RETRYING, error: 'Recovered stale job-autopilot claim' } });
   const jobs = await db.job.findMany({ where: { type: JobType.ANALYTICS, status: { in: [JobStatus.QUEUED, JobStatus.RETRYING] } }, orderBy: { createdAt: 'asc' }, take: 150 });
@@ -143,6 +145,7 @@ async function apply(limit = 10) {
 
 export async function GET(req: NextRequest) {
   if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  const db = getDb();
   const jobs = await db.job.findMany({ where: { type: JobType.ANALYTICS }, orderBy: { createdAt: 'desc' }, take: 250 });
   return NextResponse.json({ success: true, profile, jobs: jobs.map(j => ({ id: j.id, ...((j.payload || {}) as any), status: j.status, error: j.error })).filter(j => j.kind === 'JOB_OPPORTUNITY') });
 }
@@ -160,6 +163,7 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  const db = getDb();
   const { id, action } = await req.json();
   if (!id || !['approve', 'reject'].includes(action)) return NextResponse.json({ success: false, error: 'id and action are required' }, { status: 400 });
   const job = await db.job.findUnique({ where: { id } });
