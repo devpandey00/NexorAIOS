@@ -2,9 +2,12 @@ import { NextResponse } from 'next/server';
 import { getDatabaseClients } from '@nexor/database';
 import { executeWorkflow, type SupportedWorkflow } from '@nexor/tools';
 
-const db = getDatabaseClients().write;
+function getDb() {
+  return getDatabaseClients().write;
+}
 
 export async function POST() {
+  const db = getDb();
   const claimed = await db.$queryRawUnsafe<Array<{ id: string; schedule_id: string; workflow: string; input: Record<string, unknown> }>>(
     `WITH due AS (
        SELECT "id","workflow","input" FROM "public"."automation_schedules"
