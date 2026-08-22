@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { FollowUpStatus, getDatabaseClients, OutreachChannel, OutreachStatus } from '@nexor/database';
 
-const prisma = getDatabaseClients().write;
+function getPrisma() { return getDatabaseClients().write; }
 
 export async function GET() {
   try {
+    const prisma = getPrisma();
     const followUps = await prisma.followUp.findMany({ where: { status: { in: [FollowUpStatus.PENDING, FollowUpStatus.SCHEDULED] } }, include: { lead: true }, orderBy: { scheduledAt: 'asc' }, take: 200 });
     return NextResponse.json({ success: true, count: followUps.length, followUps });
   } catch (error) { return NextResponse.json({ success: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 }); }
@@ -12,6 +13,7 @@ export async function GET() {
 
 export async function POST() {
   try {
+    const prisma = getPrisma();
     const due = await prisma.followUp.findMany({ where: { status: { in: [FollowUpStatus.PENDING, FollowUpStatus.SCHEDULED] }, scheduledAt: { lte: new Date() } }, include: { lead: true }, orderBy: { scheduledAt: 'asc' }, take: 100 });
     let created = 0;
     for (const followUp of due) {
@@ -36,6 +38,7 @@ export async function POST() {
 
 export async function PATCH(req: NextRequest) {
   try {
+    const prisma = getPrisma();
     const body = await req.json();
     const id = typeof body.id === 'string' ? body.id : '';
     const action = typeof body.action === 'string' ? body.action : '';
