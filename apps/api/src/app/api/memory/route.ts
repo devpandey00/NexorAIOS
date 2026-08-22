@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDatabaseClients } from '@nexor/database';
 import { randomUUID } from 'node:crypto';
 
-const db = getDatabaseClients().write;
+function getDb() { return getDatabaseClients().write; }
 const KINDS = new Set(['FACT', 'PREFERENCE', 'DECISION', 'CONTEXT', 'OUTCOME']);
 
 export async function GET(req: NextRequest) {
   try {
+    const db = getDb();
     const kind = req.nextUrl.searchParams.get('kind');
     const limit = Math.max(1, Math.min(Number(req.nextUrl.searchParams.get('limit') ?? 20) || 20, 100));
     const rows = kind && KINDS.has(kind)
@@ -20,6 +21,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const db = getDb();
     const body = await req.json();
     if (typeof body.key !== 'string' || typeof body.kind !== 'string' || !KINDS.has(body.kind)) {
       return NextResponse.json({ success: false, error: 'key and valid kind are required' }, { status: 400 });
