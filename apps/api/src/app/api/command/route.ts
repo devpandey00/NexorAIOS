@@ -6,8 +6,13 @@ import { runAutopilot } from '@/lib/autopilot-runner';
 
 export const maxDuration = 300;
 
-const db = getDatabaseClients().write;
-const memoryService = new MemoryService(db);
+function getDb() {
+  return getDatabaseClients().write;
+}
+
+function getMemoryService() {
+  return new MemoryService(getDb());
+}
 
 function isStartCommand(query: string) {
   return /^(?:let(?:'|’)s\s+)?(?:start|begin|run|launch)(?:\s+(?:nexor|everything|all|autopilot|the\s+workflow))?[.!\s]*$/i.test(query)
@@ -29,7 +34,7 @@ export async function POST(req: NextRequest) {
     if (isStartCommand(query)) {
       const result = await runAutopilot();
       return NextResponse.json({
-        success: true,
+        success: Boolean(result.success),
         query,
         route: {
           workflow: 'autopilot',
@@ -42,10 +47,10 @@ export async function POST(req: NextRequest) {
           executionTime: Date.now() - startedAt,
         },
         durationMs: Date.now() - startedAt,
-      });
+      }, { status: result.success ? 200 : 500 });
     }
 
-    const memoryContext = await memoryService.buildContext(30);
+    const memoryContext = await getMemoryService().buildContext(30);
     const context = {
       ...memoryContext,
       ...suppliedContext,
