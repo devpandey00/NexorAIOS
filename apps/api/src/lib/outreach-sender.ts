@@ -8,7 +8,9 @@ import {
   OutreachStatus,
 } from '@nexor/database';
 
-const prisma = getDatabaseClients().write;
+function getPrisma() {
+  return getDatabaseClients().write;
+}
 
 const BLOCKED_NAME_PATTERNS = [/\bjobs?\b/i, /\bvacanc(?:y|ies)\b/i, /\bcareers?\b/i, /\bhiring\b/i, /\bsalary\b/i, /\bapply now\b/i, /\bresume\b/i, /\bcv\b/i, /\binternship\b/i, /\btop\b/i, /\bbest\b/i, /\blist\b/i, /\bdirectory\b/i, /\bguide\b/i, /\barticle\b/i, /\bnews\b/i];
 const BLOCKED_SOURCES = new Set(['JOB', 'JOB_SEARCH', 'JOB-SEARCH', 'RECRUITMENT', 'CAREER', 'JOB_PORTAL']);
@@ -65,6 +67,7 @@ async function sendEmail(to: string, message: string) {
 }
 
 export async function sendApprovedOutreach(id: string) {
+  const prisma = getPrisma();
   const outreach = await prisma.outreach.findUnique({ where: { id }, include: { lead: true } });
   if (!outreach) throw new Error('Outreach not found');
   if (outreach.status === OutreachStatus.SENT) return { outreach, recipient: outreach.channel === OutreachChannel.WHATSAPP ? outreach.lead.whatsapp : outreach.lead.email, alreadySent: true };
