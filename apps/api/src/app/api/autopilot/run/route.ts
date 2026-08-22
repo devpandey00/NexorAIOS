@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import { runAutopilot } from '@/lib/autopilot-runner';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -13,6 +12,7 @@ export async function POST() {
   }
 
   try {
+    const { runAutopilot } = await import('@/lib/autopilot-runner');
     return NextResponse.json(await runAutopilot());
   } catch (error) {
     return NextResponse.json(
