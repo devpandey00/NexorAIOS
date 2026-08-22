@@ -4,7 +4,29 @@ import { checkSearchConsoleConnection } from '@/lib/integrations/search-console'
 
 export const runtime = 'nodejs';
 
-const integrations = [
+type IntegrationName =
+  | 'database'
+  | 'whatsapp'
+  | 'email'
+  | 'openai'
+  | 'anthropic'
+  | 'search'
+  | 'meta'
+  | 'meta-ads'
+  | 'google-ads'
+  | 'wordpress'
+  | 'ga4'
+  | 'search-console';
+
+type IntegrationStatus = {
+  name: IntegrationName;
+  status: string;
+  configured: number;
+  required: number;
+  missing: string[];
+};
+
+const integrations: readonly [IntegrationName, readonly string[]][] = [
   ['database', ['DATABASE_URL']],
   ['whatsapp', ['WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID']],
   ['email', ['RESEND_API_KEY', 'OUTREACH_FROM_EMAIL']],
@@ -15,7 +37,7 @@ const integrations = [
   ['meta-ads', ['META_ACCESS_TOKEN', 'META_AD_ACCOUNT_ID']],
   ['google-ads', ['GOOGLE_ADS_DEVELOPER_TOKEN', 'GOOGLE_ADS_CLIENT_ID', 'GOOGLE_ADS_CLIENT_SECRET', 'GOOGLE_ADS_REFRESH_TOKEN', 'GOOGLE_ADS_CUSTOMER_ID']],
   ['wordpress', ['WORDPRESS_URL', 'WORDPRESS_USERNAME', 'WORDPRESS_APP_PASSWORD']],
-] as const;
+];
 
 function configuredStatus(required: readonly string[]) {
   const configured = required.filter((key) => Boolean(process.env[key]));
@@ -27,8 +49,22 @@ function configuredStatus(required: readonly string[]) {
   };
 }
 
+function providerStatus(name: IntegrationName, result: Record<string, unknown>, required: string[]): IntegrationStatus {
+  const status = typeof result.status === 'string' ? result.status : 'ERROR';
+  return {
+    name,
+    status: status === 'CONNECTED' ? 'CONNECTED' : status === 'ERROR' ? 'ERROR' : 'CONFIGURATION_REQUIRED',
+    configured: status === 'CONNECTED' ? required.length : 0,
+    required: required.length,
+    missing: status === 'CONNECTED' ? [] : required,
+  };
+}
+
 export async function GET() {
-  const status = integrations.map(([name, required]) => ({ name, ...configuredStatus(required) }));
+  const status: IntegrationStatus[] = integrations.map(([name, required]) => ({
+    name,
+    ...configuredStatus(required),
+  }));
 
   let ga4: Record<string, unknown>;
   try {
@@ -44,8 +80,8 @@ export async function GET() {
     searchConsole = { status: 'ERROR', error: error instanceof Error ? error.message : String(error) };
   }
 
-  status.push({ name: 'ga4', ...(ga4.status === 'CONNECTED' ? { status: 'CONNECTED' } : ga4.status === 'ERROR' ? { status: 'ERROR' } : { status: 'CONFIGURATION_REQUIRED' }), configured: ga4.status === 'CONNECTED' ? 2 : 0, required: 2, missing: ga4.status === 'CONNECTED' ? [] : ['GOOGLE_SERVICE_ACCOUNT_JSON/GOOGLE_ACCESS_TOKEN', 'GA4_PROPERTY_ID'] } as (typeof status)[number]);
-  status.push({ name: 'search-console', ...(searchConsole.status === 'CONNECTED' ? { status: 'CONNECTED' } : searchConsole.status === 'ERROR' ? { status: 'ERROR' } : { status: 'CONFIGURATION_REQUIRED' }), configured: searchConsole.status === 'CONNECTED' ? 2 : 0, required: 2, missing: searchConsole.status === 'CONNECTED' ? [] : ['GOOGLE_SERVICE_ACCOUNT_JSON/GOOGLE_ACCESS_TOKEN', 'SEARCH_CONSOLE_SITE_URL'] } as (typeof status)[number]);
+  status.push(providerStatus('ga4', ga4, ['GOOGLE_SERVICE_ACCOUNT_JSON/GOOGLE_ACCESS_TOKEN', 'GA4_PROPERTY_ID']));
+  status.push(providerStatus('search-console', searchConsole, ['GOOGLE_SERVICE_ACCOUNT_JSON/GOOGLE_ACCESS_TOKEN', 'SEARCH_CONSOLE_SITE_URL']));
 
   const connected = status.filter((item) => item.status === 'CONNECTED').length;
   const partial = status.filter((item) => item.status === 'PARTIAL').length;
