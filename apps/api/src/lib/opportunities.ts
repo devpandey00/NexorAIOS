@@ -17,7 +17,9 @@ export interface Opportunity {
   createdAt: string;
 }
 
-const prisma = getDatabaseClients().write;
+function getPrisma() {
+  return getDatabaseClients().write;
+}
 
 const QUERY_TEMPLATES: Record<OpportunityKind, string[]> = {
   JOB: [
@@ -41,6 +43,7 @@ const QUERY_TEMPLATES: Record<OpportunityKind, string[]> = {
 };
 
 export async function discoverOpportunities(kind: OpportunityKind, location?: string, limit = 10) {
+  const prisma = getPrisma();
   const templates = QUERY_TEMPLATES[kind];
   const queryResults = [] as Array<{ name: string; website?: string }>;
 
@@ -80,6 +83,7 @@ export async function discoverOpportunities(kind: OpportunityKind, location?: st
 }
 
 export async function listOpportunities(input?: { kind?: OpportunityKind; status?: string; limit?: number }) {
+  const prisma = getPrisma();
   const limit = Math.min(Math.max(input?.limit ?? 100, 1), 200);
   return prisma.$queryRaw<Opportunity[]>`
     SELECT id, kind, title, organization, url, source, location, contact, notes, status,
