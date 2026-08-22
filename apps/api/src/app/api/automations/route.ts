@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { getDatabaseClients } from '@nexor/database';
 
-const db = getDatabaseClients().write;
+function getDb() {
+  return getDatabaseClients().write;
+}
 
 export async function GET() {
   try {
+    const db = getDb();
     const schedules = await db.$queryRawUnsafe<unknown[]>(
       `SELECT * FROM "public"."automation_schedules" ORDER BY "next_run_at" ASC NULLS LAST, "created_at" DESC LIMIT 200`,
     );
@@ -17,6 +20,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    const db = getDb();
     const body = await req.json();
     if (typeof body.name !== 'string' || typeof body.workflow !== 'string') {
       return NextResponse.json({ success: false, error: 'name and workflow are required' }, { status: 400 });
