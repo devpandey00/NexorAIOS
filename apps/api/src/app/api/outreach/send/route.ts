@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ConversationChannel, FollowUpStatus, getDatabaseClients, LeadStatus, MessageDirection, OutreachChannel, OutreachStatus } from '@nexor/database';
-const prisma = getDatabaseClients().write;
+
+function getPrisma() { return getDatabaseClients().write; }
 const REQUEST_TIMEOUT_MS = 12000;
 const MAX_ATTEMPTS = 3;
 function authorized(req: NextRequest) { const secret = process.env.OUTREACH_API_SECRET; return !secret || req.headers.get('authorization') === `Bearer ${secret}`; }
@@ -24,6 +25,7 @@ export async function POST(req: NextRequest) {
   if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   let id = '';
   try {
+    const prisma = getPrisma();
     const body = await req.json(); id = typeof body?.id === 'string' ? body.id : ''; if (!id) return NextResponse.json({ success: false, error: 'id is required' }, { status: 400 });
     const outreach = await prisma.outreach.findUnique({ where: { id }, include: { lead: true } }); if (!outreach) return NextResponse.json({ success: false, error: 'Outreach not found' }, { status: 404 });
     if (outreach.status === OutreachStatus.SENT) return NextResponse.json({ success: true, alreadySent: true, outreach });
@@ -45,6 +47,6 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json({ success: true, outreach: result, recipient });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error); if (id) await prisma.outreach.update({ where: { id }, data: { status: OutreachStatus.FAILED, error: errorMessage } }).catch(() => undefined); console.error('[OUTREACH SEND ERROR]', error); return NextResponse.json({ success: false, error: errorMessage }, { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : String(error); if (id) await getPrisma().outreach.update({ where: { id }, data: { status: OutreachStatus.FAILED, error: errorMessage } }).catch(() => undefined); console.error('[OUTREACH SEND ERROR]', error); return NextResponse.json({ success: false, error: errorMessage }, { status: 500 });
   }
 }
