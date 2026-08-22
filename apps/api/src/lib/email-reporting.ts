@@ -18,9 +18,12 @@ export interface NexorReportSummary {
   opportunities: number;
 }
 
-const prisma = getDatabaseClients().write;
+function getPrisma() {
+  return getDatabaseClients().write;
+}
 
 export async function getReportSummary(periodHours = 24): Promise<NexorReportSummary> {
+  const prisma = getPrisma();
   const since = new Date(Date.now() - periodHours * 60 * 60 * 1000);
   const [leads, qualifiedLeads, campaigns, runningCampaigns, outreachDrafts, scheduledOutreach, sentOutreach, replies, meetings, won, socialDrafts, scheduledSocial, publishedSocial, opportunities] = await Promise.all([
     prisma.lead.count({ where: { createdAt: { gte: since } } }), prisma.lead.count({ where: { status: 'QUALIFIED', updatedAt: { gte: since } } }), prisma.campaign.count({ where: { createdAt: { gte: since } } }), prisma.campaign.count({ where: { status: 'RUNNING' } }), prisma.outreach.count({ where: { status: 'DRAFT', createdAt: { gte: since } } }), prisma.outreach.count({ where: { status: 'SCHEDULED' } }), prisma.outreach.count({ where: { status: 'SENT', updatedAt: { gte: since } } }), prisma.lead.count({ where: { status: 'REPLIED', updatedAt: { gte: since } } }), prisma.lead.count({ where: { status: 'MEETING_BOOKED', updatedAt: { gte: since } } }), prisma.lead.count({ where: { status: 'WON', updatedAt: { gte: since } } }),
