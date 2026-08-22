@@ -3,13 +3,15 @@
 ## Current state
 - Repository: devpandey00/NexorAIOS
 - Branch: main
-- Latest implementation commits: a1272afadfe5e4ff9f358b5084176758e57ef2b3 (checkpoint) and aa358723d8dc2b6de959e72f605ab2e035d932b1 (dashboard hardening).
+- Latest implementation commit: 3692f8c09c8701c567f56b5a40687960a2b054e1
 - Production project: nexoraios-main-1
 - Objective: genuinely production-ready NexorAIOS; no fake success states.
 
 ## Completed in current execution
 - Multiple Next.js API routes hardened against build-time database initialization.
 - AI/provider initialization made runtime-safe where required.
+- OpenAI service now lazy-initializes and no longer throws at module import/build time when OPENAI_API_KEY is absent.
+- Kept a backwards-compatible lazy OpenAI facade for existing consumers while exposing getOpenAI().
 - Logger/database ESLint configuration repaired so lint evaluates real files.
 - Logger typing issues fixed from real lint.
 - Fail-open auth patterns fixed on outreach mutation endpoints, GA4/Search Console overview endpoints, and WhatsApp verification.
@@ -19,14 +21,19 @@
 - Manual autopilot route and cron autopilot route defer their heavy dependency graphs until request time.
 - Dashboard summary database client is lazy.
 
-## Vercel verification
+## Verification status
+- GitHub main contains commit 3692f8c09c8701c567f56b5a40687960a2b054e1.
+- This OpenAI change has been applied directly to main but requires a full repository build/typecheck/lint and Vercel deployment verification before it can be considered production-ready.
+- No READY claim is permitted until Vercel production deployment and critical end-to-end smoke tests pass.
+
+## Vercel verification history
 - Build of e3ce432 reached Next.js compilation and failed during page-data collection at /api/cron/autopilot because that route still statically imported runAutopilot; fixed afterward.
 - Build of 5c82e766 reached page-data collection and failed at /api/dashboard/summary because that route still had module-level Prisma initialization; fixed in aa358723.
-- The latest checkpoint a1272af includes the dashboard hardening.
-- Vercel has not yet exposed a deployment for a1272af in the deployment list; the latest observed production build is older and must not be treated as current verification.
+- The latest checkpoint a1272af included the dashboard hardening.
+- Older Vercel deployments must not be treated as verification of the current main commit.
 
 ## Known external limitation
-- Previous sandbox could not download Prisma native engines from binaries.prisma.sh (HTTP 403). Vercel successfully generated Prisma Client during recent builds, so this is not currently a Vercel build blocker.
+- Previous sandbox could not download Prisma native engines from binaries.prisma.sh (HTTP 403). Vercel successfully generated Prisma Client during recent builds, so this was not treated as a Vercel build blocker.
 
 ## Next execution
 1. Inspect the Vercel deployment created from the latest main commit.
@@ -35,6 +42,7 @@
 4. Verify typecheck/lint/build where execution environment permits.
 5. Once deployment is READY, verify production URL and dashboard.
 6. Run production smoke tests for DB CRUD, AI, automation, outreach approval, webhooks, and workflow execution.
+7. Continue auditing sales, job-hunter, and social automation tools until their execution paths are real or their exact external configuration boundary is exposed.
 
 ## Rules
 - Never fake provider success.
