@@ -3,7 +3,7 @@ import { leadSearchService } from '@nexor/search';
 import { researchService } from '@nexor/research';
 import { assessLead, buildPersonalizedPitch } from '@nexor/core';
 
-const prisma = getDatabaseClients().write;
+function getPrisma() { return getDatabaseClients().write; }
 function normalizeWebsite(url: string): string { try { const parsed = new URL(url); return `${parsed.protocol}//${parsed.hostname.replace(/^www\./,'').toLowerCase()}${parsed.pathname.replace(/\/$/,'')}`; } catch { return url.trim().toLowerCase().replace(/\/$/,''); } }
 function normalizePhone(phone: string): string { return phone.replace(/\D/g,''); }
 function cleanLeadName(name: string): string { return name.replace(/\s+/g,' ').replace(/\s*[|·–—-]\s*$/g,'').trim(); }
@@ -11,6 +11,7 @@ function looksLikeNonBusinessName(name: string): boolean { return [/\bbest\b/i,/
 function inferNiche(query: string): string { return query.split(/\s+(?:in|at|for|with|needs|looking|seeking|want|requires)\s+/i)[0]?.trim() || query.trim(); }
 function inferCountry(query: string): string { const match = query.match(/\bin\s+([A-Z][A-Za-z]*(?:\s+[A-Z][A-Za-z]*)?)(?=\s+(?:Google|Meta|Facebook|Instagram|TikTok|LinkedIn|needs|looking|seeking|want|requires|for)\b|$)/i); return match?.[1]?.trim() || 'Unknown'; }
 async function findDuplicateLead(input: { website?: string; email?: string; whatsapp?: string; socialUrls?: string[]; businessName: string }) {
+  const prisma = getPrisma();
   const or: Prisma.LeadWhereInput[] = [];
   if (input.website) or.push({ website: input.website }); if (input.email) or.push({ email: input.email }); if (input.whatsapp) or.push({ whatsapp: input.whatsapp }); if (input.businessName) or.push({ businessName: { equals: input.businessName, mode: 'insensitive' } });
   if (input.socialUrls?.length) { const social = await prisma.socialProfile.findFirst({ where: { url: { in: input.socialUrls } }, select: { leadId: true } }); if (social) return prisma.lead.findUnique({ where: { id: social.leadId } }); }
@@ -18,6 +19,7 @@ async function findDuplicateLead(input: { website?: string; email?: string; what
 }
 
 export async function runCampaign(campaignId: string) {
+  const prisma = getPrisma();
   const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } }); if (!campaign) throw new Error('Campaign not found');
   const job = await prisma.job.findFirst({ where: { campaignId, status: JobStatus.QUEUED }, orderBy: { createdAt: 'asc' } }); if (!job) throw new Error('No queued discovery job found');
   await prisma.$transaction([prisma.campaign.update({ where: { id: campaignId }, data: { status: CampaignStatus.RUNNING, startedAt: new Date() } }),prisma.job.update({ where: { id: job.id }, data: { status: JobStatus.RUNNING, startedAt: new Date(), attempts: { increment: 1 } } })]);
