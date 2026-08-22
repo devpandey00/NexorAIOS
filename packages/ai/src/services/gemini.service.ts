@@ -1,15 +1,18 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const apiKey = process.env['GEMINI_API_KEY'];
+let client: GoogleGenerativeAI | undefined;
 
-if (!apiKey) {
-  throw new Error('GEMINI_API_KEY is not set');
+function getClient() {
+  if (!client) {
+    const apiKey = process.env['GEMINI_API_KEY'];
+    if (!apiKey) throw new Error('GEMINI_API_KEY is not configured');
+    client = new GoogleGenerativeAI(apiKey);
+  }
+  return client;
 }
 
-const genAI = new GoogleGenerativeAI(apiKey);
-
 export async function geminiAnalyze(prompt: string): Promise<string> {
-  const model = genAI.getGenerativeModel({
+  const model = getClient().getGenerativeModel({
     model: process.env['GEMINI_MODEL'] ?? 'gemini-2.5-flash',
     generationConfig: {
       responseMimeType: 'application/json',
