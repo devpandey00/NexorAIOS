@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabaseClients, LeadStatus, OutreachChannel, OutreachStatus } from '@nexor/database';
 
-const prisma = getDatabaseClients().write;
+function getPrisma() { return getDatabaseClients().write; }
 const MAX_BATCH = 100;
 const SUPPORTED_CHANNELS: OutreachChannel[] = [OutreachChannel.EMAIL, OutreachChannel.WHATSAPP];
 
@@ -20,6 +20,7 @@ function buildMessage(channel: OutreachChannel, lead: { businessName: string; ow
 export async function POST(req: NextRequest) {
   if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   try {
+    const prisma = getPrisma();
     const body = await req.json().catch(() => ({}));
     const requestedLimit = Number(body?.limit ?? MAX_BATCH);
     const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : MAX_BATCH, 1), MAX_BATCH);
