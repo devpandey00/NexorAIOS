@@ -3,7 +3,7 @@
 ## Current state
 - Repository: devpandey00/NexorAIOS
 - Branch: main
-- Latest implementation commit: 108edb7de82a94ea167666caa9ce90e05bfadda3
+- Latest implementation commit: 1e73aa09dc2bb28e70459ae7ed04d89d7f8b7e15
 - Production project: nexoraios-main-1
 - Objective: genuinely production-ready NexorAIOS; no fake success states.
 
@@ -21,11 +21,12 @@
 - Dashboard summary database client is lazy.
 - WhatsApp automation route now lazily initializes its database client; this fixed the latest Vercel page-data failure for /api/whatsapp/automation.
 - Dashboard now truthfully shows DATABASE CONFIGURATION REQUIRED when DATABASE_URL is unavailable instead of falsely displaying API + DATABASE ONLINE.
-- OpenChatCut/video-agent integration is present on main at the dashboard/video-agent route and production page loads successfully; no separate video repository is available in the connected GitHub account to merge.
+- Tool readiness is now truthful: only tools with verified execution workspaces are marked READY; generic architecture-only pages remain CONNECT.
+- OpenChatCut/video-agent integration is present on main at dashboard/video-agent and production page loads successfully; no separate video repository is available in the connected GitHub account to merge.
 - Job autopilot has real discovery, scoring, application-draft, approval, and email-submission paths; it does not falsely mark unsupported platform applications as submitted.
 
 ## Verification status
-- Latest main commit: 108edb7de82a94ea167666caa9ce90e05bfadda3.
+- Latest main commit: 1e73aa09dc2bb28e70459ae7ed04d89d7f8b7e15.
 - Vercel production deployment for 75999b88 built successfully and reached READY: dpl_ty9eDAzwXYSTpG5XEPvFGvxG2b5Y.
 - Production /dashboard returned HTTP 200 and rendered the full Next.js Nexor dashboard including Tool Universe and Video Agent.
 - Production /dashboard/video-agent returned HTTP 200 and rendered the integrated video-agent UI.
@@ -39,7 +40,7 @@
 - Build of 5c82e766 reached page-data collection and failed at /api/dashboard/summary because that route still had module-level Prisma initialization; fixed afterward.
 - Build of 3692f8c reached page-data collection and failed at /api/whatsapp/automation because that route still had module-level Prisma initialization; fixed in 75999b88.
 - Build of 75999b88 completed successfully and deployment reached READY.
-- Latest code change 108edb7 only makes dashboard DB status truthful; it will trigger the next production deployment.
+- Commits 108edb7 and 1e73aa09 contain truthful status UI fixes and should trigger the next production deployment.
 
 ## Known external blocker
 - Vercel project nexoraios-main-1 currently has no usable DATABASE_URL in the production runtime. The source .env.example contains only a localhost development URL and must NOT be used as production configuration.
@@ -52,7 +53,7 @@
 3. Verify /api/health returns database connected.
 4. Verify /api/dashboard/summary returns real persisted metrics.
 5. Run critical DB CRUD, lead, CRM, AI, automation, outreach approval, webhook, job, and social workflow smoke tests.
-6. Continue auditing tool handlers and replace any remaining architecture-only READY status with truthful status.
+6. Continue implementing remaining CONNECT tools only where a real provider/API or deterministic local implementation is available.
 7. Verify final production runtime logs and deployment state before declaring READY.
 
 ## Rules
