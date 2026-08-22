@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { OutreachStatus } from '@nexor/database';
-import { runAutopilot } from '@/lib/autopilot-runner';
-import { sendApprovedOutreach } from '@/lib/outreach-sender';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -14,6 +12,7 @@ function authorized(req: NextRequest) {
 
 async function processScheduledOutreach() {
   const { getDatabaseClients } = await import('@nexor/database');
+  const { sendApprovedOutreach } = await import('@/lib/outreach-sender');
   const prisma = getDatabaseClients().write;
   const perRun = Math.min(Math.max(Number(process.env.OUTREACH_MAX_PER_RUN ?? 2), 1), 20);
   const minDelayMs = Math.max(Number(process.env.OUTREACH_MIN_DELAY_MS ?? 2000), 0);
@@ -40,6 +39,7 @@ async function processScheduledOutreach() {
 export async function GET(req: NextRequest) {
   if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   try {
+    const { runAutopilot } = await import('@/lib/autopilot-runner');
     const [autopilot, outreach] = await Promise.all([runAutopilot(), processScheduledOutreach()]);
     return NextResponse.json({ ...autopilot, scheduledOutreach: outreach });
   } catch (error) {
