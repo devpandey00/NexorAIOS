@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDatabaseClients, OutreachStatus } from '@nexor/database';
+import { OutreachStatus } from '@nexor/database';
 import { runAutopilot } from '@/lib/autopilot-runner';
 import { sendApprovedOutreach } from '@/lib/outreach-sender';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
-
-const prisma = getDatabaseClients().write;
 
 function authorized(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
@@ -15,6 +13,8 @@ function authorized(req: NextRequest) {
 }
 
 async function processScheduledOutreach() {
+  const { getDatabaseClients } = await import('@nexor/database');
+  const prisma = getDatabaseClients().write;
   const perRun = Math.min(Math.max(Number(process.env.OUTREACH_MAX_PER_RUN ?? 2), 1), 20);
   const minDelayMs = Math.max(Number(process.env.OUTREACH_MIN_DELAY_MS ?? 2000), 0);
   const scheduled = await prisma.outreach.findMany({ where: { status: OutreachStatus.SCHEDULED, scheduledAt: { lte: new Date() } }, orderBy: { scheduledAt: 'asc' }, take: perRun });
