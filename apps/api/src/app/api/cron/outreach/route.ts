@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
-import { getDatabaseClients, OutreachStatus } from '@nexor/database';
+import { OutreachStatus } from '@nexor/database';
 import { sendApprovedOutreach } from '@/lib/outreach-sender';
 
 export const runtime = 'nodejs';
-const prisma = getDatabaseClients().write;
 
 function authorized(req: Request) {
   const secret = process.env.CRON_SECRET;
@@ -13,6 +12,8 @@ function authorized(req: Request) {
 
 export async function GET(req: Request) {
   if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  const { getDatabaseClients } = await import('@nexor/database');
+  const prisma = getDatabaseClients().write;
   const perRun = Math.min(Math.max(Number(process.env.OUTREACH_MAX_PER_RUN ?? 2), 1), 20);
   const minDelayMs = Math.max(Number(process.env.OUTREACH_MIN_DELAY_MS ?? 2000), 0);
   try {
