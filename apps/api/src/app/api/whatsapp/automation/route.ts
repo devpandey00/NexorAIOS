@@ -4,7 +4,10 @@ import { outreachService } from '@nexor/ai';
 import { sendApprovedOutreach } from '@/lib/outreach-sender';
 
 export const runtime = 'nodejs';
-const prisma = getDatabaseClients().write;
+
+function getPrisma() {
+  return getDatabaseClients().write;
+}
 
 const JOB_OR_CONTENT_PATTERNS = [/\bjobs?\b/i, /\bvacanc(?:y|ies)\b/i, /\bcareers?\b/i, /\bhiring\b/i, /\bsalary\b/i, /\bapply now\b/i, /\bresume\b/i, /\bcv\b/i, /\binternship\b/i, /\brecruitment\b/i, /\btop\b/i, /\bbest\b/i, /\blist\b/i, /\bdirectory\b/i, /\bguide\b/i, /\broundup\b/i, /\barticle\b/i, /\bnews\b/i, /\bhow to\b/i];
 const NON_BUSINESS_PATHS = /\/(jobs?|careers?|vacancies|blog|article|news|category|tag|search|directory|listing|forum|forums)(\/|$)/i;
@@ -25,6 +28,7 @@ function researchContext(notes: string | null) { const parsed = parseNotes(notes
 function jsonError(message: string, status = 400) { return NextResponse.json({ success: false, error: message }, { status }); }
 
 export async function GET() {
+  const prisma = getPrisma();
   try {
     const [rawDrafts, rawApproved, scheduled, rawLeads, sent, failed, replies, tasks] = await Promise.all([
       prisma.outreach.findMany({ where: { channel: OutreachChannel.WHATSAPP, status: { in: [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED] }, lead: { whatsapp: { not: null } } }, include: { lead: true }, orderBy: { createdAt: 'desc' }, take: 100 }),
@@ -48,6 +52,7 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const prisma = getPrisma();
   try {
     const body = await req.json(); const action = typeof body?.action === 'string' ? body.action : '';
     if (action === 'generate') {
