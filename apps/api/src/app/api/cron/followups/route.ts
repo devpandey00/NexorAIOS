@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { FollowUpStatus, getDatabaseClients, OutreachChannel, OutreachStatus } from '@nexor/database';
 
-const prisma = getDatabaseClients().write;
+function getPrisma() { return getDatabaseClients().write; }
 
 function buildFollowUpMessage(lead: { businessName: string; notes: string | null }) {
   let requirement = 'improving your online lead generation';
@@ -36,12 +36,12 @@ export async function GET(req: Request) {
   if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
 
   try {
+    const prisma = getPrisma();
     const due = await prisma.followUp.findMany({ where: { status: FollowUpStatus.PENDING, scheduledAt: { lte: new Date() } }, include: { lead: true }, orderBy: { scheduledAt: 'asc' }, take: 100 });
     let queued = 0;
     let skipped = 0;
 
     for (const candidate of due) {
-      // Atomic claim: only one overlapping cron invocation may own this follow-up.
       const claimed = await prisma.followUp.updateMany({
         where: { id: candidate.id, status: FollowUpStatus.PENDING },
         data: { status: FollowUpStatus.SCHEDULED, notes: `${candidate.notes ?? ''}\nClaimed by follow-up worker at ${new Date().toISOString()}`.trim() },
@@ -82,7 +82,6 @@ export async function GET(req: Request) {
         });
         queued++;
       } catch (error) {
-        // Release the claim so a later cron run can retry safely.
         await prisma.followUp.update({ where: { id: candidate.id }, data: { status: FollowUpStatus.PENDING, attemptCount: { increment: 1 }, notes: `${candidate.notes ?? ''}\nWorker error: ${error instanceof Error ? error.message : String(error)}`.trim() } }).catch(() => undefined);
       }
     }
