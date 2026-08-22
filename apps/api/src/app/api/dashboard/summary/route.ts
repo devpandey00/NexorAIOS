@@ -3,10 +3,9 @@ import { getDatabaseClients } from '@nexor/database';
 
 export const runtime = 'nodejs';
 
-const prisma = getDatabaseClients().write;
-
 export async function GET() {
   try {
+    const prisma = getDatabaseClients().write;
     const [
       leads,
       qualified,
