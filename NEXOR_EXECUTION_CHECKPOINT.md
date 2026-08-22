@@ -3,7 +3,7 @@
 ## Current state
 - Repository: devpandey00/NexorAIOS
 - Branch: main
-- Latest commit: aa358723d8dc2b6de959e72f605ab2e035d932b1
+- Latest implementation commits: a1272afadfe5e4ff9f358b5084176758e57ef2b3 (checkpoint) and aa358723d8dc2b6de959e72f605ab2e035d932b1 (dashboard hardening).
 - Production project: nexoraios-main-1
 - Objective: genuinely production-ready NexorAIOS; no fake success states.
 
@@ -15,30 +15,26 @@
 - Fail-open auth patterns fixed on outreach mutation endpoints, GA4/Search Console overview endpoints, and WhatsApp verification.
 - Two WhatsApp webhook implementations unified: /api/whatsapp/webhook now delegates to /api/webhooks/whatsapp.
 - Canonical WhatsApp webhook now lazily initializes the database and fails closed in production when WHATSAPP_APP_SECRET is absent.
-- Social content database client is now lazy.
-- Opportunities database client is now lazy.
-- Outreach sender database client is now lazy.
-- Report database client is now lazy.
-- Manual autopilot route defers its dependency graph until request time.
-- Cron autopilot route defers runAutopilot and outreach sender imports until request time.
-- Dashboard summary database client is now lazy.
+- Social content, opportunities, outreach sender, and report database clients are lazy.
+- Manual autopilot route and cron autopilot route defer their heavy dependency graphs until request time.
+- Dashboard summary database client is lazy.
 
 ## Vercel verification
-- A previous deployment failed at /api/cron/autopilot because runAutopilot was imported during page-data collection.
-- The next deployment failed at /api/dashboard/summary because that route still had module-level Prisma initialization.
-- Both root causes have now been fixed.
-- Latest production commit: aa358723d8dc2b6de959e72f605ab2e035d932b1.
+- Build of e3ce432 reached Next.js compilation and failed during page-data collection at /api/cron/autopilot because that route still statically imported runAutopilot; fixed afterward.
+- Build of 5c82e766 reached page-data collection and failed at /api/dashboard/summary because that route still had module-level Prisma initialization; fixed in aa358723.
+- The latest checkpoint a1272af includes the dashboard hardening.
+- Vercel has not yet exposed a deployment for a1272af in the deployment list; the latest observed production build is older and must not be treated as current verification.
 
 ## Known external limitation
-- Previous sandbox could not download Prisma native engines from binaries.prisma.sh (HTTP 403). Vercel itself successfully generated Prisma Client during recent builds, so this is not currently a Vercel blocker.
+- Previous sandbox could not download Prisma native engines from binaries.prisma.sh (HTTP 403). Vercel successfully generated Prisma Client during recent builds, so this is not currently a Vercel build blocker.
 
 ## Next execution
-1. Inspect Vercel deployment for the latest checkpoint commit.
+1. Inspect the Vercel deployment created from the latest main commit.
 2. If build fails, fix the first root error and redeploy.
-3. Continue import-time DB/AI/external-client sweep.
+3. Continue import-time DB/AI/external-client sweep if another route fails page-data collection.
 4. Verify typecheck/lint/build where execution environment permits.
-5. Deploy to Vercel production.
-6. Run production smoke tests for dashboard, DB CRUD, AI, automation, outreach approval, and workflow execution.
+5. Once deployment is READY, verify production URL and dashboard.
+6. Run production smoke tests for DB CRUD, AI, automation, outreach approval, webhooks, and workflow execution.
 
 ## Rules
 - Never fake provider success.
