@@ -1,4 +1,4 @@
-import { getDatabaseClients, OutreachChannel, OutreachStatus } from '@nexor/database';
+import { OutreachChannel, OutreachStatus } from '@nexor/database';
 import { campaignPlannerService } from '@nexor/search';
 import { researchService } from '@nexor/research';
 import { campaignService, assessLead, buildPersonalizedPitch } from '@nexor/core';
@@ -6,9 +6,12 @@ import { runCampaign } from './campaign-runner';
 import { createSocialContent } from './social-content';
 import { discoverOpportunities } from './opportunities';
 
-const prisma = getDatabaseClients().write;
-
 export async function runAutopilot() {
+  // Database clients must be created at request/runtime, never while Next.js
+  // statically collects route data during `next build`.
+  const { getDatabaseClients } = await import('@nexor/database');
+  const prisma = getDatabaseClients().write;
+
   const startedAt = Date.now();
   const batchSize = Math.min(Math.max(Number(process.env.AUTO_DISCOVERY_BATCH_SIZE ?? 3), 1), 5);
   const base = Math.floor(Date.now() / (60 * 60 * 1000)) * batchSize;
@@ -27,15 +30,12 @@ export async function runAutopilot() {
       query: plan.query,
     });
 
-    // campaignService.create() only creates the campaign record. The runner
-    // requires an explicit queued LEAD_DISCOVERY job before it can execute.
     await campaignService.createDiscoveryJob(campaign.id);
-
     const result = await runCampaign(campaign.id);
     campaigns.push({ ...plan, campaignId: campaign.id, result, skipped: false });
   }
 
-  const socialDrafts = [] as string[];
+  const socialDrafts: string[] = [];
   if (process.env.AUTOPILOT_SOCIAL_DRAFTS !== 'false') {
     for (const platform of ['INSTAGRAM', 'FACEBOOK', 'LINKEDIN'] as const) {
       const post = await createSocialContent({
