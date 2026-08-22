@@ -22,12 +22,20 @@ const groups: Array<[string, string[]]> = [
   ['Web & AI Ops', ['Website Projects','Landing Page Builder','Website Audit','WordPress Manager','Forms & Leads','Sitemap Manager','Schema Builder','AI Agents']],
 ];
 
+// Only tools with a real execution workspace are marked READY here.
+// Generic architecture/placeholder pages remain CONNECT until they have a verified backend handler.
 const readyTools = new Set([
-  'Autopilot','AI Command Center','Automation Center','Message Drafter','Lead Finder','Lead Inbox','Lead Scoring','ICP Scoring',
-  'Requirement Detector','Service Matcher','CRM Pipeline','WhatsApp Automation','WhatsApp Drafts','WhatsApp Approval','WhatsApp Sending','WhatsApp Inbox',
-  'Reply Classifier','Email Drafts','Email Approval','Email Sending','Email Inbox','Follow-up Manager','Social Media Manager',
-  'Content Calendar','Content Ideas','Instagram Manager','Facebook Manager','LinkedIn Manager','Social Scheduler',
-  'Meta Ads Overview','Google Ads Overview','SEO Audit','AI Agents','Company Prospecting','Influencer Prospecting','Job Search',
+  'Autopilot',
+  'Lead Finder',
+  'Lead Inbox',
+  'Company Prospecting',
+  'Influencer Prospecting',
+  'Job Search',
+  'Message Drafter',
+  'WhatsApp Automation',
+  'WhatsApp Drafts',
+  'Content Calendar',
+  'Social Media Manager',
 ]);
 
 export const nexorTools: NexorTool[] = groups.flatMap(([group, names]) =>
