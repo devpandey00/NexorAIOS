@@ -9,9 +9,12 @@ export interface SocialContentRecord {
   createdAt: string; updatedAt: string;
 }
 
-const prisma = getDatabaseClients().write;
+function getPrisma() {
+  return getDatabaseClients().write;
+}
 
 export async function listSocialContent(input?: { platform?: string; status?: string; limit?: number }): Promise<SocialContentRecord[]> {
+  const prisma = getPrisma();
   const limit = Math.min(Math.max(input?.limit ?? 100, 1), 200);
   const platform = input?.platform?.trim() || null;
   const status = input?.status?.trim() || null;
@@ -25,6 +28,7 @@ export async function listSocialContent(input?: { platform?: string; status?: st
 }
 
 export async function createSocialContent(input: { platform: SocialContentPlatform; status?: SocialContentStatus; title: string; caption: string; hashtags?: string[]; mediaUrl?: string | null; scheduledAt?: string | null; externalId?: string | null; }): Promise<SocialContentRecord> {
+  const prisma = getPrisma();
   const rows = await prisma.$queryRaw<SocialContentRecord[]>`
     INSERT INTO public.content_posts (platform, status, title, caption, hashtags, media_url, scheduled_at, external_id)
     VALUES (${input.platform}, ${input.status ?? 'DRAFT'}, ${input.title}, ${input.caption}, ${JSON.stringify(input.hashtags ?? [])}::jsonb,
@@ -37,6 +41,7 @@ export async function createSocialContent(input: { platform: SocialContentPlatfo
 }
 
 export async function updateSocialContent(id: string, input: { status?: SocialContentStatus; title?: string; caption?: string; hashtags?: string[]; mediaUrl?: string | null; scheduledAt?: string | null; externalId?: string | null; error?: string | null; }): Promise<SocialContentRecord> {
+  const prisma = getPrisma();
   const rows = await prisma.$queryRaw<SocialContentRecord[]>`
     UPDATE public.content_posts SET
       status = COALESCE(${input.status ?? null}, status), title = COALESCE(${input.title ?? null}, title), caption = COALESCE(${input.caption ?? null}, caption),
