@@ -14,10 +14,13 @@ import { replyClassifierService } from '@nexor/ai';
 
 export const runtime = 'nodejs';
 
-const prisma = getDatabaseClients().write;
+function getPrisma() {
+  return getDatabaseClients().write;
+}
 
 function verifySignature(rawBody: string, signature: string | null) {
   const secret = process.env.WHATSAPP_APP_SECRET;
+  if (process.env.NODE_ENV === 'production' && !secret) return false;
   if (!secret) return true;
   if (!signature?.startsWith('sha256=')) return false;
   const expected = createHmac('sha256', secret).update(rawBody).digest('hex');
@@ -42,6 +45,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Invalid signature' }, { status: 401 });
   }
 
+  const prisma = getPrisma();
   try {
     const payload = JSON.parse(rawBody);
     const entries = Array.isArray(payload?.entry) ? payload.entry : [];
@@ -67,10 +71,7 @@ export async function POST(req: NextRequest) {
           const lead =
             (await prisma.lead.findFirst({ where: { whatsapp: from } })) ??
             (await prisma.lead.findFirst({ where: { whatsapp: { endsWith: from } } }));
-          if (!lead) {
-            console.warn(`[WHATSAPP WEBHOOK] No lead matched ${from}`);
-            continue;
-          }
+          if (!lead) continue;
 
           const now = new Date();
           const conversation = await prisma.conversation.upsert({
