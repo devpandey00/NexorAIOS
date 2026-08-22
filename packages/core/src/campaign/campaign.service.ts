@@ -1,6 +1,9 @@
-import { PrismaClient, CampaignStatus, JobStatus, JobType } from '@prisma/client';
+import { CampaignStatus, JobStatus, JobType } from '@nexor/database';
 
-const prisma = new PrismaClient();
+async function getPrisma() {
+  const { getDatabaseClients } = await import('@nexor/database');
+  return getDatabaseClients().write;
+}
 
 export interface CreateCampaignInput {
   name: string;
@@ -9,6 +12,7 @@ export interface CreateCampaignInput {
 
 export class CampaignService {
   async create(input: CreateCampaignInput) {
+    const prisma = await getPrisma();
     return prisma.campaign.create({
       data: {
         name: input.name,
@@ -19,6 +23,7 @@ export class CampaignService {
   }
 
   async getById(id: string) {
+    const prisma = await getPrisma();
     return prisma.campaign.findUnique({
       where: { id },
       include: {
@@ -39,6 +44,7 @@ export class CampaignService {
   }
 
   async createDiscoveryJob(campaignId: string) {
+    const prisma = await getPrisma();
     return prisma.job.create({
       data: {
         campaignId,
@@ -52,6 +58,7 @@ export class CampaignService {
   }
 
   async updateStatus(id: string, status: CampaignStatus) {
+    const prisma = await getPrisma();
     return prisma.campaign.update({
       where: { id },
       data: {
