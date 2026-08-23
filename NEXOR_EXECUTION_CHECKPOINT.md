@@ -8,12 +8,13 @@
 - Objective: genuinely production-ready NexorAIOS; no fake success states.
 
 ## Set 1 implementation checkpoint
-- Social content state transitions are now enforced server-side; clients cannot mark a post `PUBLISHED` directly.
-- Scheduled social publishing now persists provider failures as `FAILED` instead of leaving posts stuck in `SCHEDULED`.
+- Social content state transitions are enforced server-side; clients cannot mark a post `PUBLISHED` directly.
+- Scheduled social publishing persists provider failures as `FAILED` instead of leaving posts stuck in `SCHEDULED`.
 - Added direct persisted social-content lookup for safe state transitions on arbitrary post IDs.
 - Consolidated outbound sending through the existing `sendApprovedOutreach` service; the route no longer contains a duplicate provider implementation.
-- Outbound send now claims an approved record atomically into the queued/scheduled state before contacting the provider, then changes it to `SENT` only after provider confirmation; provider/database failures persist as `FAILED`.
-- Outbound route now fails closed when `OUTREACH_API_SECRET` is missing and otherwise accepts an authenticated Nexor session.
+- Outbound send atomically claims an approved record into the queued/scheduled state before contacting the provider, then changes it to `SENT` only after provider confirmation; provider/database failures persist as `FAILED`.
+- Outbound scheduling now fails closed without `OUTREACH_API_SECRET` and validates future timestamps.
+- Outreach drafts now verify the real Nexor session server-side instead of trusting a client-supplied identity header.
 - Added verified Video Factory → Social handoff endpoint. It only creates a social draft after the real OpenChatCut render status returns a public output URL; it never marks a post published.
 
 ## Existing architecture preserved
@@ -46,6 +47,8 @@ WhatsApp/Instagram/Facebook/LinkedIn/SMS/email sending, social publishing, Googl
 - `7b1869533ce8e66b95dfeefe3805eff5986748c7` — direct social-content lookup
 - `9beed7bf2f17d863f6a4354c43671ad001737dcb` — safe social state transition route
 - `8414c57028a3d62a95cc60016d37e04df783d8b3` — verified video-to-social handoff
+- `0524dd837f5c8805b1986d1bfae9b3185eafc44a` — secure/validate outreach scheduling
+- `7ba05fffd529e0392c659d5d3ec96975afba7d26` — server-side session verification for drafts
 
 ## Rules
 - Never fake provider success.
