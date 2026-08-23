@@ -13,6 +13,14 @@ function getPrisma() {
   return getDatabaseClients().write;
 }
 
+const SELECT = `SELECT id, platform, status, title, caption, hashtags, media_url AS "mediaUrl", scheduled_at AS "scheduledAt", published_at AS "publishedAt", external_id AS "externalId", error, created_at AS "createdAt", updated_at AS "updatedAt" FROM public.content_posts`;
+
+export async function getSocialContent(id: string): Promise<SocialContentRecord | null> {
+  const prisma = getPrisma();
+  const rows = await prisma.$queryRawUnsafe<SocialContentRecord[]>(`${SELECT} WHERE id = $1::uuid LIMIT 1`, id);
+  return rows[0] ? normalizeRow(rows[0]) : null;
+}
+
 export async function listSocialContent(input?: { platform?: string; status?: string; limit?: number }): Promise<SocialContentRecord[]> {
   const prisma = getPrisma();
   const limit = Math.min(Math.max(input?.limit ?? 100, 1), 200);
