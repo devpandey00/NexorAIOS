@@ -1,20 +1,10 @@
 export type IntegrationStatus = 'configured' | 'available' | 'missing_config' | 'disabled';
 
 export type IntegrationCategory =
-  | 'crm'
-  | 'automation'
-  | 'browser'
-  | 'communications'
-  | 'email'
-  | 'calendar'
-  | 'video'
-  | 'content'
-  | 'analytics'
-  | 'ads'
-  | 'seo'
-  | 'storage'
-  | 'ai'
-  | 'jobs';
+  | 'crm' | 'automation' | 'browser' | 'communications' | 'email' | 'calendar'
+  | 'video' | 'content' | 'analytics' | 'ads' | 'seo' | 'storage' | 'ai' | 'jobs';
+
+export type Environment = Record<string, string | undefined>;
 
 export interface IntegrationDefinition {
   id: string;
@@ -51,16 +41,13 @@ export function getIntegration(id: string): IntegrationDefinition | undefined {
   return integrations.find((integration) => integration.id === id);
 }
 
-export function getIntegrationStatus(integration: IntegrationDefinition, env: NodeJS.ProcessEnv = process.env): IntegrationStatus {
+export function getIntegrationStatus(integration: IntegrationDefinition, env: Environment = {}): IntegrationStatus {
   if (integration.env.length === 0) return 'available';
   const configured = integration.env.every((key) => Boolean(env[key]?.trim()));
   if (configured) return 'configured';
   return integration.optional ? 'missing_config' : 'disabled';
 }
 
-export function getIntegrationMatrix(env: NodeJS.ProcessEnv = process.env) {
-  return integrations.map((integration) => ({
-    ...integration,
-    status: getIntegrationStatus(integration, env),
-  }));
+export function getIntegrationMatrix(env: Environment = {}) {
+  return integrations.map((integration) => ({ ...integration, status: getIntegrationStatus(integration, env) }));
 }
