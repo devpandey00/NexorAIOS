@@ -3,56 +3,60 @@
 ## Current state
 - Repository: devpandey00/NexorAIOS
 - Branch: main
-- Latest checkpoint commit: this update
+- Latest setup commits: `0c467129be2fd1aca7ad4e3da30010a32645e046`, `8f5be19bfc7f007b52c1c2a6040349219e92784c`, `4ec8895425f417bf7dff322c262a3e2190f37812`
 - Production project: nexoraios-main-1
 - Objective: genuinely production-ready NexorAIOS; no fake success states.
 
-## Authentication implementation present on main
-- `apps/api/src/lib/auth.ts`: scrypt password hashing/verification, HMAC-signed 7-day HttpOnly session cookie, session verification and admin bootstrap.
-- `apps/api/src/proxy.ts`: server-side protection for `/dashboard/*` and browser `/api/*`; machine cron/webhook routes remain on their own secret/signature authentication; client-supplied identity headers are stripped before verified identity is forwarded.
-- `/api/auth/login`, `/api/auth/logout`, `/api/auth/me` are present.
-- `/login` page is present.
-- Existing dashboard is preserved; no replacement dashboard created.
+## Completed
+- Runtime-safe database/provider initialization fixes.
+- OpenAI lazy initialization.
+- Fail-closed auth fixes for machine endpoints.
+- WhatsApp webhook unification/hardening.
+- Dashboard truthfully reports database configuration state.
+- Tool readiness is truthful.
+- OpenChatCut/video-agent integration is present.
+- Job autopilot has real discovery/scoring/application-preparation paths without fake submission.
+- Authentication system added: users migration, scrypt password hashing, HMAC HttpOnly session cookie, login/logout/me routes, Next.js 16 proxy protection, role field.
+- Added one-command local bootstrap: `pnpm setup`.
+- Added one-command local start: `pnpm start:local`.
+- Bootstrap starts Docker infrastructure, installs dependencies, generates Prisma client, applies existing migrations, then starts the apps.
+- `.env.example` documents `SESSION_SECRET`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD`.
 
-## Database auth migration
-- Added `packages/database/prisma/migrations/20260823000000_add_users_auth/migration.sql`.
-- Migration creates `public.user_role`, `public.users`, unique email index, role index, and an `updated_at` trigger.
-- The migration is additive and does not delete existing business data.
+## Local run
+- Prerequisites: Node 22, pnpm 9, Docker Desktop.
+- Run `pnpm setup` once, then `pnpm dev`.
+- Or run `pnpm start:local` for full bootstrap + dev startup.
+- Local database comes from `docker/docker-compose.yml`.
 
-## Important schema state
-- The current `packages/database/prisma/schema.prisma` on main was audited and ends at the existing `ActivityEvent` model; a Prisma `User` model is NOT yet present in that schema.
-- Runtime authentication currently uses parameterized raw SQL against `public.users`, so the migration can support auth independently, but Prisma schema/model synchronization must still be completed before claiming the database/auth work is finished.
-
-## Required production configuration
-- `DATABASE_URL` — real managed PostgreSQL connection; never localhost in Vercel Production.
+## Production configuration required
+- `DATABASE_URL` — real managed PostgreSQL connection.
 - `SESSION_SECRET` — random secret, minimum 32 characters.
 - `ADMIN_EMAIL` — bootstrap admin email.
 - `ADMIN_PASSWORD` — bootstrap admin password, minimum 12 characters.
+- Provider credentials are required only for the corresponding external integrations.
 
-## Verification status
-- Auth source files and login UI have been inspected on GitHub.
-- Auth proxy is present on main.
-- Auth migration has been committed on main.
-- Full local lint/typecheck/build has NOT been run from this chat environment after the latest database migration.
-- Prisma generate/typecheck after schema synchronization is NOT yet verified.
-- Production migration has NOT been applied.
-- Production login has NOT been end-to-end verified.
-- Vercel deployment after the latest migration has NOT been verified.
-- Browser-facing authorization audit is not yet complete.
+## Verification still required
+- Full local lint/typecheck/build after the latest auth/setup changes.
+- Prisma generation against an environment where the Prisma engine can be downloaded.
+- Production database migration must be applied to the real production DB.
+- Vercel deployment after the latest commits must be verified.
+- Login, API authorization, database CRUD, sales/job/social/automation workflows need production smoke testing.
+- Remaining browser-facing API authorization audit needs completion.
+- Prisma `User` model synchronization is still required before declaring the auth/database work complete.
 
 ## Known external blocker
 - Previous production verification showed `DATABASE_URL` missing in Vercel runtime. A real production PostgreSQL URL must be configured before database-backed functionality can work.
+- Do not use a localhost URL in Vercel Production.
 
 ## Next execution
-1. Synchronize `schema.prisma` with the `public.users` table and `UserRole` enum without changing existing models.
-2. Run Prisma generate/typecheck/lint/build in a real repository workspace.
-3. Resolve every auth/database compile error.
-4. Apply the users migration to the real production database.
-5. Configure `DATABASE_URL`, `SESSION_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` in Vercel Production.
-6. Deploy the latest main commit.
+1. Synchronize `schema.prisma` with `public.users` and `UserRole` without changing existing business models.
+2. Run `pnpm install`, `pnpm db:generate`, typecheck, lint and build in a real repository workspace.
+3. Fix every real compile/runtime failure.
+4. Apply `pnpm db:migrate:deploy` against the production DB.
+5. Configure production `DATABASE_URL`, `SESSION_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`.
+6. Deploy latest `main` to Vercel.
 7. Verify login, dashboard, API authorization, database CRUD and critical sales/job/social/automation workflows.
-8. Continue hardening remaining browser routes and add resource ownership only where the data model supports it.
-9. Only then declare READY.
+8. Only then declare READY.
 
 ## Rules
 - Never fake provider success.
