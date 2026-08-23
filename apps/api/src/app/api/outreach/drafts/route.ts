@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabaseClients, LeadStatus, OutreachChannel, OutreachStatus } from '@nexor/database';
 import { outreachService } from '@nexor/ai';
+import { getSessionUser } from '@/lib/auth';
 
 function getPrisma() { return getDatabaseClients().write; }
 
@@ -31,10 +32,10 @@ function validateBusinessLead(lead: { businessName: string; website: string | nu
   return { ok: true, leadType: leadType || 'BUSINESS', source: source || 'UNKNOWN', parsed };
 }
 
-function authorized(req: NextRequest) {
-  const secret = process.env.OUTREACH_API_SECRET;
-  const sessionUser = req.headers.get('x-nexor-user-id');
-  return Boolean(sessionUser) || Boolean(secret && req.headers.get('authorization') === `Bearer ${secret}`);
+async function authorized(req: NextRequest) {
+  const secret = process.env.OUTREACH_API_SECRET?.trim();
+  if (secret && req.headers.get('authorization') === `Bearer ${secret}`) return true;
+  return Boolean(await getSessionUser(req));
 }
 
 function normalizeChannel(value: unknown): OutreachChannel | null { if (Object.values(OutreachChannel).includes(value as OutreachChannel)) return value as OutreachChannel; return null; }
@@ -45,13 +46,13 @@ function buildMessage(channel: OutreachChannel, lead: { businessName: string; ow
 }
 
 export async function GET(req: NextRequest) {
-  if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  if (!(await authorized(req))) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   const prisma = getPrisma(); const drafts = await prisma.outreach.findMany({ where: { status: { in: [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED] } }, include: { lead: true, campaign: true }, orderBy: { createdAt: 'asc' }, take: 200 });
   return NextResponse.json({ success: true, count: drafts.length, drafts });
 }
 
 export async function POST(req: NextRequest) {
-  if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  if (!(await authorized(req))) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   try {
     const prisma = getPrisma(); const body = await req.json(); const leadId = typeof body.leadId === 'string' ? body.leadId : ''; const channel = normalizeChannel(body.channel); const context = typeof body.context === 'string' ? body.context.trim() : '';
     const supported: OutreachChannel[] = [OutreachChannel.WHATSAPP, OutreachChannel.EMAIL, OutreachChannel.INSTAGRAM, OutreachChannel.FACEBOOK, OutreachChannel.LINKEDIN];
@@ -72,7 +73,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  if (!(await authorized(req))) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   try {
     const prisma = getPrisma(); const body = await req.json(); const id = typeof body.id === 'string' ? body.id : ''; const action = body.action === 'approve' ? 'approve' : body.action === 'cancel' ? 'cancel' : '';
     if (!id || !action) return NextResponse.json({ success: false, error: 'id and action are required' }, { status: 400 });
