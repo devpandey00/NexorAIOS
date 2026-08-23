@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDatabaseClients } from '@nexor/database';
-import { bootstrapAdminIfEmpty, createSessionToken, hashPassword, sessionCookie, verifyPassword, type SessionUser } from '../../../../../../lib/auth';
+import { bootstrapAdminIfEmpty, createSessionToken, sessionCookie, verifyPassword, type SessionUser } from '../../../../lib/auth';
 
 export const dynamic = 'force-dynamic';
 
