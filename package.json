@@ -11,6 +11,8 @@
   "scripts": {
     "build": "pnpm -r build",
     "dev": "pnpm --parallel --filter './apps/*' dev",
+    "setup": "node scripts/nexor-setup.mjs",
+    "start:local": "node scripts/nexor-setup.mjs && pnpm dev",
     "lint": "pnpm -r lint",
     "lint:fix": "pnpm -r lint:fix",
     "format": "prettier --write .",
