@@ -124,7 +124,7 @@ export async function sendApprovedOutreach(id: string) {
     return { outreach: result, recipient, alreadySent: false };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await prisma.outreach.updateMany({ where: { id, status: OutreachStatus.SCHEDULED }, data: { status: OutreachStatus.FAILED, error } }).catch(() => undefined);
+    await prisma.outreach.updateMany({ where: { id, status: OutreachStatus.SCHEDULED }, data: { status: OutreachStatus.FAILED, error: message } }).catch(() => undefined);
     throw new Error(message);
   }
 }
