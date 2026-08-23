@@ -1,0 +1,30 @@
+import { NextResponse } from 'next/server';
+import { getDatabaseClients } from '@nexor/database';
+import { bootstrapAdminIfEmpty, createSessionToken, hashPassword, sessionCookie, verifyPassword, type SessionUser } from '../../../../../../lib/auth';
+
+export const dynamic = 'force-dynamic';
+
+export async function POST(request: Request) {
+  try {
+    await bootstrapAdminIfEmpty();
+    const body = await request.json().catch(() => ({}));
+    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+    const password = typeof body.password === 'string' ? body.password : '';
+    if (!email || !password) return NextResponse.json({ success: false, error: 'Email and password are required' }, { status: 400 });
+
+    const db = getDatabaseClients().read;
+    const rows = await db.$queryRawUnsafe<Array<{ id: string; email: string; password_hash: string; role: 'ADMIN' | 'USER' }>>(
+      'SELECT id, email, password_hash, role FROM public.users WHERE email = $1 LIMIT 1', email,
+    );
+    const user = rows[0];
+    if (!user || !(await verifyPassword(password, user.password_hash))) {
+      return NextResponse.json({ success: false, error: 'Invalid email or password' }, { status: 401 });
+    }
+    const sessionUser: SessionUser = { id: user.id, email: user.email, role: user.role };
+    const response = NextResponse.json({ success: true, user: sessionUser });
+    response.headers.set('Set-Cookie', sessionCookie(createSessionToken(sessionUser)));
+    return response;
+  } catch (error) {
+    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Authentication failed' }, { status: 500 });
+  }
+}
