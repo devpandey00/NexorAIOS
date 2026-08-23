@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { updateSocialContent, listSocialContent, type SocialContentStatus } from '@/lib/social-content';
+import { getSocialContent, updateSocialContent, type SocialContentStatus } from '@/lib/social-content';
 
 export const runtime = 'nodejs';
 
@@ -17,8 +17,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
     const { id } = await context.params;
     const body = await req.json();
     const requestedStatus = body.status === undefined ? undefined : String(body.status).toUpperCase() as SocialContentStatus;
-
-    const current = (await listSocialContent({ limit: 200 })).find((item) => item.id === id);
+    const current = await getSocialContent(id);
     if (!current) return NextResponse.json({ success: false, error: 'Content post not found' }, { status: 404 });
 
     if (requestedStatus) {
