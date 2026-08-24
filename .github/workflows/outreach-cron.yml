@@ -1,0 +1,30 @@
+name: Nexor Outreach Automation
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nexor-outreach-cron
+  cancel-in-progress: false
+
+jobs:
+  outreach:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Run approved outreach queue
+        env:
+          NEXOR_PRODUCTION_URL: ${{ secrets.NEXOR_PRODUCTION_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          test -n "$NEXOR_PRODUCTION_URL" || { echo 'NEXOR_PRODUCTION_URL secret is required'; exit 1; }
+          test -n "$CRON_SECRET" || { echo 'CRON_SECRET secret is required'; exit 1; }
+          curl --fail-with-body --silent --show-error --max-time 240 \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$NEXOR_PRODUCTION_URL/api/cron/outreach"
