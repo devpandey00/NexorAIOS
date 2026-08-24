@@ -108,10 +108,25 @@ export async function bootstrapAdminIfEmpty() {
   const email = process.env.ADMIN_EMAIL?.trim().toLowerCase();
   const password = process.env.ADMIN_PASSWORD;
   if (!email || !password) return;
+
   const db = getDatabaseClients().write;
-  const rows = await db.$queryRawUnsafe<Array<{ count: bigint }>>('SELECT COUNT(*)::bigint AS count FROM public.users');
-  if (Number(rows[0]?.count ?? 0) > 0) return;
   const passwordHash = await hashPassword(password);
+  const existing = await db.$queryRawUnsafe<Array<{ id: string; role: Role }>>(
+    'SELECT id, role FROM public.users WHERE email = $1 LIMIT 1',
+    email,
+  );
+
+  if (existing[0]) {
+    // ADMIN_PASSWORD is the authoritative bootstrap/reset credential. This also
+    // makes changing ADMIN_PASSWORD in Vercel actually reset the existing admin.
+    await db.$executeRawUnsafe(
+      'UPDATE public.users SET password_hash = $1, role = \'ADMIN\'::public.user_role WHERE email = $2',
+      passwordHash,
+      email,
+    );
+    return;
+  }
+
   await db.$executeRawUnsafe(
     'INSERT INTO public.users (email, password_hash, role) VALUES ($1, $2, \'ADMIN\'::public.user_role) ON CONFLICT (email) DO NOTHING',
     email,
