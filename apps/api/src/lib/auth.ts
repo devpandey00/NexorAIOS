@@ -26,7 +26,9 @@ function sign(payload: string) {
 }
 
 export function createSessionToken(user: SessionUser) {
-  const payload = `${user.id}.${user.email}.${user.role}.${Math.floor(Date.now() / 1000) + TTL_SECONDS}`;
+  // Encode email before placing it in the dot-delimited payload. Raw email addresses
+  // can contain dots (e.g. gmail.com), which would otherwise break token parsing.
+  const payload = `${user.id}.${b64(user.email)}.${user.role}.${Math.floor(Date.now() / 1000) + TTL_SECONDS}`;
   return `${b64(payload)}.${sign(payload)}`;
 }
 
@@ -40,8 +42,10 @@ export function verifySessionToken(token: string | undefined): SessionUser | nul
     const a = Buffer.from(signature);
     const b = Buffer.from(expected);
     if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
-    const [id, email, role, exp] = payload.split('.');
-    if (!id || !email || (role !== 'ADMIN' && role !== 'USER') || !exp || Number(exp) < Math.floor(Date.now() / 1000)) return null;
+    const [id, email64, role, exp] = payload.split('.');
+    if (!id || !email64 || (role !== 'ADMIN' && role !== 'USER') || !exp || Number(exp) < Math.floor(Date.now() / 1000)) return null;
+    const email = Buffer.from(email64, 'base64url').toString('utf8');
+    if (!email) return null;
     return { id, email, role };
   } catch {
     return null;
