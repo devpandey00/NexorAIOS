@@ -122,7 +122,10 @@ export async function POST(req: NextRequest) {
   const claimed = await db.$queryRawUnsafe<Array<{ id: string; schedule_id: string; workflow: string; input: Record<string, unknown> }>>(
     `WITH due AS (
        SELECT "id","workflow","input" FROM "public"."automation_schedules"
-       WHERE "status"='ACTIVE' AND "next_run_at" IS NOT NULL AND "next_run_at" <= NOW()
+       WHERE "status"='ACTIVE'
+         AND "next_run_at" IS NOT NULL
+         AND "next_run_at" <= NOW()
+         AND ("last_run_at" IS NULL OR "last_run_at" < "next_run_at")
        ORDER BY "next_run_at" ASC LIMIT 20
        FOR UPDATE SKIP LOCKED
      ), claimed AS (
