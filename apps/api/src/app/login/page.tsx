@@ -1,10 +1,8 @@
 'use client';
 
 import { FormEvent, useState } from 'react';
-import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -12,32 +10,41 @@ export default function LoginPage() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (loading) return;
     setError('');
     setLoading(true);
+
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ email, password }),
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Login failed');
-      router.replace('/dashboard');
-      router.refresh();
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || 'Login failed');
+      }
+
+      // Force a real document navigation after the session cookie is stored.
+      // This avoids mobile Safari/Chrome retaining the login route in the
+      // client router history after authentication.
+      window.location.replace('/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
-    } finally {
       setLoading(false);
     }
   }
 
   return (
-    <main style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24, background: '#050505', color: '#fff' }}>
+    <main style={{ minHeight: '100vh', minHeight: '100dvh', display: 'grid', placeItems: 'center', padding: 24, background: '#050505', color: '#fff' }}>
       <form onSubmit={submit} style={{ width: '100%', maxWidth: 420, padding: 32, border: '1px solid #242424', borderRadius: 18, background: '#0d0d0d' }}>
         <h1 style={{ margin: 0, fontSize: 28 }}>NexorAIOS</h1>
         <p style={{ color: '#999', marginBottom: 28 }}>Sign in to your automation workspace.</p>
         <label style={{ display: 'block', marginBottom: 8 }}>Email</label>
-        <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="email" required style={{ width: '100%', boxSizing: 'border-box', padding: 12, marginBottom: 18, borderRadius: 10, border: '1px solid #333', background: '#111', color: '#fff' }} />
+        <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="email" inputMode="email" required style={{ width: '100%', boxSizing: 'border-box', padding: 12, marginBottom: 18, borderRadius: 10, border: '1px solid #333', background: '#111', color: '#fff' }} />
         <label style={{ display: 'block', marginBottom: 8 }}>Password</label>
         <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" autoComplete="current-password" required style={{ width: '100%', boxSizing: 'border-box', padding: 12, marginBottom: 18, borderRadius: 10, border: '1px solid #333', background: '#111', color: '#fff' }} />
         {error ? <p role="alert" style={{ color: '#ff6b6b' }}>{error}</p> : null}
