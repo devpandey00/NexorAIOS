@@ -1,0 +1,11 @@
+{
+  "name": "NexorAIOS",
+  "short_name": "NexorAIOS",
+  "description": "NexorAIOS sales, automation and outreach command center.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#07090d",
+  "theme_color": "#07090d",
+  "orientation": "portrait-primary",
+  "icons": []
+}
