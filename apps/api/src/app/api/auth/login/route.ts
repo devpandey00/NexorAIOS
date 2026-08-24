@@ -28,15 +28,17 @@ export async function POST(request: Request) {
 
     const sessionUser: SessionUser = { id: user.id, email: user.email, role: user.role };
     const token = createSessionToken(sessionUser);
-    const response = NextResponse.json({ success: true, user: sessionUser });
+    const response = NextResponse.json({ success: true, user: sessionUser }, {
+      headers: { 'Cache-Control': 'no-store, max-age=0' },
+    });
 
-    // Use Next.js' cookie API instead of manually constructing Set-Cookie.
-    // This is more reliable across Safari/iOS/Android browsers and Vercel's edge/runtime.
+    // Always use a secure, HttpOnly cookie in production. SameSite=Lax allows
+    // normal top-level navigation while keeping the session inaccessible to JS.
     response.cookies.set({
       name: 'nexor_session',
       value: token,
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: true,
       sameSite: 'lax',
       path: '/',
       maxAge: SESSION_MAX_AGE,
@@ -46,7 +48,7 @@ export async function POST(request: Request) {
   } catch (error) {
     return NextResponse.json(
       { success: false, error: error instanceof Error ? error.message : 'Authentication failed' },
-      { status: 500 },
+      { status: 500, headers: { 'Cache-Control': 'no-store, max-age=0' } },
     );
   }
 }
