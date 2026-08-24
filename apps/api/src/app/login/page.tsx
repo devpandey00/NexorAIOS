@@ -1,11 +1,8 @@
 'use client';
 
 import { FormEvent, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
 
 export default function LoginPage() {
-  const searchParams = useSearchParams();
-  const next = searchParams.get('next')?.startsWith('/') ? searchParams.get('next')! : '/dashboard';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -31,8 +28,8 @@ export default function LoginPage() {
         throw new Error(data?.error || 'Login failed');
       }
 
-      // Confirm that the browser actually persisted the session cookie before
-      // navigating. This prevents mobile browsers from racing the redirect.
+      // Confirm cookie persistence before navigating. This removes the mobile
+      // Safari/Chrome race where the redirect can happen before the cookie is usable.
       const session = await fetch('/api/auth/me', {
         method: 'GET',
         credentials: 'include',
@@ -44,7 +41,7 @@ export default function LoginPage() {
         throw new Error('Session was created but the browser could not persist it. Please retry once.');
       }
 
-      window.location.assign(next);
+      window.location.assign('/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
       setLoading(false);
