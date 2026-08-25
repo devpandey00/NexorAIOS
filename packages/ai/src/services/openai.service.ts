@@ -1,31 +1,20 @@
 import OpenAI from 'openai';
 
-let client: OpenAI | null = null;
+let client: OpenAI | undefined;
 
 /**
- * Creates the OpenAI client only when an AI operation actually runs.
- * This prevents Next.js/Vercel build-time module evaluation from failing
- * when OPENAI_API_KEY is intentionally unavailable in the build environment.
+ * Lazily creates the OpenAI client on first use so builds and module
+ * evaluation do not require OPENAI_API_KEY to be present.
  */
-export function getOpenAI(): OpenAI {
-  if (client) return client;
+export function getOpenAIClient(): OpenAI {
+  if (!client) {
+    const apiKey = process.env['OPENAI_API_KEY'];
+    if (!apiKey) {
+      throw new Error('OPENAI_API_KEY is not configured');
+    }
 
-  const apiKey = process.env['OPENAI_API_KEY'];
-  if (!apiKey) {
-    throw new Error('OPENAI_API_KEY is not configured');
+    client = new OpenAI({ apiKey });
   }
 
-  client = new OpenAI({ apiKey });
   return client;
 }
-
-/**
- * Backwards-compatible lazy facade for existing internal consumers.
- * Accessing any OpenAI client property initializes the client at runtime.
- */
-export const openai = new Proxy({} as OpenAI, {
-  get(_target, property, receiver) {
-    const value = Reflect.get(getOpenAI() as object, property, receiver);
-    return typeof value === 'function' ? value.bind(getOpenAI()) : value;
-  },
-});
