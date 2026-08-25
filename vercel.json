@@ -6,13 +6,5 @@
   "outputDirectory": "apps/api/.next",
   "git": {
     "deploymentEnabled": true
-  },
-  "crons": [
-    { "path": "/api/cron/autopilot", "schedule": "0 2 * * *" },
-    { "path": "/api/cron/followups", "schedule": "15 2 * * *" },
-    { "path": "/api/cron/job-autopilot", "schedule": "30 2 * * *" },
-    { "path": "/api/cron/outreach", "schedule": "45 2 * * *" },
-    { "path": "/api/cron/reports", "schedule": "0 3 * * *" },
-    { "path": "/api/cron/social-publish", "schedule": "30 3 * * *" }
-  ]
+  }
 }
