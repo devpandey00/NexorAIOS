@@ -2,9 +2,9 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "installCommand": "pnpm install --frozen-lockfile",
-  "buildCommand": "pnpm db:migrate:deploy && pnpm --filter @nexor/search build && pnpm --filter @nexor/api... build",
+  "buildCommand": "pnpm db:migrate:deploy && pnpm --filter @nexor/database db:generate && pnpm --filter @nexor/search build && pnpm --filter @nexor/api... build",
   "outputDirectory": "apps/api/.next",
   "git": {
-    "deploymentEnabled": false
+    "deploymentEnabled": true
   }
 }
