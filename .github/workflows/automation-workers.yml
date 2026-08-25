@@ -1,0 +1,38 @@
+name: Nexor realtime automation workers
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: nexor-realtime-workers
+  cancel-in-progress: false
+
+jobs:
+  workers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Run due follow-ups, outreach and social posts
+        env:
+          NEXOR_BASE_URL: ${{ vars.NEXOR_PRODUCTION_URL || 'https://nexoraios-main-1-diwakarpandeyitwa-3531s-projects.vercel.app' }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required'; exit 1; }
+
+          call_worker() {
+            local path="$1"
+            echo "Running $path"
+            curl --fail-with-body --silent --show-error --max-time 120 \
+              -H "Authorization: Bearer $CRON_SECRET" \
+              "$NEXOR_BASE_URL$path"
+            echo
+          }
+
+          call_worker /api/cron/followups
+          call_worker /api/cron/outreach
+          call_worker /api/cron/social-publish
