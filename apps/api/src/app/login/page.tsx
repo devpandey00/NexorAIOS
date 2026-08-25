@@ -49,7 +49,7 @@ export default function LoginPage() {
   }
 
   return (
-    <main style={{ minHeight: '100vh', minHeight: '100dvh', display: 'grid', placeItems: 'center', padding: 24, background: '#050505', color: '#fff' }}>
+    <main style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center', padding: 24, background: '#050505', color: '#fff' }}>
       <form onSubmit={submit} style={{ width: '100%', maxWidth: 420, padding: 32, border: '1px solid #242424', borderRadius: 18, background: '#0d0d0d' }}>
         <h1 style={{ margin: 0, fontSize: 28 }}>NexorAIOS</h1>
         <p style={{ color: '#999', marginBottom: 28 }}>Sign in to your automation workspace.</p>
