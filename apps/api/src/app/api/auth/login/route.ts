@@ -32,13 +32,13 @@ export async function POST(request: Request) {
       headers: { 'Cache-Control': 'no-store, max-age=0' },
     });
 
-    // Always use a secure, HttpOnly cookie in production. SameSite=Lax allows
-    // normal top-level navigation while keeping the session inaccessible to JS.
+    // Keep the session HttpOnly in every environment. Secure is required in
+    // production but must remain disabled for local HTTP development.
     response.cookies.set({
       name: 'nexor_session',
       value: token,
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       path: '/',
       maxAge: SESSION_MAX_AGE,
