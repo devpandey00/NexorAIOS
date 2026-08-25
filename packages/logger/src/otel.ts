@@ -7,12 +7,14 @@ import type { ObservabilityConfig, ObservabilityProvider } from './types.js';
 export class NoOpObservabilityProvider implements ObservabilityProvider {
   private initialized = false;
 
-  async initialize(_config: ObservabilityConfig): Promise<void> {
+  initialize(_config: ObservabilityConfig): Promise<void> {
     this.initialized = true;
+    return Promise.resolve();
   }
 
-  async shutdown(): Promise<void> {
+  shutdown(): Promise<void> {
     this.initialized = false;
+    return Promise.resolve();
   }
 
   isInitialized(): boolean {
