@@ -11,9 +11,7 @@ export interface LoggerOptions {
   environment?: string;
 }
 
-export interface LogMetadata {
-  [key: string]: unknown;
-}
+export type LogMetadata = Record<string, unknown>;
 
 export interface Logger {
   fatal(meta: LogMetadata, message: string): void;
