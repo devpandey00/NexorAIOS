@@ -48,12 +48,12 @@ jobs:
 
       - name: Run scheduled Nexor worker
         env:
-          NEXOR_BASE_URL: ${{ vars.NEXOR_PRODUCTION_URL || 'https://nexoraios-main-1.vercel.app' }}
+          NEXOR_BASE_URL: ${{ vars.NEXOR_PRODUCTION_URL || 'https://nexoraios-main-1-diwakarpandeyitwa-3531s-projects.vercel.app' }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           TASK: ${{ steps.task.outputs.task }}
         run: |
           set -euo pipefail
-          test -n "$CRON_SECRET"
+          test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required'; exit 1; }
           case "$TASK" in
             job-autopilot) path="/api/cron/job-autopilot" ;;
             autopilot) path="/api/cron/autopilot" ;;
