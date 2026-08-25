@@ -1,8 +1,6 @@
 name: Nexor realtime automation workers
 
 on:
-  schedule:
-    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 permissions: {}
@@ -23,7 +21,6 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required'; exit 1; }
-
           call_worker() {
             local path="$1"
             echo "Running $path"
@@ -32,7 +29,6 @@ jobs:
               "$NEXOR_BASE_URL$path"
             echo
           }
-
           call_worker /api/cron/followups
           call_worker /api/cron/outreach
           call_worker /api/cron/social-publish

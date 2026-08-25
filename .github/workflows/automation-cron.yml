@@ -1,8 +1,6 @@
 name: Nexor automation worker
 
 on:
-  schedule:
-    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 permissions: {}
@@ -18,8 +16,6 @@ jobs:
     steps:
       - name: Run outreach, follow-ups and social publishing
         env:
-          # Prefer the repository/environment variable, with the verified
-          # production domain as a safe fallback for scheduled automation.
           NEXOR_BASE_URL: ${{ vars.NEXOR_PRODUCTION_URL || 'https://nexoraios-main-1-diwakarpandeyitwa-3531s-projects.vercel.app' }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
