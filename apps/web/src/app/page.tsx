@@ -53,7 +53,10 @@ export default function Home() {
     }
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void load(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   return (
     <main className="min-h-screen bg-[#07090d] text-white">
