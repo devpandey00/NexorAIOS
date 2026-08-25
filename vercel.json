@@ -2,9 +2,17 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "installCommand": "pnpm install --frozen-lockfile",
-  "buildCommand": "pnpm --filter @nexor/database db:push -- --skip-generate && pnpm --filter @nexor/database db:generate && pnpm --filter @nexor/search build && pnpm --filter @nexor/api... build",
+  "buildCommand": "pnpm --filter @nexor/database db:push -- --accept-data-loss --skip-generate && pnpm --filter @nexor/database db:generate && pnpm --filter @nexor/search build && pnpm --filter @nexor/api... build",
   "outputDirectory": "apps/api/.next",
   "git": {
     "deploymentEnabled": true
-  }
+  },
+  "crons": [
+    { "path": "/api/cron/autopilot", "schedule": "0 2 * * *" },
+    { "path": "/api/cron/followups", "schedule": "15 2 * * *" },
+    { "path": "/api/cron/job-autopilot", "schedule": "30 2 * * *" },
+    { "path": "/api/cron/outreach", "schedule": "45 2 * * *" },
+    { "path": "/api/cron/reports", "schedule": "0 3 * * *" },
+    { "path": "/api/cron/social-publish", "schedule": "30 3 * * *" }
+  ]
 }
