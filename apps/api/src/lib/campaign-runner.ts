@@ -24,7 +24,13 @@ export async function runCampaign(campaignId: string) {
   const job = await prisma.job.findFirst({ where: { campaignId, status: JobStatus.QUEUED }, orderBy: { createdAt: 'asc' } }); if (!job) throw new Error('No queued discovery job found');
   await prisma.$transaction([prisma.campaign.update({ where: { id: campaignId }, data: { status: CampaignStatus.RUNNING, startedAt: new Date() } }),prisma.job.update({ where: { id: job.id }, data: { status: JobStatus.RUNNING, startedAt: new Date(), attempts: { increment: 1 } } })]);
   try {
-    const searchResult = await leadSearchService.search(campaign.query); let processed = 0, successful = 0, failed = 0, qualified = 0; const niche = inferNiche(campaign.query); const country = inferCountry(campaign.query);
+    const searchResult = await leadSearchService.search(campaign.query);
+    if (!searchResult.success) throw new Error(`Lead discovery failed: ${(searchResult.providerErrors ?? []).join(' | ') || 'search provider unavailable'}`);
+    if (searchResult.count === 0) {
+      const diagnostics = (searchResult.providerErrors ?? []).join(' | ');
+      throw new Error(`Lead discovery returned 0 results${diagnostics ? `: ${diagnostics}` : '. Check search-provider configuration and query targeting.'}`);
+    }
+    let processed = 0, successful = 0, failed = 0, qualified = 0; const niche = inferNiche(campaign.query); const country = inferCountry(campaign.query);
     for (const result of searchResult.leads) {
       try {
         const businessName = cleanLeadName(result.name); if (!businessName || looksLikeNonBusinessName(businessName)) { processed++; continue; }
@@ -45,7 +51,7 @@ export async function runCampaign(campaignId: string) {
       } catch (error) { failed++; processed++; console.error(`[CAMPAIGN LEAD ERROR] ${result.name}`, error); }
       await prisma.campaign.update({ where: { id: campaignId }, data: { processedLeads: processed, successfulLeads: successful, failedLeads: failed } });
     }
-    await prisma.$transaction([prisma.job.update({ where: { id: job.id }, data: { status: JobStatus.COMPLETED, completedAt: new Date(), result: { discovered: searchResult.count, processed, successful, failed, qualified } } }),prisma.campaign.update({ where: { id: campaignId }, data: { status: failed > 0 ? CampaignStatus.PARTIALLY_COMPLETED : CampaignStatus.COMPLETED, completedAt: new Date(), totalLeads: searchResult.count, processedLeads: processed, successfulLeads: successful, failedLeads: failed } })]);
-    return { success: true, campaignId, discovered: searchResult.count, processed, successful, failed, qualified };
+    await prisma.$transaction([prisma.job.update({ where: { id: job.id }, data: { status: JobStatus.COMPLETED, completedAt: new Date(), result: { discovered: searchResult.count, processed, successful, failed, qualified, provider: searchResult.provider } } }),prisma.campaign.update({ where: { id: campaignId }, data: { status: failed > 0 ? CampaignStatus.PARTIALLY_COMPLETED : CampaignStatus.COMPLETED, completedAt: new Date(), totalLeads: searchResult.count, processedLeads: processed, successfulLeads: successful, failedLeads: failed } })]);
+    return { success: true, campaignId, discovered: searchResult.count, processed, successful, failed, qualified, provider: searchResult.provider };
   } catch (error) { await prisma.$transaction([prisma.job.update({ where: { id: job.id }, data: { status: JobStatus.FAILED, completedAt: new Date(), error: error instanceof Error ? error.message : String(error) } }),prisma.campaign.update({ where: { id: campaignId }, data: { status: CampaignStatus.FAILED, completedAt: new Date() } })]); throw error; }
 }
