@@ -1,0 +1,42 @@
+name: Inspect Production Schema
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Install psql
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: List existing tables
+        run: |
+          echo "=== TABLES ==="
+          psql "$DATABASE_URL" -c "select table_name from information_schema.tables where table_schema = 'public' order by table_name;"
+        env:
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+
+      - name: List existing enum types
+        run: |
+          echo "=== ENUM TYPES ==="
+          psql "$DATABASE_URL" -c "select typname from pg_type where typnamespace = 'public'::regnamespace and typtype = 'e' order by typname;"
+        env:
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+
+      - name: Check for _prisma_migrations table and history
+        run: |
+          echo "=== _prisma_migrations EXISTS? ==="
+          psql "$DATABASE_URL" -c "select table_name from information_schema.tables where table_name = '_prisma_migrations';"
+          echo "=== MIGRATION HISTORY (if table exists) ==="
+          psql "$DATABASE_URL" -c "select migration_name, finished_at, rolled_back_at from public._prisma_migrations order by started_at;" || echo "No _prisma_migrations table — production has never been baselined by Prisma."
+        env:
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
