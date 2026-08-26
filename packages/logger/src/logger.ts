@@ -89,24 +89,22 @@ export function createLogger(options: LoggerOptions): Logger {
 let rootLogger: Logger | undefined;
 
 export function getLogger(): Logger {
-  if (!rootLogger) {
-    rootLogger = createLogger({
-      name: process.env['APP_NAME'] ?? 'nexoraios',
-      level: (process.env['LOG_LEVEL'] as LoggerOptions['level']) ?? 'info',
-      format: (process.env['LOG_FORMAT'] as LoggerOptions['format']) ?? 'json',
-      environment: process.env['NODE_ENV'] ?? 'development',
-      version: process.env['APP_VERSION'] ?? '0.0.0',
+  rootLogger ??= createLogger({
+    name: process.env['APP_NAME'] ?? 'nexoraios',
+    level: (process.env['LOG_LEVEL'] as LoggerOptions['level']) ?? 'info',
+    format: (process.env['LOG_FORMAT'] as LoggerOptions['format']) ?? 'json',
+    environment: process.env['NODE_ENV'] ?? 'development',
+    version: process.env['APP_VERSION'] ?? '0.0.0',
 
-      ...(process.env['LOG_REDACT_PATHS']
-        ? {
-            redactPaths: process.env['LOG_REDACT_PATHS']
-              .split(',')
-              .map((p) => p.trim())
-              .filter(Boolean),
-          }
-        : {}),
-    });
-  }
+    ...(process.env['LOG_REDACT_PATHS']
+      ? {
+          redactPaths: process.env['LOG_REDACT_PATHS']
+            .split(',')
+            .map((p) => p.trim())
+            .filter(Boolean),
+        }
+      : {}),
+  });
 
   return rootLogger;
 }
