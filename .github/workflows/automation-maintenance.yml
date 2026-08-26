@@ -52,21 +52,29 @@ jobs:
 
       - name: Run scheduled Nexor worker
         env:
-          NEXOR_BASE_URL: ${{ vars.NEXOR_PRODUCTION_URL || 'https://nexoraios-main-1-diwakarpandeyitwa-3531s-projects.vercel.app' }}
+          NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           TASK: ${{ steps.task.outputs.task }}
         run: |
           set -euo pipefail
           test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required'; exit 1; }
-          test -n "$NEXOR_BASE_URL" || { echo 'NEXOR_PRODUCTION_URL is required'; exit 1; }
+          test -n "$NEXOR_BASE_URL" || { echo 'NEXOR_BASE_URL is required'; exit 1; }
           case "$TASK" in
             job-autopilot) path="/api/cron/job-autopilot" ;;
             autopilot) path="/api/cron/autopilot" ;;
             reports) path="/api/cron/reports/email" ;;
             *) echo "Unknown task: $TASK"; exit 1 ;;
           esac
+          body_file="$(mktemp)"
           echo "Running $path"
-          curl --fail-with-body --silent --show-error --max-time 120 \
+          http_code="$(curl --fail-with-body --silent --show-error --max-time 120 \
+            -o "$body_file" -w '%{http_code}' \
             -H "Authorization: Bearer $CRON_SECRET" \
-            "$NEXOR_BASE_URL$path"
+            "$NEXOR_BASE_URL$path")"
+          cat "$body_file"
           echo
+          rm -f "$body_file"
+          if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then
+            echo "Scheduled worker $path returned HTTP $http_code; refusing to treat redirect/error as success."
+            exit 1
+          fi
