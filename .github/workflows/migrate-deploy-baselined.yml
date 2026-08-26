@@ -1,0 +1,59 @@
+name: Deploy Production Migrations (Baselined)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  baseline-and-deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: main }
+      - uses: pnpm/action-setup@v4
+        with: { version: 9.15.4, run_install: false }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Install psql
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Baseline already-existing schema (auth only)
+        working-directory: packages/database
+        run: |
+          npx prisma migrate resolve --applied 20260823000000_add_users_auth
+          npx prisma migrate resolve --applied 20260823030000_add_users_auth
+        env:
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+
+      - name: Deploy pending migrations
+        working-directory: packages/database
+        run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+
+      - name: Verify migration history
+        run: |
+          echo "=== _prisma_migrations ==="
+          psql "$DATABASE_URL" -c "select migration_name, finished_at, rolled_back_at from public._prisma_migrations order by started_at;"
+        env:
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+
+      - name: Verify resulting public schema
+        run: |
+          echo "=== PUBLIC TABLES ==="
+          psql "$DATABASE_URL" -c "select table_name from information_schema.tables where table_schema='public' order by table_name;"
+          echo "=== PUBLIC ENUMS ==="
+          psql "$DATABASE_URL" -c "select typname from pg_type where typnamespace='public'::regnamespace and typtype='e' order by typname;"
+        env:
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+
+      - name: Verify infra schema
+        run: |
+          echo "=== INFRA TABLES ==="
+          psql "$DATABASE_URL" -c "select table_name from information_schema.tables where table_schema='infra' order by table_name;"
+        env:
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
