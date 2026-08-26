@@ -40,3 +40,12 @@ jobs:
           psql "$DATABASE_URL" -c "select migration_name, finished_at, rolled_back_at from public._prisma_migrations order by started_at;" || echo "No _prisma_migrations table — production has never been baselined by Prisma."
         env:
           DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+
+      - name: Check infra schema
+        run: |
+          echo "=== INFRA SCHEMA EXISTS? ==="
+          psql "$DATABASE_URL" -c "select schema_name from information_schema.schemata where schema_name = 'infra';"
+          echo "=== INFRA TABLES ==="
+          psql "$DATABASE_URL" -c "select table_name from information_schema.tables where table_schema = 'infra' order by table_name;"
+        env:
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
