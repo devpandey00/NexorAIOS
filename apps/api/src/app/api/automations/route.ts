@@ -1,21 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { getDatabaseClients } from '@nexor/database';
+import { getSessionUser } from '@/lib/auth';
 
 function getDb() {
   return getDatabaseClients().write;
 }
 
-function authorized(req: NextRequest) {
+function authorizedBySecret(req: NextRequest) {
   const secret = process.env.CRON_SECRET || process.env.AUTOMATION_API_SECRET;
-  if (!secret) return process.env.NODE_ENV !== 'production';
+  if (!secret) return false;
   const supplied = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') || req.headers.get('x-cron-secret') || '';
   return supplied === secret;
+}
+
+async function authorized(req: NextRequest) {
+  if (authorizedBySecret(req)) return true;
+  return Boolean(await getSessionUser(req));
 }
 
 const SUPPORTED_WORKFLOWS = new Set([
   'lead_generation',
   'lead_to_outreach',
+  'sales_machine',
   'social_content',
   'opportunity_discovery',
   'crm',
@@ -26,7 +33,32 @@ const SUPPORTED_WORKFLOWS = new Set([
   'proposal',
 ]);
 
-export async function GET() {
+function validateCronExpression(expression: string) {
+  const fields = expression.trim().split(/\s+/);
+  if (fields.length !== 5) return 'Cron expression must contain exactly 5 fields';
+  const ranges = [[0, 59], [0, 23], [1, 31], [1, 12], [0, 7]] as const;
+  for (let index = 0; index < fields.length; index += 1) {
+    for (const token of fields[index].split(',')) {
+      const [rangePart, stepPart] = token.split('/');
+      if (stepPart !== undefined && (!/^\d+$/.test(stepPart) || Number(stepPart) < 1)) {
+        return `Invalid cron step: ${token}`;
+      }
+      if (rangePart === '*') continue;
+      const [startRaw, endRaw] = rangePart.split('-');
+      if (!/^\d+$/.test(startRaw) || (endRaw !== undefined && !/^\d+$/.test(endRaw))) {
+        return `Invalid cron field: ${token}`;
+      }
+      const start = Number(startRaw);
+      const end = endRaw === undefined ? start : Number(endRaw);
+      const [min, max] = ranges[index];
+      if (start < min || end > max || start > end) return `Invalid cron field: ${token}`;
+    }
+  }
+  return null;
+}
+
+export async function GET(req: NextRequest) {
+  if (!(await authorized(req))) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   try {
     const db = getDb();
     const schedules = await db.$queryRawUnsafe<unknown[]>(
@@ -39,7 +71,7 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  if (!(await authorized(req))) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
 
   try {
     const db = getDb();
@@ -61,8 +93,12 @@ export async function POST(req: NextRequest) {
     if (runAt && Number.isNaN(runAt.getTime())) {
       return NextResponse.json({ success: false, error: 'runAt must be a valid ISO date' }, { status: 400 });
     }
-    if (cron && !runAt) {
-      return NextResponse.json({ success: false, error: 'Recurring schedules require an initial runAt timestamp; the worker calculates subsequent runs from cron' }, { status: 400 });
+    if (cron) {
+      const cronError = validateCronExpression(cron);
+      if (cronError) return NextResponse.json({ success: false, error: cronError }, { status: 400 });
+      if (!runAt) {
+        return NextResponse.json({ success: false, error: 'Recurring schedules require an initial runAt timestamp; the worker calculates subsequent runs from cron' }, { status: 400 });
+      }
     }
 
     const timezone = typeof body.timezone === 'string' && body.timezone.trim() ? body.timezone.trim() : 'UTC';
