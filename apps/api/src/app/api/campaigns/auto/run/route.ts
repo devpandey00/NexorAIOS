@@ -51,6 +51,10 @@ export async function GET(req: NextRequest) {
         query: plan.query,
       });
 
+      // runCampaign claims an existing queued discovery job. Create it here;
+      // without this step auto campaigns are created but can never execute.
+      await campaignService.createDiscoveryJob(campaign.id);
+
       const result = await runCampaign(campaign.id);
       results.push({ plan, campaignId: campaign.id, result, skipped: false });
     }
