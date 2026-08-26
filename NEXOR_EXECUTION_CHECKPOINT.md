@@ -14,9 +14,9 @@
 - Migration verification, public-schema verification and `infra`-schema verification steps all completed successfully.
 - The production database must remain migration-managed. Never use `prisma db push`, `--accept-data-loss`, reset, truncate or destructive schema operations against production.
 - Vercel Project Settings Build Command, Output Directory and Install Command overrides were disabled after an earlier deployment was found attempting a destructive `db:push --accept-data-loss`.
-- `vercel.json` now contains a build-only command: Prisma client generation plus package builds; it does not run migrations.
-- Production deployment `884c6f2` is serving successfully on `https://nexoraios-main-1.vercel.app`.
-- `/login` returns HTTP 200; unauthenticated `/` and `/dashboard` redirect to authentication as expected.
+- `vercel.json` contains a build-only command: Prisma client generation plus package builds; it does not run migrations.
+- The previously verified production deployment `884c6f2` served successfully on `https://nexoraios-main-1.vercel.app`.
+- `/login` returned HTTP 200; unauthenticated `/` and `/dashboard` redirected to authentication as expected.
 
 ## Set 1 implementation checkpoint
 - Social content state transitions are enforced server-side; clients cannot mark a post `PUBLISHED` directly.
@@ -30,12 +30,16 @@
 
 ## Automation checkpoint
 - Realtime automation is scheduled every five minutes through `.github/workflows/automation-workers.yml`.
+- The five-minute worker now invokes the durable `/api/automations/run` scheduler before follow-ups, outreach and social publishing.
+- The durable automation schedule-creation endpoint now requires the cron/automation secret in production, validates supported workflow types, requires a valid initial `runAt`, validates timezones, and rejects malformed schedules.
+- The durable automation runner now requires the cron/automation secret, uses `FOR UPDATE SKIP LOCKED` to prevent duplicate claims, records run failures, advances recurring schedules, and cancels one-time schedules after successful execution.
 - Scheduled automation runs job discovery every two hours, daily autopilot and daily reporting through `.github/workflows/automation-maintenance.yml`.
-- A previous scheduled run was green but its log showed the old deployment alias returning `Redirecting...`; the workflow therefore could not be treated as proof that the worker executed successfully.
-- The realtime and scheduled workflows have now been hardened to call the canonical production domain `https://nexoraios-main-1.vercel.app` and to fail unless the cron endpoint returns a 2xx response. Redirects/errors are no longer accepted as successful worker executions.
+- A previous scheduled run was green but its log showed the old deployment alias returning `Redirecting...`; that run was therefore NOT treated as proof of worker execution.
+- The realtime and scheduled workflows have now been hardened to call the canonical production domain `https://nexoraios-main-1.vercel.app` and to fail unless cron endpoints return a 2xx response. Redirects/errors are no longer accepted as successful worker executions.
+- A production smoke workflow now checks `/api/health` and `/login` hourly and can be run manually.
 
 ## Integration status semantics
-- `apps/api/src/app/api/health/integrations/route.ts` correctly distinguishes `CONFIGURATION_PRESENT` from `CONNECTED` for most integrations; configuration presence is not itself a connected state.
+- `apps/api/src/app/api/health/integrations/route.ts` distinguishes `CONFIGURATION_PRESENT` from `CONNECTED` for most integrations; configuration presence is not itself a connected state.
 - GA4 and Search Console already perform provider checks.
 - Other providers still need provider-specific safe connectivity probes before they can legitimately be reported as `CONNECTED`.
 
@@ -43,11 +47,12 @@
 WhatsApp/Instagram/Facebook/LinkedIn/SMS/email sending, social publishing, Google/Meta Ads access, calendar integrations, external job submissions and AI media generation require valid provider/API credentials. Code must never claim external success without provider confirmation.
 
 ## Verification still required
-1. Run repository install, Prisma generate, lint, typecheck, tests and production build in a real workspace/CI.
-2. Verify the latest automation workflow changes with the scheduled/dispatch runs and inspect their HTTP response bodies/statuses.
+1. Let the updated five-minute automation workflow run and inspect the actual HTTP response/status from `/api/automations/run`, follow-ups, outreach and social publishing.
+2. Run repository install, Prisma generate, lint, typecheck, tests and production build in CI/a real workspace.
 3. Smoke-test login, dashboard, CRM CRUD, lead flow, research, outreach approval/send paths, social calendar/publishing, automation execution and video agent.
 4. Connect and test external providers one by one.
-5. Only mark a provider workflow LIVE after a real end-to-end confirmation.
+5. Redeploy the latest main commit to the intended Vercel production project only after CI is green; git-triggered deployment remains intentionally disabled.
+6. Only mark a provider workflow LIVE after a real end-to-end confirmation.
 
 ## Recent Set 1 commits
 - `abf7b01ac791eebb9f1e5c157b0771878eb8734a` — social status transition enforcement
