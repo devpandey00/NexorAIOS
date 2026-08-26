@@ -1,11 +1,22 @@
 # NexorAIOS Execution Checkpoint
 
 ## Current state
-- Repository: devpandey00/NexorAIOS
-- Branch: main
-- Production project: nexoraios-main-1
+- Repository: `devpandey00/NexorAIOS`
+- Branch: `main`
+- Production project: `nexoraios-main-1`
 - Canonical scope: `NEXOR_MASTER_WORKFLOW_SPEC.md`
 - Objective: genuinely production-ready NexorAIOS; no fake success states.
+
+## Verified production infrastructure
+- Production PostgreSQL schema was inspected through a read-only GitHub Actions workflow.
+- Existing production auth objects were preserved and the two auth migrations were baselined with `prisma migrate resolve --applied`.
+- Remaining migrations were applied with `prisma migrate deploy`; the baseline-and-deploy workflow completed successfully.
+- Migration verification, public-schema verification and `infra`-schema verification steps all completed successfully.
+- The production database must remain migration-managed. Never use `prisma db push`, `--accept-data-loss`, reset, truncate or destructive schema operations against production.
+- Vercel Project Settings Build Command, Output Directory and Install Command overrides were disabled after an earlier deployment was found attempting a destructive `db:push --accept-data-loss`.
+- `vercel.json` now contains a build-only command: Prisma client generation plus package builds; it does not run migrations.
+- Production deployment `884c6f2` is serving successfully on `https://nexoraios-main-1.vercel.app`.
+- `/login` returns HTTP 200; unauthenticated `/` and `/dashboard` redirect to authentication as expected.
 
 ## Set 1 implementation checkpoint
 - Social content state transitions are enforced server-side; clients cannot mark a post `PUBLISHED` directly.
@@ -17,26 +28,26 @@
 - Outreach drafts now verify the real Nexor session server-side instead of trusting a client-supplied identity header.
 - Added verified Video Factory → Social handoff endpoint. It only creates a social draft after the real OpenChatCut render status returns a public output URL; it never marks a post published.
 
-## Existing architecture preserved
-- Next.js + TypeScript + Turborepo + Prisma + PostgreSQL + pnpm.
-- Existing OpenChatCut MCP/video pipeline retained.
-- Existing social provider adapters retained.
-- Existing sales/CRM services retained.
+## Automation checkpoint
+- Realtime automation is scheduled every five minutes through `.github/workflows/automation-workers.yml`.
+- Scheduled automation runs job discovery every two hours, daily autopilot and daily reporting through `.github/workflows/automation-maintenance.yml`.
+- A previous scheduled run was green but its log showed the old deployment alias returning `Redirecting...`; the workflow therefore could not be treated as proof that the worker executed successfully.
+- The realtime and scheduled workflows have now been hardened to call the canonical production domain `https://nexoraios-main-1.vercel.app` and to fail unless the cron endpoint returns a 2xx response. Redirects/errors are no longer accepted as successful worker executions.
 
-## Current production blocker
-Vercel runtime verification has recorded `DATABASE_URL environment variable is required` on `/api/dashboard/summary`. A real managed PostgreSQL URL must be configured in Vercel Production. No localhost URL.
+## Integration status semantics
+- `apps/api/src/app/api/health/integrations/route.ts` correctly distinguishes `CONFIGURATION_PRESENT` from `CONNECTED` for most integrations; configuration presence is not itself a connected state.
+- GA4 and Search Console already perform provider checks.
+- Other providers still need provider-specific safe connectivity probes before they can legitimately be reported as `CONNECTED`.
 
 ## Provider-dependent work
 WhatsApp/Instagram/Facebook/LinkedIn/SMS/email sending, social publishing, Google/Meta Ads access, calendar integrations, external job submissions and AI media generation require valid provider/API credentials. Code must never claim external success without provider confirmation.
 
 ## Verification still required
-1. Run repository install, Prisma generate, lint, typecheck, tests and production build in a real workspace.
-2. Verify the new Set 1 changes in CI.
-3. Deploy latest `main` to the existing Vercel project.
-4. Apply/synchronize production database migrations against the real managed PostgreSQL database.
-5. Smoke-test login, dashboard, CRM CRUD, lead flow, research, outreach approval/send paths, social calendar/publishing, automation execution and video agent.
-6. Connect and test external providers one by one.
-7. Only mark a provider workflow LIVE after a real end-to-end confirmation.
+1. Run repository install, Prisma generate, lint, typecheck, tests and production build in a real workspace/CI.
+2. Verify the latest automation workflow changes with the scheduled/dispatch runs and inspect their HTTP response bodies/statuses.
+3. Smoke-test login, dashboard, CRM CRUD, lead flow, research, outreach approval/send paths, social calendar/publishing, automation execution and video agent.
+4. Connect and test external providers one by one.
+5. Only mark a provider workflow LIVE after a real end-to-end confirmation.
 
 ## Recent Set 1 commits
 - `abf7b01ac791eebb9f1e5c157b0771878eb8734a` — social status transition enforcement
