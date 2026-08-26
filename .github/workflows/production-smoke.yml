@@ -1,0 +1,39 @@
+name: Nexor production smoke
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify production health endpoints
+        env:
+          BASE_URL: https://nexoraios-main-1.vercel.app
+        run: |
+          set -euo pipefail
+
+          check_2xx() {
+            local path="$1"
+            local body_file
+            body_file="$(mktemp)"
+            echo "Checking $path"
+            http_code="$(curl --fail-with-body --silent --show-error --max-time 30 \
+              -o "$body_file" -w '%{http_code}' \
+              "$BASE_URL$path")"
+            cat "$body_file"
+            echo
+            rm -f "$body_file"
+            if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then
+              echo "$path returned HTTP $http_code"
+              exit 1
+            fi
+          }
+
+          check_2xx /api/health
+          check_2xx /login
