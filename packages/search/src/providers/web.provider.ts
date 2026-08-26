@@ -1,6 +1,5 @@
-import { Lead } from '../types/lead.js';
+import type { Lead } from '../types/lead.js';
 
-const SEARCH_URL = 'https://html.duckduckgo.com/html/';
 const SEARCH_TIMEOUT_MS = 6500;
 const SITE_NAME_TIMEOUT_MS = 4500;
 const MAX_ATTEMPTS = 2;
@@ -8,6 +7,11 @@ const MAX_RESULTS_PER_QUERY = 40;
 const MAX_FINAL_LEADS = 100;
 
 interface SearchResult { title: string; url: string; }
+
+const SEARCH_ENGINES = [
+  'https://html.duckduckgo.com/html/',
+  'https://www.google.com/search',
+];
 
 const BLOCKED_DOMAINS = [
   'duckduckgo.com','google.com','bing.com','facebook.com','instagram.com','linkedin.com','youtube.com',
@@ -29,21 +33,31 @@ function decodeHtml(value: string): string {
 function stripHtml(value: string): string { return value.replace(/<[^>]+>/g,'').replace(/\s+/g,' ').trim(); }
 function normalizeDomain(url: string): string { try { return new URL(url).hostname.replace(/^www\./,'').toLowerCase(); } catch { return ''; } }
 function titleCaseDomain(domain: string): string { const base = domain.split('.')[0] ?? domain; return base.replace(/[-_]+/g,' ').replace(/\b\w/g,(letter) => letter.toUpperCase()).trim(); }
+
 function extractResults(html: string): SearchResult[] {
   const results: SearchResult[] = [];
-  const pattern = /<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(html)) !== null && results.length < MAX_RESULTS_PER_QUERY) {
-    const rawHref = decodeHtml(match[1]); const title = stripHtml(match[2]); let url = rawHref;
-    try {
-      if (rawHref.startsWith('//')) url = `https:${rawHref}`;
-      const parsed = new URL(url);
-      if (parsed.hostname.includes('duckduckgo.com') && parsed.searchParams.has('uddg')) url = decodeURIComponent(parsed.searchParams.get('uddg')!);
-    } catch { continue; }
-    if (url.startsWith('http') && title) results.push({ title, url });
+  const patterns = [
+    /<a[^>]+class="[^\"]*result__a[^\"]*"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi,
+    /<a[^>]+href="(https?:\/\/[^\"]+)"[^>]*>([\s\S]*?)<\/a>/gi,
+  ];
+  for (const pattern of patterns) {
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(html)) !== null && results.length < MAX_RESULTS_PER_QUERY) {
+      const rawHref = decodeHtml(match[1]);
+      const title = stripHtml(match[2]);
+      let url = rawHref;
+      try {
+        if (rawHref.startsWith('//')) url = `https:${rawHref}`;
+        const parsed = new URL(url);
+        if (parsed.hostname.includes('duckduckgo.com') && parsed.searchParams.has('uddg')) url = decodeURIComponent(parsed.searchParams.get('uddg')!);
+      } catch { continue; }
+      if (url.startsWith('http') && title) results.push({ title, url });
+    }
+    if (results.length >= MAX_RESULTS_PER_QUERY) break;
   }
   return results;
 }
+
 function isUsefulBusinessWebsite(result: SearchResult): boolean {
   const domain = normalizeDomain(result.url);
   if (!domain || BLOCKED_DOMAINS.some((blocked) => domain === blocked || domain.endsWith(`.${blocked}`))) return false;
@@ -51,11 +65,12 @@ function isUsefulBusinessWebsite(result: SearchResult): boolean {
   try { if (NON_BUSINESS_PATH_PATTERNS.some((pattern) => pattern.test(new URL(result.url).pathname))) return false; } catch { return false; }
   return true;
 }
+
 async function fetchFast(url: string, timeoutMs: number): Promise<string | null> {
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/151 Safari/537.36', Accept: 'text/html,application/xhtml+xml' }, cache: 'no-store', signal: controller.signal });
+      const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 NexorAIOS/1.0', Accept: 'text/html,application/xhtml+xml' }, cache: 'no-store', redirect: 'follow', signal: controller.signal });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return await response.text();
     } catch { if (attempt < MAX_ATTEMPTS) await new Promise((resolve) => setTimeout(resolve, 150 * attempt)); }
@@ -63,6 +78,7 @@ async function fetchFast(url: string, timeoutMs: number): Promise<string | null>
   }
   return null;
 }
+
 async function resolveBusinessName(result: SearchResult): Promise<string> {
   const html = await fetchFast(result.url, SITE_NAME_TIMEOUT_MS);
   if (html) {
@@ -81,12 +97,22 @@ async function resolveBusinessName(result: SearchResult): Promise<string> {
   }
   return titleCaseDomain(normalizeDomain(result.url));
 }
+
 export async function webSearch(query: string): Promise<Lead[]> {
   const normalizedQuery = query.trim(); if (!normalizedQuery) return [];
   const searchQueries = [normalizedQuery, `"${normalizedQuery}" official website`, `${normalizedQuery} contact`, `${normalizedQuery} services`, `${normalizedQuery} company`, `${normalizedQuery} -jobs -careers -vacancy -indeed -linkedin -naukri`];
-  const urls = searchQueries.map((searchQuery) => { const url = new URL(SEARCH_URL); url.searchParams.set('q', searchQuery); url.searchParams.set('kl','us-en'); return url.toString(); });
-  const searchResponses = await Promise.allSettled(urls.map((url) => fetchFast(url, SEARCH_TIMEOUT_MS)));
-  const allResults = searchResponses.flatMap((response) => response.status === 'fulfilled' && response.value ? extractResults(response.value) : []);
+  const allResults: SearchResult[] = [];
+  for (const searchQuery of searchQueries) {
+    let found = false;
+    for (const engine of SEARCH_ENGINES) {
+      const url = new URL(engine); url.searchParams.set('q', searchQuery); if (engine.includes('duckduckgo')) url.searchParams.set('kl','us-en');
+      const html = await fetchFast(url.toString(), SEARCH_TIMEOUT_MS);
+      if (!html) continue;
+      const results = extractResults(html);
+      if (results.length) { allResults.push(...results); found = true; break; }
+    }
+    if (!found) continue;
+  }
 
   const candidates: SearchResult[] = []; const seenDomains = new Set<string>();
   for (const result of allResults) {
@@ -96,7 +122,6 @@ export async function webSearch(query: string): Promise<Lead[]> {
     if (candidates.length >= MAX_FINAL_LEADS) break;
   }
 
-  // Names are enriched concurrently. A failed/slow website never blocks the discovery batch.
-  const enriched = await Promise.all(candidates.slice(0, MAX_FINAL_LEADS).map(async (result) => ({ result, name: await resolveBusinessName(result) })));
+  const enriched = await Promise.all(candidates.map(async (result) => ({ result, name: await resolveBusinessName(result) })));
   return enriched.map(({ result, name }) => ({ name, website: result.url }));
 }
