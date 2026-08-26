@@ -16,6 +16,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Run automatic campaign discovery
+        env:
+          NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required'; exit 1; }
+          body_file="$(mktemp)"
+          echo "Running /api/campaigns/auto/run"
+          http_code="$(curl --fail-with-body --silent --show-error --max-time 300 \
+            -o "$body_file" -w '%{http_code}' \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$NEXOR_BASE_URL/api/campaigns/auto/run")"
+          cat "$body_file"
+          echo
+          rm -f "$body_file"
+          if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then
+            echo "Campaign discovery returned HTTP $http_code; refusing to treat redirect/error as success."
+            exit 1
+          fi
+
       - name: Run durable Nexor automation scheduler
         env:
           NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
