@@ -1,0 +1,39 @@
+name: Diagnose Lint
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - lint-report.txt
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Capture lint output
+        run: |
+          set +e
+          pnpm lint > lint-report.txt 2>&1
+          status=$?
+          echo "EXIT_CODE=$status" >> lint-report.txt
+          exit 0
+      - name: Commit diagnostic report
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add lint-report.txt
+          git commit -m 'ci: capture lint diagnostics' || exit 0
+          git push
