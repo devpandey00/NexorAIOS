@@ -12,63 +12,60 @@
 - Existing production auth objects were preserved and the two auth migrations were baselined with `prisma migrate resolve --applied`.
 - Remaining migrations were applied with `prisma migrate deploy`; the baseline-and-deploy workflow completed successfully.
 - Migration verification, public-schema verification and `infra`-schema verification steps all completed successfully.
-- The production database must remain migration-managed. Never use `prisma db push`, `--accept-data-loss`, reset, truncate or destructive schema operations against production.
-- Vercel Project Settings Build Command, Output Directory and Install Command overrides were disabled after an earlier deployment was found attempting a destructive `db:push --accept-data-loss`.
-- `vercel.json` contains a build-only command: Prisma client generation plus package builds; it does not run migrations.
-- The previously verified production deployment `884c6f2` served successfully on `https://nexoraios-main-1.vercel.app`.
+- Production schema remains migration-managed. Never use `prisma db push`, `--accept-data-loss`, reset, truncate or destructive schema operations against production.
+- Vercel Project Settings Build Command, Output Directory and Install Command overrides were disabled after an earlier deployment was found attempting destructive `db:push --accept-data-loss`.
+- The current Vercel build command is build-only: Prisma client generation plus package builds; it does not run migrations.
+- Verified production deployment `dpl_2qZQ9hEWkGmpLNzoJS8xoqnbit5R` is `READY` for commit `884c6f2e...`.
+- `/api/health` currently returns HTTP 200 with database connected.
 - `/login` returned HTTP 200; unauthenticated `/` and `/dashboard` redirected to authentication as expected.
+- No Vercel runtime errors were found in the most recent one-hour production window.
 
 ## Set 1 implementation checkpoint
 - Social content state transitions are enforced server-side; clients cannot mark a post `PUBLISHED` directly.
 - Scheduled social publishing persists provider failures as `FAILED` instead of leaving posts stuck in `SCHEDULED`.
-- Added direct persisted social-content lookup for safe state transitions on arbitrary post IDs.
-- Consolidated outbound sending through the existing `sendApprovedOutreach` service; the route no longer contains a duplicate provider implementation.
-- Outbound send atomically claims an approved record into the queued/scheduled state before contacting the provider, then changes it to `SENT` only after provider confirmation; provider/database failures persist as `FAILED`.
-- Outbound scheduling now fails closed without `OUTREACH_API_SECRET` and validates future timestamps.
-- Outreach drafts now verify the real Nexor session server-side instead of trusting a client-supplied identity header.
-- Added verified Video Factory → Social handoff endpoint. It only creates a social draft after the real OpenChatCut render status returns a public output URL; it never marks a post published.
+- Outbound sending is claim-safe and provider-confirmed before `SENT`.
+- Outreach scheduling fails closed without its required secret and validates future timestamps.
+- Outreach drafts verify the real Nexor session server-side instead of trusting a client-supplied identity header.
+- Video Factory → Social handoff requires a real render output URL before creating a social draft.
 
 ## Automation checkpoint
 - Realtime automation is scheduled every five minutes through `.github/workflows/automation-workers.yml`.
-- The five-minute worker now invokes the durable `/api/automations/run` scheduler before follow-ups, outreach and social publishing.
-- The durable automation schedule-creation endpoint now requires the cron/automation secret in production, validates supported workflow types, requires a valid initial `runAt`, validates timezones, and rejects malformed schedules.
-- The durable automation runner now requires the cron/automation secret, uses `FOR UPDATE SKIP LOCKED` to prevent duplicate claims, records run failures, advances recurring schedules, and cancels one-time schedules after successful execution.
-- Scheduled automation runs job discovery every two hours, daily autopilot and daily reporting through `.github/workflows/automation-maintenance.yml`.
-- A previous scheduled run was green but its log showed the old deployment alias returning `Redirecting...`; that run was therefore NOT treated as proof of worker execution.
-- The realtime and scheduled workflows have now been hardened to call the canonical production domain `https://nexoraios-main-1.vercel.app` and to fail unless cron endpoints return a 2xx response. Redirects/errors are no longer accepted as successful worker executions.
-- A production smoke workflow now checks `/api/health` and `/login` hourly and can be run manually.
+- The five-minute worker invokes `/api/automations/run` before follow-ups, outreach and social publishing.
+- The durable automation runner uses `FOR UPDATE SKIP LOCKED`, persists run failures, advances recurring schedules and cancels successful one-time schedules.
+- Scheduled maintenance runs job discovery every two hours, daily autopilot and daily reporting.
+- Worker workflows use the canonical production domain and fail on non-2xx responses.
+- A production runtime check exposed a real remaining configuration blocker: `GET /api/cron/job-autopilot` returned HTTP 503 because neither `CRON_SECRET` nor `OUTREACH_API_SECRET` is available to the Vercel Production runtime. GitHub Actions has its own `CRON_SECRET` secret, but that does not automatically become a Vercel environment variable.
+- Therefore scheduled automation is NOT yet proven LIVE in production.
 
-## Integration status semantics
-- `apps/api/src/app/api/health/integrations/route.ts` distinguishes `CONFIGURATION_PRESENT` from `CONNECTED` for most integrations; configuration presence is not itself a connected state.
-- GA4 and Search Console already perform provider checks.
-- Other providers still need provider-specific safe connectivity probes before they can legitimately be reported as `CONNECTED`.
+## Automation code fixes committed after inspection
+- Schedule GET/POST now accept either a valid cron/automation secret or a real Nexor session; unauthenticated schedule listing is no longer allowed.
+- Schedule creation now accepts `sales_machine`, matching the workflow executor, and performs basic cron-shape validation before persisting a recurring schedule.
+- Integration health now distinguishes configuration from verified connectivity. Environment-variable presence is reported as `CONFIGURED`, not `CONNECTED`; database health performs a real `SELECT 1` probe.
+
+## Integration health
+- GA4 and Search Console perform provider-specific connection checks.
+- Other providers currently report `CONFIGURED`, `PARTIAL`, or `CONFIGURATION_REQUIRED` unless a real provider probe exists.
+- Missing provider credentials are not treated as provider success.
+
+## CI verification
+- A previous CI run for commit `81982a86...` passed dependency installation and Prisma generation but failed at the lint step, causing typecheck/tests/build to be skipped.
+- The exact lint log is not exposed through the available GitHub API surface, so the failure must be reproduced by the next CI run or a real workspace before claiming CI green.
+- Docker Compose validation passed in that run.
 
 ## Provider-dependent work
 WhatsApp/Instagram/Facebook/LinkedIn/SMS/email sending, social publishing, Google/Meta Ads access, calendar integrations, external job submissions and AI media generation require valid provider/API credentials. Code must never claim external success without provider confirmation.
 
 ## Verification still required
-1. Let the updated five-minute automation workflow run and inspect the actual HTTP response/status from `/api/automations/run`, follow-ups, outreach and social publishing.
-2. Run repository install, Prisma generate, lint, typecheck, tests and production build in CI/a real workspace.
-3. Smoke-test login, dashboard, CRM CRUD, lead flow, research, outreach approval/send paths, social calendar/publishing, automation execution and video agent.
-4. Connect and test external providers one by one.
-5. Redeploy the latest main commit to the intended Vercel production project only after CI is green; git-triggered deployment remains intentionally disabled.
-6. Only mark a provider workflow LIVE after a real end-to-end confirmation.
-
-## Recent Set 1 commits
-- `abf7b01ac791eebb9f1e5c157b0771878eb8734a` — social status transition enforcement
-- `3b6adf2ef7fb38d110d89459ebb663acdec24e9b` — scheduled social failure persistence
-- `6e159c2ecc11a6049788d02a0eac5dd791e66ed2` — claim-safe outbound sender
-- `82d837696b1f6e4e6b5f7dbadf7682c8c9d5176a` — unified outbound send route
-- `92cd5be68c5f50c0f945b5bf1ed7f034fcbe6619` — persist provider failure text correctly
-- `7b1869533ce8e66b95dfeefe3805eff5986748c7` — direct social-content lookup
-- `9beed7bf2f17d863f6a4354c43671ad001737dcb` — safe social state transition route
-- `8414c57028a3d62a95cc60016d37e04df783d8b3` — verified video-to-social handoff
-- `0524dd837f5c8805b1986d1bfae9b3185eafc44a` — secure/validate outreach scheduling
-- `7ba05fffd529e0392c659d5d3ec96975afba7d26` — server-side session verification for drafts
+1. Add `CRON_SECRET` to Vercel Production environment variables using the same secret value used by the GitHub automation worker, then redeploy the latest `main`.
+2. Confirm `/api/cron/job-autopilot`, `/api/automations/run`, `/api/cron/followups`, `/api/cron/outreach`, and `/api/cron/social-publish` return genuine 2xx responses when authorized.
+3. Reproduce and fix the CI lint failure; then require typecheck, format check, unit tests and build to pass.
+4. Smoke-test login, dashboard, CRM CRUD, lead flow, research, outreach approval/send paths, social calendar/publishing, automation execution and video agent.
+5. Connect and test external providers one by one.
+6. Only mark provider workflows LIVE after real end-to-end confirmation.
 
 ## Rules
 - Never fake provider success.
 - Never claim READY without production deployment and critical end-to-end verification.
-- No destructive production data changes without explicit approval.
+- No destructive production data changes.
 - Preserve the existing architecture.
 - Use external projects as adapters/references; do not blindly merge whole repositories.
