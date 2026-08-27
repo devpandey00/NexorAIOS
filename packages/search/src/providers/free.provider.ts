@@ -7,6 +7,8 @@ const MAX_FINAL_LEADS = 100;
 
 interface SearchResult { title: string; url: string; }
 
+type Engine = 'ddg' | 'bing' | 'searx';
+
 const BLOCKED_DOMAINS = [
   'duckduckgo.com', 'bing.com', 'google.com', 'facebook.com', 'instagram.com', 'linkedin.com',
   'youtube.com', 'yelp.com', 'yellowpages.com', 'mapquest.com', 'tripadvisor.com', 'wikipedia.org',
@@ -30,14 +32,14 @@ function stripHtml(value: string): string { return decodeHtml(value.replace(/<[^
 function normalizeDomain(url: string): string { try { return new URL(url).hostname.replace(/^www\./, '').toLowerCase(); } catch { return ''; } }
 function titleCaseDomain(domain: string): string { return (domain.split('.')[0] ?? domain).replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()).trim(); }
 
-function extractResults(html: string, engine: 'ddg' | 'bing' | 'searx'): SearchResult[] {
-  const results: SearchResult[] = [];
+function extractResults(html: string, engine: Engine): SearchResult[] {
   const patterns = engine === 'ddg'
-    ? [/<a[^>]+class="[^\"]*result__a[^\"]*"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi]
+    ? [/<a[^>]+class=["'][^"']*result__a[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi]
     : engine === 'bing'
-      ? [/<li[^>]+class="[^\"]*b_algo[^\"]*"[\s\S]*?<h2[^>]*>\s*<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi]
-      : [/<a[^>]+class="[^\"]*result_header[^\"]*"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi];
+      ? [/<li[^>]+class=["'][^"']*b_algo[^"']*["'][\s\S]*?<h2[^>]*>\s*<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi]
+      : [/<a[^>]+class=["'][^"']*result_header[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi];
 
+  const results: SearchResult[] = [];
   for (const pattern of patterns) {
     let match: RegExpExecArray | null;
     while ((match = pattern.exec(html)) !== null && results.length < MAX_RESULTS_PER_QUERY) {
@@ -49,8 +51,10 @@ function extractResults(html: string, engine: 'ddg' | 'bing' | 'searx'): SearchR
         if (engine === 'ddg' && parsed.hostname.includes('duckduckgo.com') && parsed.searchParams.has('uddg')) {
           url = decodeURIComponent(parsed.searchParams.get('uddg')!);
         }
-      } catch { continue; }
-      if (url.startsWith('http') && title) results.push({ title, url });
+      } catch {
+        continue;
+      }
+      if (/^https?:\/\//i.test(url) && title) results.push({ title, url });
     }
   }
   return results;
@@ -60,7 +64,11 @@ function useful(result: SearchResult): boolean {
   const domain = normalizeDomain(result.url);
   if (!domain || BLOCKED_DOMAINS.some((blocked) => domain === blocked || domain.endsWith(`.${blocked}`))) return false;
   if (NON_BUSINESS_TITLE_PATTERNS.some((pattern) => pattern.test(result.title))) return false;
-  try { if (NON_BUSINESS_PATH_PATTERNS.some((pattern) => pattern.test(new URL(result.url).pathname))) return false; } catch { return false; }
+  try {
+    if (NON_BUSINESS_PATH_PATTERNS.some((pattern) => pattern.test(new URL(result.url).pathname))) return false;
+  } catch {
+    return false;
+  }
   return true;
 }
 
@@ -77,7 +85,9 @@ async function fetchHtml(url: string): Promise<string | null> {
       return await response.text();
     } catch {
       if (attempt < MAX_ATTEMPTS) await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
-    } finally { clearTimeout(timer); }
+    } finally {
+      clearTimeout(timer);
+    }
   }
   return null;
 }
@@ -99,7 +109,7 @@ async function resolveName(result: SearchResult): Promise<string> {
   return titleCaseDomain(normalizeDomain(result.url));
 }
 
-async function queryEngine(query: string, engine: 'ddg' | 'bing' | 'searx'): Promise<SearchResult[]> {
+async function queryEngine(query: string, engine: Engine): Promise<SearchResult[]> {
   const base = engine === 'ddg'
     ? 'https://html.duckduckgo.com/html/'
     : engine === 'bing'
@@ -126,7 +136,7 @@ export async function freeWebSearch(query: string): Promise<{ leads: Lead[]; pro
     `${normalized} company -jobs -careers -vacancy -directory`,
   ];
   const errors: string[] = [];
-  const engines: Array<'ddg' | 'bing' | 'searx'> = ['ddg', 'bing', 'searx'];
+  const engines: Engine[] = ['ddg', 'bing', 'searx'];
   const all: SearchResult[] = [];
 
   for (const searchQuery of queries) {
@@ -135,23 +145,25 @@ export async function freeWebSearch(query: string): Promise<{ leads: Lead[]; pro
       if (engine === 'searx' && !process.env.SEARXNG_URL) continue;
       try {
         const results = await queryEngine(searchQuery, engine);
-        if (results.length) {
-          all.push(...results);
+        const usable = results.filter(useful);
+        if (usable.length) {
+          all.push(...usable);
           found = true;
           break;
         }
+        errors.push(`${engine}: zero usable results for query`);
       } catch (error) {
         errors.push(`${engine}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
-    if (!found) errors.push(`No results from free search engines for: ${searchQuery}`);
+    if (!found) errors.push(`No usable free-search result for: ${searchQuery}`);
   }
 
   const candidates: SearchResult[] = [];
   const seen = new Set<string>();
   for (const result of all) {
     const domain = normalizeDomain(result.url);
-    if (!domain || seen.has(domain) || !useful(result)) continue;
+    if (!domain || seen.has(domain)) continue;
     seen.add(domain);
     candidates.push(result);
     if (candidates.length >= MAX_FINAL_LEADS) break;
