@@ -4,6 +4,9 @@ export type CrawlPage = {
   text: string;
 };
 
+const REQUEST_TIMEOUT_MS = 8_000;
+const DEFAULT_CONCURRENCY = 6;
+
 function decodeHtml(value: string): string {
   return value
     .replace(/&nbsp;/gi, ' ')
@@ -38,7 +41,7 @@ async function fetchPage(url: string): Promise<CrawlPage | null> {
     if (!['http:', 'https:'].includes(parsed.protocol)) return null;
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8_000);
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
       const response = await fetch(parsed, {
         headers: {
@@ -62,9 +65,23 @@ async function fetchPage(url: string): Promise<CrawlPage | null> {
   }
 }
 
+async function mapLimit<T, R>(items: T[], limit: number, worker: (item: T) => Promise<R>): Promise<R[]> {
+  const output: R[] = [];
+  let cursor = 0;
+  async function consume() {
+    while (true) {
+      const index = cursor++;
+      if (index >= items.length) return;
+      output[index] = await worker(items[index]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, consume));
+  return output;
+}
+
 export async function crawlPages(urls: string[], maxPages = 10): Promise<CrawlPage[]> {
   const limit = Math.max(1, Math.min(Math.floor(maxPages), 50));
   const uniqueUrls = [...new Set(urls.map((url) => url.trim()).filter(Boolean))].slice(0, limit);
-  const results = await Promise.all(uniqueUrls.map(fetchPage));
+  const results = await mapLimit(uniqueUrls, DEFAULT_CONCURRENCY, fetchPage);
   return results.filter((result): result is CrawlPage => result !== null);
 }
