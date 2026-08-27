@@ -3,7 +3,7 @@ import type { Lead } from '../types/lead.js';
 const TIMEOUT_MS = 6500;
 const MAX_ATTEMPTS = 2;
 const MAX_RESULTS_PER_QUERY = 40;
-const MAX_FINAL_LEADS = 100;
+const MAX_FINAL_LEADS = 30;
 const ENRICH_CONCURRENCY = 8;
 
 type Engine = 'ddg' | 'ddg-lite' | 'bing' | 'google' | 'searx';
@@ -51,8 +51,8 @@ function extractResults(html: string, engine: Engine): SearchResult[] {
       try {
         if (url.startsWith('//')) url = `https:${url}`;
         const parsed = new URL(url, 'https://example.com');
-        if (engine !== 'google' && engine !== 'searx' && parsed.hostname.includes('duckduckgo.com') && parsed.searchParams.has('uddg')) {
-          url = decodeURIComponent(parsed.searchParams.get('uddg')!);
+        if (engine === 'ddg' || engine === 'ddg-lite') {
+          if (parsed.hostname.includes('duckduckgo.com') && parsed.searchParams.has('uddg')) url = decodeURIComponent(parsed.searchParams.get('uddg')!);
         }
       } catch { continue; }
       if (/^https?:\/\//i.test(url) && title) results.push({ title, url });
@@ -166,6 +166,7 @@ export async function freeWebSearch(query: string): Promise<{ leads: Lead[]; pro
       }
     }
     if (!found) errors.push(`No usable free-search result for query: ${searchQuery}`);
+    if (all.length >= MAX_FINAL_LEADS) break;
   }
 
   const candidates: SearchResult[] = [];
