@@ -1,0 +1,60 @@
+name: Repair Sales Prisma Relation
+
+on:
+  push:
+    branches: [fix/sales-stabilization-final]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Repair ActivityEvent lead relation
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('packages/database/prisma/schema.prisma')
+          text = p.read_text()
+          start = text.index('model ActivityEvent {')
+          end = text.index('\n}\n\nmodel Meeting {', start)
+          block = text[start:end]
+          relation = '  lead       Lead?     @relation(fields: [leadId], references: [id], onDelete: Cascade)\n'
+          if 'lead       Lead?' not in block and 'lead Lead?' not in block:
+              marker = '  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)\n'
+              if marker not in block:
+                  raise SystemExit('ActivityEvent campaign relation marker not found')
+              block = block.replace(marker, marker + '\n' + relation, 1)
+              p.write_text(text[:start] + block + text[end:])
+          PY
+
+      - name: Commit repair
+        shell: bash
+        run: |
+          if git diff --quiet -- packages/database/prisma/schema.prisma; then
+            echo 'No schema repair required.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add packages/database/prisma/schema.prisma
+          git commit -m 'fix(database): restore ActivityEvent lead relation [skip ci]'
+          git push origin HEAD:fix/sales-stabilization-final
+
+      - name: Remove repair workflow
+        shell: bash
+        run: |
+          if git ls-files --error-unmatch .github/workflows/repair-sales-schema.yml >/dev/null 2>&1; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git rm .github/workflows/repair-sales-schema.yml
+            git commit -m 'chore(ci): remove temporary schema repair workflow [skip ci]'
+            git push origin HEAD:fix/sales-stabilization-final
+          fi
