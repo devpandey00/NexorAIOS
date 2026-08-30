@@ -1,0 +1,543 @@
+diff -ruN nexor_original/NexorAIOS-main/apps/api/src/app/api/command/route.ts nexor_work/NexorAIOS-main/apps/api/src/app/api/command/route.ts
+--- nexor_original/NexorAIOS-main/apps/api/src/app/api/command/route.ts	2026-08-29 16:11:41.000000000 +0000
++++ nexor_work/NexorAIOS-main/apps/api/src/app/api/command/route.ts	2026-08-30 03:00:46.180414509 +0000
+@@ -58,14 +58,15 @@
+ 
+     const result = await commandExecutorService.execute(query, context);
+ 
++    const executionSuccess = Boolean(result.execution?.success);
+     return NextResponse.json({
+-      success: true,
++      success: executionSuccess,
+       query,
+       route: result.route,
+       execution: result.execution,
+       contextMemoryCount: Object.keys(memoryContext).length,
+       durationMs: Date.now() - startedAt,
+-    });
++    }, { status: executionSuccess ? 200 : 502 });
+   } catch (error) {
+     console.error('[NEXOR COMMAND ERROR]', error);
+     return NextResponse.json(
+diff -ruN nexor_original/NexorAIOS-main/apps/api/src/app/api/cron/followups/route.ts nexor_work/NexorAIOS-main/apps/api/src/app/api/cron/followups/route.ts
+--- nexor_original/NexorAIOS-main/apps/api/src/app/api/cron/followups/route.ts	2026-08-29 16:11:41.000000000 +0000
++++ nexor_work/NexorAIOS-main/apps/api/src/app/api/cron/followups/route.ts	2026-08-30 03:01:50.939595456 +0000
+@@ -54,7 +54,7 @@
+           continue;
+         }
+ 
+-        const terminal = await prisma.conversation.findFirst({ where: { leadId: candidate.leadId, status: { in: ['NOT_INTERESTED', 'WRONG_PERSON'] } }, select: { id: true } });
++        const terminal = candidate.lead.status === 'REPLIED' || candidate.lead.status === 'MEETING_BOOKED' || candidate.lead.status === 'PROPOSAL_SENT' || candidate.lead.status === 'WON' || candidate.lead.status === 'LOST' || Boolean(await prisma.conversation.findFirst({ where: { leadId: candidate.leadId, status: { in: ['NOT_INTERESTED', 'WRONG_PERSON', 'UNSUBSCRIBE'] } }, select: { id: true } }));
+         if (terminal) {
+           await prisma.followUp.update({ where: { id: candidate.id }, data: { status: FollowUpStatus.CANCELLED, notes: 'Cancelled because reply intelligence marked the lead as not contactable for follow-up.' } });
+           skipped++;
+diff -ruN nexor_original/NexorAIOS-main/apps/api/src/app/api/deals/[id]/lost/route.ts nexor_work/NexorAIOS-main/apps/api/src/app/api/deals/[id]/lost/route.ts
+--- nexor_original/NexorAIOS-main/apps/api/src/app/api/deals/[id]/lost/route.ts	1970-01-01 00:00:00.000000000 +0000
++++ nexor_work/NexorAIOS-main/apps/api/src/app/api/deals/[id]/lost/route.ts	2026-08-30 03:01:14.373058745 +0000
+@@ -0,0 +1,5 @@
++import { NextRequest, NextResponse } from 'next/server';
++import { getDatabaseClients, FollowUpStatus, LeadStatus, OpportunityStage } from '@nexor/database';
++import { assertTransition } from '@/lib/lead-state-machine';
++const db=()=>getDatabaseClients().write;
++export async function POST(req:NextRequest,{params}:{params:Promise<{id:string}>}){try{const {id}=await params;const body=await req.json().catch(()=>({}));const reason=typeof body.reason==='string'?body.reason.trim():'';if(!reason)return NextResponse.json({success:false,error:'loss reason is required'},{status:400});const prisma=db();const deal=await prisma.opportunity.findUnique({where:{id},include:{lead:true}});if(!deal)return NextResponse.json({success:false,error:'Opportunity not found'},{status:404});if(deal.stage===OpportunityStage.LOST)return NextResponse.json({success:true,opportunity:deal,alreadyLost:true});if(deal.stage===OpportunityStage.WON)return NextResponse.json({success:false,error:'Won opportunity cannot be lost'},{status:409});assertTransition(deal.lead.status,LeadStatus.LOST);const opportunity=await prisma.$transaction(async tx=>{const updated=await tx.opportunity.update({where:{id},data:{stage:OpportunityStage.LOST,lostAt:new Date(),lossReason:reason}});await tx.lead.update({where:{id:deal.leadId},data:{status:LeadStatus.LOST}});await tx.followUp.updateMany({where:{leadId:deal.leadId,status:{in:[FollowUpStatus.PENDING,FollowUpStatus.SCHEDULED]}},data:{status:FollowUpStatus.CANCELLED,notes:`Cancelled because opportunity was lost: ${reason}`}});await tx.activityEvent.create({data:{leadId:deal.leadId,type:'DEAL_LOST',message:`Deal lost: ${deal.name}`,metadata:{opportunityId:id,reason}}});return updated;});return NextResponse.json({success:true,opportunity});}catch(e){return NextResponse.json({success:false,error:e instanceof Error?e.message:String(e)},{status:400});}}
+diff -ruN nexor_original/NexorAIOS-main/apps/api/src/app/api/deals/[id]/proposals/route.ts nexor_work/NexorAIOS-main/apps/api/src/app/api/deals/[id]/proposals/route.ts
+--- nexor_original/NexorAIOS-main/apps/api/src/app/api/deals/[id]/proposals/route.ts	1970-01-01 00:00:00.000000000 +0000
++++ nexor_work/NexorAIOS-main/apps/api/src/app/api/deals/[id]/proposals/route.ts	2026-08-30 03:02:49.889157406 +0000
+@@ -0,0 +1,5 @@
++import { NextRequest, NextResponse } from 'next/server';
++import { getDatabaseClients, ProposalStatus, OpportunityStage } from '@nexor/database';
++const db=()=>getDatabaseClients().write;
++export async function GET(_:NextRequest,{params}:{params:Promise<{id:string}>}){try{const {id}=await params;const proposals=await db().proposal.findMany({where:{opportunityId:id},orderBy:{createdAt:'desc'}});return NextResponse.json({success:true,proposals});}catch(e){return NextResponse.json({success:false,error:e instanceof Error?e.message:String(e)},{status:500});}}
++export async function POST(req:NextRequest,{params}:{params:Promise<{id:string}>}){try{const {id}=await params;const body=await req.json();const deal=await db().opportunity.findUnique({where:{id},include:{lead:true}});if(!deal)return NextResponse.json({success:false,error:'Opportunity not found'},{status:404});if([OpportunityStage.WON,OpportunityStage.LOST].includes(deal.stage))return NextResponse.json({success:false,error:'Cannot create proposal for a closed opportunity'},{status:409});const title=typeof body.title==='string'&&body.title.trim()?body.title.trim():`Proposal — ${deal.lead.businessName}`;const scope=typeof body.scope==='string'?body.scope.trim():'';if(!scope)return NextResponse.json({success:false,error:'scope is required'},{status:400});const proposal=await db().$transaction(async tx=>{const created=await tx.proposal.create({data:{opportunityId:id,title,scope,content:typeof body.content==='string'?body.content:undefined,value:body.value!=null?body.value:undefined,currency:typeof body.currency==='string'?body.currency:undefined,status:ProposalStatus.DRAFT}});await tx.opportunity.update({where:{id},data:{stage:OpportunityStage.PROPOSAL}});await tx.activityEvent.create({data:{leadId:deal.leadId,type:'PROPOSAL_CREATED',message:`Proposal created: ${title}`,metadata:{proposalId:created.id,opportunityId:id}}});return created;});return NextResponse.json({success:true,proposal},{status:201});}catch(e){return NextResponse.json({success:false,error:e instanceof Error?e.message:String(e)},{status:400});}}
+diff -ruN nexor_original/NexorAIOS-main/apps/api/src/app/api/deals/[id]/route.ts nexor_work/NexorAIOS-main/apps/api/src/app/api/deals/[id]/route.ts
+--- nexor_original/NexorAIOS-main/apps/api/src/app/api/deals/[id]/route.ts	1970-01-01 00:00:00.000000000 +0000
++++ nexor_work/NexorAIOS-main/apps/api/src/app/api/deals/[id]/route.ts	2026-08-30 03:01:00.917110069 +0000
+@@ -0,0 +1,5 @@
++import { NextRequest, NextResponse } from 'next/server';
++import { getDatabaseClients, OpportunityStage } from '@nexor/database';
++const db=()=>getDatabaseClients().write;
++export async function GET(_:NextRequest,{params}:{params:Promise<{id:string}>}){try{const {id}=await params;const opportunity=await db().opportunity.findUnique({where:{id},include:{lead:true,meetings:true,proposals:true}});if(!opportunity)return NextResponse.json({success:false,error:'Opportunity not found'},{status:404});return NextResponse.json({success:true,opportunity});}catch(e){return NextResponse.json({success:false,error:e instanceof Error?e.message:String(e)},{status:500});}}
++export async function PATCH(req:NextRequest,{params}:{params:Promise<{id:string}>}){try{const {id}=await params;const body=await req.json();const current=await db().opportunity.findUnique({where:{id}});if(!current)return NextResponse.json({success:false,error:'Opportunity not found'},{status:404});const data:any={};if(typeof body.name==='string')data.name=body.name.trim();if(typeof body.value==='number')data.value=body.value;if(typeof body.currency==='string')data.currency=body.currency;if(typeof body.owner==='string')data.owner=body.owner;if(typeof body.stage==='string'&&[OpportunityStage.OPEN,OpportunityStage.QUALIFIED,OpportunityStage.PROPOSAL].includes(body.stage))data.stage=body.stage;const opportunity=await db().opportunity.update({where:{id},data});return NextResponse.json({success:true,opportunity});}catch(e){return NextResponse.json({success:false,error:e instanceof Error?e.message:String(e)},{status:400});}}
+diff -ruN nexor_original/NexorAIOS-main/apps/api/src/app/api/deals/[id]/won/route.ts nexor_work/NexorAIOS-main/apps/api/src/app/api/deals/[id]/won/route.ts
+--- nexor_original/NexorAIOS-main/apps/api/src/app/api/deals/[id]/won/route.ts	1970-01-01 00:00:00.000000000 +0000
++++ nexor_work/NexorAIOS-main/apps/api/src/app/api/deals/[id]/won/route.ts	2026-08-30 03:01:14.371840066 +0000
+@@ -0,0 +1,5 @@
++import { NextResponse } from 'next/server';
++import { getDatabaseClients, FollowUpStatus, LeadStatus, OpportunityStage } from '@nexor/database';
++import { assertTransition } from '@/lib/lead-state-machine';
++const db=()=>getDatabaseClients().write;
++export async function POST(_:Request,{params}:{params:Promise<{id:string}>}){try{const {id}=await params;const prisma=db();const deal=await prisma.opportunity.findUnique({where:{id},include:{lead:true}});if(!deal)return NextResponse.json({success:false,error:'Opportunity not found'},{status:404});if(deal.stage===OpportunityStage.WON)return NextResponse.json({success:true,opportunity:deal,alreadyWon:true});if(deal.stage===OpportunityStage.LOST)return NextResponse.json({success:false,error:'Lost opportunity cannot be won'},{status:409});assertTransition(deal.lead.status,LeadStatus.WON);const opportunity=await prisma.$transaction(async tx=>{const updated=await tx.opportunity.update({where:{id},data:{stage:OpportunityStage.WON,wonAt:new Date(),lostAt:null,lossReason:null}});await tx.lead.update({where:{id:deal.leadId},data:{status:LeadStatus.WON}});await tx.followUp.updateMany({where:{leadId:deal.leadId,status:{in:[FollowUpStatus.PENDING,FollowUpStatus.SCHEDULED]}},data:{status:FollowUpStatus.CANCELLED,notes:'Cancelled because opportunity was won'}});await tx.activityEvent.create({data:{leadId:deal.leadId,type:'DEAL_WON',message:`Deal won: ${deal.name}`,metadata:{opportunityId:id}}});return updated;});return NextResponse.json({success:true,opportunity});}catch(e){return NextResponse.json({success:false,error:e instanceof Error?e.message:String(e)},{status:400});}}
+diff -ruN nexor_original/NexorAIOS-main/apps/api/src/app/api/deals/route.ts nexor_work/NexorAIOS-main/apps/api/src/app/api/deals/route.ts
+--- nexor_original/NexorAIOS-main/apps/api/src/app/api/deals/route.ts	1970-01-01 00:00:00.000000000 +0000
++++ nexor_work/NexorAIOS-main/apps/api/src/app/api/deals/route.ts	2026-08-30 03:01:00.915820093 +0000
+@@ -0,0 +1,5 @@
++import { NextRequest, NextResponse } from 'next/server';
++import { getDatabaseClients, OpportunityStage } from '@nexor/database';
++const db=()=>getDatabaseClients().write;
++export async function GET(req:NextRequest){try{const leadId=req.nextUrl.searchParams.get('leadId')??undefined;const stage=req.nextUrl.searchParams.get('stage') as OpportunityStage|undefined;const opportunities=await db().opportunity.findMany({where:{...(leadId?{leadId}:{}),...(stage&&Object.values(OpportunityStage).includes(stage)?{stage}:{})},include:{lead:true,meetings:true,proposals:true},orderBy:{updatedAt:'desc'},take:100});return NextResponse.json({success:true,opportunities});}catch(e){return NextResponse.json({success:false,error:e instanceof Error?e.message:String(e)},{status:500});}}
++export async function POST(req:NextRequest){try{const body=await req.json();const leadId=String(body.leadId??'');if(!leadId)return NextResponse.json({success:false,error:'leadId is required'},{status:400});const lead=await db().lead.findUnique({where:{id:leadId}});if(!lead)return NextResponse.json({success:false,error:'Lead not found'},{status:404});const existing=await db().opportunity.findFirst({where:{leadId,stage:{notIn:[OpportunityStage.WON,OpportunityStage.LOST]}}});if(existing)return NextResponse.json({success:true,opportunity:existing,alreadyExists:true});const opportunity=await db().opportunity.create({data:{leadId,campaignId:typeof body.campaignId==='string'?body.campaignId:undefined,name:typeof body.name==='string'&&body.name.trim()?body.name.trim():`${lead.businessName} — Sales Opportunity`,stage:OpportunityStage.QUALIFIED,value:body.value!=null?body.value:undefined,currency:typeof body.currency==='string'?body.currency:undefined,owner:typeof body.owner==='string'?body.owner:undefined}});return NextResponse.json({success:true,opportunity},{status:201});}catch(e){return NextResponse.json({success:false,error:e instanceof Error?e.message:String(e)},{status:400});}}
+diff -ruN nexor_original/NexorAIOS-main/apps/api/src/app/api/leads/route.ts nexor_work/NexorAIOS-main/apps/api/src/app/api/leads/route.ts
+--- nexor_original/NexorAIOS-main/apps/api/src/app/api/leads/route.ts	2026-08-29 16:11:41.000000000 +0000
++++ nexor_work/NexorAIOS-main/apps/api/src/app/api/leads/route.ts	2026-08-30 03:01:58.384110602 +0000
+@@ -2,6 +2,7 @@
+ import { leadService } from '@nexor/core';
+ import { LeadStatus } from '@nexor/database';
+ import { CreateLeadSchema } from '@/lib/validators/lead';
++import { assertTransition } from '@/lib/lead-state-machine';
+ 
+ function isValidOperationalLead(lead: { businessName: string; status: LeadStatus }) {
+   if (lead.status === LeadStatus.LOST) return false;
+@@ -34,7 +35,15 @@
+     if (status && !Object.values(LeadStatus).includes(status)) return NextResponse.json({ success: false, message: 'Invalid lead status' }, { status: 400 });
+     const auditScore = body.auditScore === undefined ? undefined : Number(body.auditScore);
+     if (auditScore !== undefined && (!Number.isInteger(auditScore) || auditScore < 0 || auditScore > 100)) return NextResponse.json({ success: false, message: 'auditScore must be an integer from 0 to 100' }, { status: 400 });
++    const current = await leadService.findById(id);
++    if (!current) return NextResponse.json({ success: false, message: 'Lead not found' }, { status: 404 });
++    if (status) assertTransition(current.status, status);
++    if ([LeadStatus.MEETING_BOOKED, LeadStatus.PROPOSAL_SENT, LeadStatus.WON, LeadStatus.LOST].includes(status as LeadStatus)) return NextResponse.json({ success: false, message: 'Use the dedicated Sales API for this transition' }, { status: 409 });
+     const lead = await leadService.update(id, { ...(status ? { status } : {}), ...(auditScore !== undefined ? { auditScore } : {}), ...(typeof body.notes === 'string' ? { notes: body.notes } : {}) });
++    if (status && status !== current.status) {
++      const { getDatabaseClients } = await import('@nexor/database');
++      await getDatabaseClients().write.activityEvent.create({ data: { leadId: id, type: 'LEAD_STATUS_CHANGED', message: `Lead status changed: ${current.status} → ${status}`, metadata: { from: current.status, to: status } } });
++    }
+     return NextResponse.json({ success: true, lead });
+   } catch (error) { return NextResponse.json({ success: false, message: error instanceof Error ? error.message : String(error) }, { status: 400 }); }
+ }
+diff -ruN nexor_original/NexorAIOS-main/apps/api/src/app/api/meetings/[id]/confirm/route.ts nexor_work/NexorAIOS-main/apps/api/src/app/api/meetings/[id]/confirm/route.ts
+--- nexor_original/NexorAIOS-main/apps/api/src/app/api/meetings/[id]/confirm/route.ts	1970-01-01 00:00:00.000000000 +0000
++++ nexor_work/NexorAIOS-main/apps/api/src/app/api/meetings/[id]/confirm/route.ts	2026-08-30 03:01:00.914140324 +0000
+@@ -0,0 +1,5 @@
++import { NextResponse } from 'next/server';
++import { getDatabaseClients, FollowUpStatus, LeadStatus, MeetingStatus, OpportunityStage } from '@nexor/database';
++import { assertTransition } from '@/lib/lead-state-machine';
++const db=()=>getDatabaseClients().write;
++export async function POST(_: Request,{params}:{params:Promise<{id:string}>}){try{const {id}=await params;const prisma=db();const meeting=await prisma.meeting.findUnique({where:{id},include:{lead:true}});if(!meeting)return NextResponse.json({success:false,error:'Meeting not found'},{status:404});if(meeting.status===MeetingStatus.BOOKED)return NextResponse.json({success:true,meeting,alreadyBooked:true});if(meeting.status===MeetingStatus.CANCELLED)return NextResponse.json({success:false,error:'Cancelled meeting cannot be booked'},{status:409});assertTransition(meeting.lead.status,LeadStatus.MEETING_BOOKED);const result=await prisma.$transaction(async tx=>{const existing=await tx.opportunity.findFirst({where:{leadId:meeting.leadId,stage:{notIn:[OpportunityStage.WON,OpportunityStage.LOST]}}});const opportunity=existing??await tx.opportunity.create({data:{leadId:meeting.leadId,name:`${meeting.lead.businessName} — Sales Opportunity`,stage:OpportunityStage.OPEN}});const updated=await tx.meeting.update({where:{id},data:{status:MeetingStatus.BOOKED,opportunityId:opportunity.id}});await tx.lead.update({where:{id:meeting.leadId},data:{status:LeadStatus.MEETING_BOOKED}});await tx.followUp.updateMany({where:{leadId:meeting.leadId,status:{in:[FollowUpStatus.PENDING,FollowUpStatus.SCHEDULED]}},data:{status:FollowUpStatus.CANCELLED,notes:'Cancelled because meeting was booked'}});await tx.activityEvent.create({data:{leadId:meeting.leadId,type:'MEETING_BOOKED',message:`Meeting booked for ${meeting.lead.businessName}`,metadata:{meetingId:id,opportunityId:opportunity.id}}});return {meeting:updated,opportunity};});return NextResponse.json({success:true,...result});}catch(e){return NextResponse.json({success:false,error:e instanceof Error?e.message:String(e)},{status:400});}}
+diff -ruN nexor_original/NexorAIOS-main/apps/api/src/app/api/meetings/[id]/route.ts nexor_work/NexorAIOS-main/apps/api/src/app/api/meetings/[id]/route.ts
+--- nexor_original/NexorAIOS-main/apps/api/src/app/api/meetings/[id]/route.ts	1970-01-01 00:00:00.000000000 +0000
++++ nexor_work/NexorAIOS-main/apps/api/src/app/api/meetings/[id]/route.ts	2026-08-30 03:01:00.911166694 +0000
+@@ -0,0 +1,5 @@
++import { NextRequest, NextResponse } from 'next/server';
++import { getDatabaseClients, MeetingStatus } from '@nexor/database';
++const db = () => getDatabaseClients().write;
++export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) { try { const { id } = await params; const meeting = await db().meeting.findUnique({ where: { id }, include: { lead: true, opportunity: true } }); if (!meeting) return NextResponse.json({ success:false,error:'Meeting not found' },{status:404}); return NextResponse.json({success:true,meeting}); } catch(e){return NextResponse.json({success:false,error:e instanceof Error?e.message:String(e)},{status:500});}}
++export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) { try { const { id }=await params; const body=await req.json(); const data:any={}; if(typeof body.title==='string') data.title=body.title.trim(); if(typeof body.scheduledAt==='string') data.scheduledAt=new Date(body.scheduledAt); if(typeof body.meetingUrl==='string') data.meetingUrl=body.meetingUrl; if(typeof body.notes==='string') data.notes=body.notes; if(typeof body.status==='string' && Object.values(MeetingStatus).includes(body.status)) data.status=body.status; const meeting=await db().meeting.update({where:{id},data}); return NextResponse.json({success:true,meeting}); } catch(e){return NextResponse.json({success:false,error:e instanceof Error?e.message:String(e)},{status:400});}}
+diff -ruN nexor_original/NexorAIOS-main/apps/api/src/app/api/meetings/route.ts nexor_work/NexorAIOS-main/apps/api/src/app/api/meetings/route.ts
+--- nexor_original/NexorAIOS-main/apps/api/src/app/api/meetings/route.ts	1970-01-01 00:00:00.000000000 +0000
++++ nexor_work/NexorAIOS-main/apps/api/src/app/api/meetings/route.ts	2026-08-30 03:01:00.909704007 +0000
+@@ -0,0 +1,24 @@
++import { NextRequest, NextResponse } from 'next/server';
++import { getDatabaseClients, MeetingStatus } from '@nexor/database';
++
++const db = () => getDatabaseClients().write;
++
++export async function GET(req: NextRequest) {
++  try {
++    const leadId = req.nextUrl.searchParams.get('leadId') ?? undefined;
++    const meetings = await db().meeting.findMany({ where: leadId ? { leadId } : undefined, include: { lead: true, opportunity: true }, orderBy: { createdAt: 'desc' }, take: 100 });
++    return NextResponse.json({ success: true, meetings });
++  } catch (error) { return NextResponse.json({ success: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 }); }
++}
++
++export async function POST(req: NextRequest) {
++  try {
++    const body = await req.json();
++    const leadId = String(body.leadId ?? '');
++    if (!leadId) return NextResponse.json({ success: false, error: 'leadId is required' }, { status: 400 });
++    const lead = await db().lead.findUnique({ where: { id: leadId } });
++    if (!lead) return NextResponse.json({ success: false, error: 'Lead not found' }, { status: 404 });
++    const meeting = await db().meeting.create({ data: { leadId, title: typeof body.title === 'string' && body.title.trim() ? body.title.trim() : `Sales meeting — ${lead.businessName}`, status: body.status === MeetingStatus.SCHEDULED ? MeetingStatus.SCHEDULED : MeetingStatus.OFFERED, scheduledAt: body.scheduledAt ? new Date(body.scheduledAt) : undefined, durationMinutes: Number.isFinite(Number(body.durationMinutes)) ? Math.max(15, Math.min(240, Number(body.durationMinutes))) : 30, meetingUrl: typeof body.meetingUrl === 'string' ? body.meetingUrl : undefined, provider: typeof body.provider === 'string' ? body.provider : undefined, providerEventId: typeof body.providerEventId === 'string' ? body.providerEventId : undefined, notes: typeof body.notes === 'string' ? body.notes : undefined } });
++    return NextResponse.json({ success: true, meeting }, { status: 201 });
++  } catch (error) { return NextResponse.json({ success: false, error: error instanceof Error ? error.message : String(error) }, { status: 400 }); }
++}
+diff -ruN nexor_original/NexorAIOS-main/apps/api/src/app/api/proposals/[id]/route.ts nexor_work/NexorAIOS-main/apps/api/src/app/api/proposals/[id]/route.ts
+--- nexor_original/NexorAIOS-main/apps/api/src/app/api/proposals/[id]/route.ts	1970-01-01 00:00:00.000000000 +0000
++++ nexor_work/NexorAIOS-main/apps/api/src/app/api/proposals/[id]/route.ts	2026-08-30 03:01:14.374323723 +0000
+@@ -0,0 +1,5 @@
++import { NextRequest, NextResponse } from 'next/server';
++import { getDatabaseClients } from '@nexor/database';
++const db=()=>getDatabaseClients().write;
++export async function GET(_:NextRequest,{params}:{params:Promise<{id:string}>}){try{const {id}=await params;const proposal=await db().proposal.findUnique({where:{id},include:{opportunity:{include:{lead:true}}}});if(!proposal)return NextResponse.json({success:false,error:'Proposal not found'},{status:404});return NextResponse.json({success:true,proposal});}catch(e){return NextResponse.json({success:false,error:e instanceof Error?e.message:String(e)},{status:500});}}
++export async function PATCH(req:NextRequest,{params}:{params:Promise<{id:string}>}){try{const {id}=await params;const body=await req.json();const proposal=await db().proposal.update({where:{id},data:{...(typeof body.title==='string'?{title:body.title.trim()}:{}),...(typeof body.scope==='string'?{scope:body.scope.trim()}:{}),...(typeof body.content==='string'?{content:body.content}:{}),...(typeof body.value==='number'?{value:body.value}:{}),...(typeof body.currency==='string'?{currency:body.currency}: {})}});return NextResponse.json({success:true,proposal});}catch(e){return NextResponse.json({success:false,error:e instanceof Error?e.message:String(e)},{status:400});}}
+diff -ruN nexor_original/NexorAIOS-main/apps/api/src/app/api/proposals/[id]/send/route.ts nexor_work/NexorAIOS-main/apps/api/src/app/api/proposals/[id]/send/route.ts
+--- nexor_original/NexorAIOS-main/apps/api/src/app/api/proposals/[id]/send/route.ts	1970-01-01 00:00:00.000000000 +0000
++++ nexor_work/NexorAIOS-main/apps/api/src/app/api/proposals/[id]/send/route.ts	2026-08-30 03:01:15.068499867 +0000
+@@ -0,0 +1,6 @@
++import { NextResponse } from 'next/server';
++import { getDatabaseClients, LeadStatus, OpportunityStage, ProposalStatus } from '@nexor/database';
++import { sendEmail } from '@/lib/outreach-sender';
++import { assertTransition } from '@/lib/lead-state-machine';
++const db=()=>getDatabaseClients().write;
++export async function POST(_:Request,{params}:{params:Promise<{id:string}>}){try{const {id}=await params;const prisma=db();const proposal=await prisma.proposal.findUnique({where:{id},include:{opportunity:{include:{lead:true}}}});if(!proposal)return NextResponse.json({success:false,error:'Proposal not found'},{status:404});if(proposal.status===ProposalStatus.SENT)return NextResponse.json({success:true,proposal,alreadySent:true});if(proposal.status!==ProposalStatus.DRAFT)return NextResponse.json({success:false,error:'Only draft proposals can be sent'},{status:409});const email=proposal.opportunity.lead.email;if(!email)return NextResponse.json({success:false,error:'Lead has no email address',code:'CONFIGURATION_REQUIRED'},{status:422});const text=[proposal.content ?? proposal.scope, '', 'Regards,', 'Nexor'].join('\n');let providerMessageId:string|undefined;try{providerMessageId=await sendEmail(email,`Subject: ${proposal.title}\n\n${text}`);}catch(e){return NextResponse.json({success:false,error:e instanceof Error?e.message:String(e),code:'PROVIDER_UNAVAILABLE'},{status:502});}assertTransition(proposal.opportunity.lead.status,LeadStatus.PROPOSAL_SENT);const result=await prisma.$transaction(async tx=>{const updated=await tx.proposal.update({where:{id},data:{status:ProposalStatus.SENT,sentAt:new Date(),providerMessageId}});await tx.opportunity.update({where:{id:proposal.opportunityId},data:{stage:OpportunityStage.PROPOSAL}});await tx.lead.update({where:{id:proposal.opportunity.leadId},data:{status:LeadStatus.PROPOSAL_SENT}});await tx.activityEvent.create({data:{leadId:proposal.opportunity.leadId,type:'PROPOSAL_SENT',message:`Proposal sent: ${proposal.title}`,metadata:{proposalId:id,opportunityId:proposal.opportunityId,providerMessageId}}});return updated;});return NextResponse.json({success:true,proposal:result});}catch(e){return NextResponse.json({success:false,error:e instanceof Error?e.message:String(e)},{status:400});}}
+diff -ruN nexor_original/NexorAIOS-main/apps/api/src/lib/campaign-runner.ts nexor_work/NexorAIOS-main/apps/api/src/lib/campaign-runner.ts
+--- nexor_original/NexorAIOS-main/apps/api/src/lib/campaign-runner.ts	2026-08-29 16:11:41.000000000 +0000
++++ nexor_work/NexorAIOS-main/apps/api/src/lib/campaign-runner.ts	2026-08-30 03:01:50.221552425 +0000
+@@ -1,7 +1,7 @@
+ import { getDatabaseClients, JobStatus, CampaignStatus, LeadStatus, OutreachChannel, OutreachStatus, type Prisma } from '@nexor/database';
+ import { leadSearchService } from '@nexor/search';
+ import { researchService } from '@nexor/research';
+-import { assessLead, buildPersonalizedPitch } from '@nexor/core';
++import { assessLead, buildPersonalizedPitch, buildSalesBrief } from '@nexor/core';
+ 
+ function getPrisma() { return getDatabaseClients().write; }
+ function normalizeWebsite(url: string): string { try { const parsed = new URL(url); return `${parsed.protocol}//${parsed.hostname.replace(/^www\./,'').toLowerCase()}${parsed.pathname.replace(/\/$/,'')}`; } catch { return url.trim().toLowerCase().replace(/\/$/,''); } }
+@@ -41,9 +41,10 @@
+         if (!result.website) { if (normalizedPhone && !lead.whatsapp) await prisma.lead.update({ where: { id: lead.id }, data: { whatsapp: normalizedPhone } }); processed++; successful++; continue; }
+         const research = await researchService.analyze(result.website); if (!research.success) { processed++; failed++; continue; }
+         const intelligence = assessLead({ website: research.website, technology: research.technology, social: Object.fromEntries(Object.entries(research.social ?? {})), seo: Object.fromEntries(Object.entries(research.seo ?? {})) });
++        const salesBrief = intelligence.score >= 60 ? buildSalesBrief({ businessName, niche, country, website: result.website, intelligence, research, email: research.contacts?.emails?.[0], phone: research.contacts?.phones?.[0] }) : null;
+         const email = research.contacts?.emails?.[0]; const phone = research.contacts?.phones?.[0]; const normalizedResearchPhone = phone ? normalizePhone(phone) : normalizedPhone; const social = Object.fromEntries(Object.entries(research.social ?? {})) as Record<string, unknown>; const socialUrls = Object.values(social).filter((value): value is string => typeof value === 'string' && value.startsWith('http'));
+         if (createdThisRun) { const duplicateAfterResearch = await findDuplicateLead({ website: normalizedWebsite, email, whatsapp: normalizedResearchPhone, socialUrls, businessName }); if (duplicateAfterResearch && duplicateAfterResearch.id !== lead.id) { await prisma.lead.delete({ where: { id: lead.id } }); lead = duplicateAfterResearch; await prisma.campaignLead.upsert({ where: { campaignId_leadId: { campaignId, leadId: lead.id } }, create: { campaignId, leadId: lead.id }, update: {} }); } }
+-        await prisma.lead.update({ where: { id: lead.id }, data: { businessName, niche, country: lead.country === 'Unknown' ? country : lead.country, email: email ?? lead.email, whatsapp: normalizedResearchPhone || lead.whatsapp, auditScore: intelligence.score, status: intelligence.score >= 60 ? LeadStatus.QUALIFIED : LeadStatus.RESEARCHED, notes: JSON.stringify({ research, intelligence, source: 'campaign-discovery' }) } });
++        await prisma.lead.update({ where: { id: lead.id }, data: { businessName, niche, country: lead.country === 'Unknown' ? country : lead.country, email: email ?? lead.email, whatsapp: normalizedResearchPhone || lead.whatsapp, auditScore: intelligence.score, status: intelligence.score >= 60 ? LeadStatus.QUALIFIED : LeadStatus.RESEARCHED, notes: JSON.stringify({ research, intelligence, salesBrief, source: 'campaign-discovery' }) } });
+         const socialEntries = [['INSTAGRAM', social.instagram],['FACEBOOK', social.facebook],['LINKEDIN', social.linkedin],['YOUTUBE', social.youtube],['X', social.x ?? social.twitter],['TIKTOK', social.tiktok]] as const;
+         for (const [platform, url] of socialEntries) { if (typeof url !== 'string' || !url) continue; await prisma.socialProfile.upsert({ where: { leadId_platform: { leadId: lead.id, platform } }, create: { leadId: lead.id, platform, url, confidence: 100, source: 'website-research' }, update: { url, confidence: 100, source: 'website-research' } }); }
+         if (intelligence.score >= 60) { qualified++; const createDraft = async (channel: OutreachChannel, message: string) => { const existingDraft = await prisma.outreach.findFirst({ where: { leadId: lead!.id, channel, status: { in: [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED, OutreachStatus.APPROVED, OutreachStatus.SCHEDULED, OutreachStatus.SENT] } }, orderBy: { createdAt: 'desc' } }); if (!existingDraft) await prisma.outreach.create({ data: { leadId: lead!.id, campaignId, channel, status: OutreachStatus.APPROVAL_REQUIRED, message } }); }; if (lead.whatsapp) await createDraft(OutreachChannel.WHATSAPP, buildPersonalizedPitch({ businessName, requirement: intelligence.requirement, service: intelligence.service, findings: intelligence.findings })); if (email) await createDraft(OutreachChannel.EMAIL, buildPersonalizedPitch({ businessName, requirement: intelligence.requirement, service: intelligence.service, findings: intelligence.findings, email: true })); }
+diff -ruN nexor_original/NexorAIOS-main/apps/api/src/lib/lead-state-machine.ts nexor_work/NexorAIOS-main/apps/api/src/lib/lead-state-machine.ts
+--- nexor_original/NexorAIOS-main/apps/api/src/lib/lead-state-machine.ts	1970-01-01 00:00:00.000000000 +0000
++++ nexor_work/NexorAIOS-main/apps/api/src/lib/lead-state-machine.ts	2026-08-30 03:00:45.583604976 +0000
+@@ -0,0 +1,22 @@
++import { LeadStatus } from '@nexor/database';
++
++const transitions: Record<LeadStatus, readonly LeadStatus[]> = {
++  NEW: ['RESEARCHED', 'QUALIFIED', 'PITCH_READY'],
++  RESEARCHED: ['QUALIFIED', 'PITCH_READY'],
++  QUALIFIED: ['PITCH_READY', 'CONTACTED'],
++  PITCH_READY: ['CONTACTED'],
++  CONTACTED: ['REPLIED'],
++  REPLIED: ['MEETING_BOOKED'],
++  MEETING_BOOKED: ['PROPOSAL_SENT'],
++  PROPOSAL_SENT: ['WON', 'LOST'],
++  WON: [],
++  LOST: [],
++};
++
++export function canTransition(from: LeadStatus, to: LeadStatus) {
++  return from === to || transitions[from]?.includes(to) === true;
++}
++
++export function assertTransition(from: LeadStatus, to: LeadStatus) {
++  if (!canTransition(from, to)) throw new Error(`Invalid lead transition: ${from} → ${to}`);
++}
+diff -ruN nexor_original/NexorAIOS-main/apps/api/src/lib/outreach-sender.ts nexor_work/NexorAIOS-main/apps/api/src/lib/outreach-sender.ts
+--- nexor_original/NexorAIOS-main/apps/api/src/lib/outreach-sender.ts	2026-08-29 16:11:41.000000000 +0000
++++ nexor_work/NexorAIOS-main/apps/api/src/lib/outreach-sender.ts	2026-08-30 03:01:14.950745362 +0000
+@@ -48,7 +48,7 @@
+   return data?.messages?.[0]?.id as string | undefined;
+ }
+ 
+-async function sendEmail(to: string, message: string) {
++export async function sendEmail(to: string, message: string) {
+   const apiKey = process.env.RESEND_API_KEY;
+   const from = process.env.OUTREACH_FROM_EMAIL;
+   if (!apiKey || !from) throw new Error('Email credentials are not configured');
+diff -ruN nexor_original/NexorAIOS-main/packages/core/src/campaign/campaign-intelligence.ts nexor_work/NexorAIOS-main/packages/core/src/campaign/campaign-intelligence.ts
+--- nexor_original/NexorAIOS-main/packages/core/src/campaign/campaign-intelligence.ts	2026-08-29 16:11:41.000000000 +0000
++++ nexor_work/NexorAIOS-main/packages/core/src/campaign/campaign-intelligence.ts	2026-08-30 03:01:49.514515672 +0000
+@@ -91,3 +91,48 @@
+ 
+   return `${channelIntro}Hi ${input.businessName},\n\nI reviewed your website and noticed ${observation.toLowerCase()} ${input.requirement.toLowerCase()} may be worth looking at.\n\nBased on what I found, ${input.service} looks like the most relevant area to improve rather than taking a generic marketing approach.\n\nI put together a few specific observations for your business. Want me to send them over?\n\nBest,\nDev\nFounder • Nexor Media`;
+ }
++
++
++export interface SalesBrief {
++  businessSummary: string;
++  industry: string;
++  location: string;
++  website: string;
++  websiteQuality: number;
++  seoFindings: string[];
++  socialFindings: string[];
++  technology: string[];
++  contact: { email?: string; phone?: string };
++  growthOpportunities: string[];
++  recommendedService: LeadIntelligence['service'];
++  whyThisService: string;
++  salesAngle: string;
++  personalizedOpening: string;
++  personalizationPoints: string[];
++  likelyObjections: string[];
++  objectionResponses: string[];
++  nextAction: 'SEND_OUTREACH' | 'MANUAL_REVIEW' | 'RESEARCH_MORE';
++}
++
++export function buildSalesBrief(input: {
++  businessName: string; niche: string; country: string; website: string; intelligence: LeadIntelligence;
++  research: ResearchSnapshot; email?: string; phone?: string;
++}): SalesBrief {
++  const seoFindings = Object.values(input.research.seo ?? {}).flatMap((value) => Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : typeof value === 'string' ? [value] : []);
++  const socialFindings = Object.entries(input.research.social ?? {}).filter(([, value]) => typeof value === 'string' && value).map(([platform]) => `${platform} profile detected.`);
++  const technology = input.research.technology?.technologies ?? [];
++  const opportunities = [...input.intelligence.findings, ...seoFindings].filter((item, index, arr) => item && arr.indexOf(item) === index).slice(0, 8);
++  const summary = `${input.businessName} is a ${input.niche} business in ${input.country} with a publicly reachable website and evidence captured during automated research.`;
++  const opening = input.intelligence.findings[0] ? `I reviewed ${input.businessName} and noticed ${input.intelligence.findings[0].toLowerCase()}` : `I reviewed ${input.businessName}'s online presence and found a few measurable growth opportunities.`;
++  return {
++    businessSummary: summary, industry: input.niche, location: input.country, website: input.website,
++    websiteQuality: input.intelligence.score, seoFindings, socialFindings, technology, contact: { email: input.email, phone: input.phone },
++    growthOpportunities: opportunities, recommendedService: input.intelligence.service,
++    whyThisService: `${input.intelligence.service} is recommended because the observed research signals point to ${input.intelligence.requirement.toLowerCase()}.`,
++    salesAngle: `Lead with the verified observation, then offer a specific ${input.intelligence.service} improvement rather than a generic marketing pitch.`,
++    personalizedOpening: opening, personalizationPoints: [input.intelligence.requirement, ...input.intelligence.findings.slice(0, 2)].filter(Boolean),
++    likelyObjections: ['We already have someone handling this.', 'Send me the details first.', 'We are not looking to spend right now.'],
++    objectionResponses: ['Offer a short independent audit and focus on the specific evidence already found.', 'Send the concise findings and one practical next step.', 'Start with the highest-impact low-risk improvement and let the prospect decide.'],
++    nextAction: input.intelligence.score >= 60 && (input.phone || input.email) ? 'SEND_OUTREACH' : 'MANUAL_REVIEW',
++  };
++}
+diff -ruN nexor_original/NexorAIOS-main/packages/database/prisma/migrations/20260830090000_add_sales_pipeline/migration.sql nexor_work/NexorAIOS-main/packages/database/prisma/migrations/20260830090000_add_sales_pipeline/migration.sql
+--- nexor_original/NexorAIOS-main/packages/database/prisma/migrations/20260830090000_add_sales_pipeline/migration.sql	1970-01-01 00:00:00.000000000 +0000
++++ nexor_work/NexorAIOS-main/packages/database/prisma/migrations/20260830090000_add_sales_pipeline/migration.sql	2026-08-30 03:00:39.036666462 +0000
+@@ -0,0 +1,69 @@
++CREATE TYPE "meeting_status" AS ENUM ('OFFERED','SCHEDULED','BOOKED','CANCELLED','COMPLETED','NO_SHOW');
++CREATE TYPE "opportunity_stage" AS ENUM ('OPEN','QUALIFIED','PROPOSAL','WON','LOST');
++CREATE TYPE "proposal_status" AS ENUM ('DRAFT','SENT','ACCEPTED','REJECTED','EXPIRED');
++
++ALTER TABLE "activity_events" ADD COLUMN "lead_id" UUID;
++CREATE INDEX "idx_activity_lead_created" ON "activity_events"("lead_id","created_at");
++ALTER TABLE "activity_events" ADD CONSTRAINT "activity_events_lead_id_fkey" FOREIGN KEY ("lead_id") REFERENCES "leads"("id") ON DELETE CASCADE ON UPDATE CASCADE;
++
++CREATE TABLE "meetings" (
++  "id" UUID NOT NULL,
++  "lead_id" UUID NOT NULL,
++  "opportunity_id" UUID,
++  "title" VARCHAR(255) NOT NULL,
++  "status" "meeting_status" NOT NULL DEFAULT 'OFFERED',
++  "scheduled_at" TIMESTAMPTZ(6),
++  "duration_minutes" INTEGER NOT NULL DEFAULT 30,
++  "meeting_url" VARCHAR(1000),
++  "provider" VARCHAR(100),
++  "provider_event_id" VARCHAR(255),
++  "notes" TEXT,
++  "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++  "updated_at" TIMESTAMPTZ(6) NOT NULL,
++  CONSTRAINT "meetings_pkey" PRIMARY KEY ("id"),
++  CONSTRAINT "meetings_provider_event_id_key" UNIQUE ("provider_event_id"),
++  CONSTRAINT "meetings_lead_id_fkey" FOREIGN KEY ("lead_id") REFERENCES "leads"("id") ON DELETE CASCADE ON UPDATE CASCADE
++);
++CREATE INDEX "idx_meetings_lead_status" ON "meetings"("lead_id","status");
++CREATE INDEX "idx_meetings_scheduled" ON "meetings"("scheduled_at");
++
++CREATE TABLE "opportunities" (
++  "id" UUID NOT NULL,
++  "lead_id" UUID NOT NULL,
++  "campaign_id" UUID,
++  "name" VARCHAR(255) NOT NULL,
++  "stage" "opportunity_stage" NOT NULL DEFAULT 'OPEN',
++  "value" DECIMAL(12,2),
++  "currency" VARCHAR(10),
++  "owner" VARCHAR(255),
++  "loss_reason" TEXT,
++  "won_at" TIMESTAMPTZ(6),
++  "lost_at" TIMESTAMPTZ(6),
++  "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++  "updated_at" TIMESTAMPTZ(6) NOT NULL,
++  CONSTRAINT "opportunities_pkey" PRIMARY KEY ("id"),
++  CONSTRAINT "opportunities_lead_id_fkey" FOREIGN KEY ("lead_id") REFERENCES "leads"("id") ON DELETE CASCADE ON UPDATE CASCADE,
++  CONSTRAINT "opportunities_campaign_id_fkey" FOREIGN KEY ("campaign_id") REFERENCES "campaigns"("id") ON DELETE SET NULL ON UPDATE CASCADE
++);
++CREATE INDEX "idx_opportunities_lead_stage" ON "opportunities"("lead_id","stage");
++CREATE INDEX "idx_opportunities_campaign" ON "opportunities"("campaign_id");
++
++ALTER TABLE "meetings" ADD CONSTRAINT "meetings_opportunity_id_fkey" FOREIGN KEY ("opportunity_id") REFERENCES "opportunities"("id") ON DELETE SET NULL ON UPDATE CASCADE;
++
++CREATE TABLE "proposals" (
++  "id" UUID NOT NULL,
++  "opportunity_id" UUID NOT NULL,
++  "title" VARCHAR(255) NOT NULL,
++  "scope" TEXT NOT NULL,
++  "content" TEXT,
++  "value" DECIMAL(12,2),
++  "currency" VARCHAR(10),
++  "status" "proposal_status" NOT NULL DEFAULT 'DRAFT',
++  "sent_at" TIMESTAMPTZ(6),
++  "provider_message_id" VARCHAR(255),
++  "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++  "updated_at" TIMESTAMPTZ(6) NOT NULL,
++  CONSTRAINT "proposals_pkey" PRIMARY KEY ("id"),
++  CONSTRAINT "proposals_opportunity_id_fkey" FOREIGN KEY ("opportunity_id") REFERENCES "opportunities"("id") ON DELETE CASCADE ON UPDATE CASCADE
++);
++CREATE INDEX "idx_proposals_opportunity_status" ON "proposals"("opportunity_id","status");
+diff -ruN nexor_original/NexorAIOS-main/packages/database/prisma/schema.prisma nexor_work/NexorAIOS-main/packages/database/prisma/schema.prisma
+--- nexor_original/NexorAIOS-main/packages/database/prisma/schema.prisma	2026-08-29 16:11:41.000000000 +0000
++++ nexor_work/NexorAIOS-main/packages/database/prisma/schema.prisma	2026-08-30 03:02:04.657567361 +0000
+@@ -89,6 +89,40 @@
+   @@schema("public")
+ }
+ 
++enum MeetingStatus {
++  OFFERED
++  SCHEDULED
++  BOOKED
++  CANCELLED
++  COMPLETED
++  NO_SHOW
++
++  @@map("meeting_status")
++  @@schema("public")
++}
++
++enum OpportunityStage {
++  OPEN
++  QUALIFIED
++  PROPOSAL
++  WON
++  LOST
++
++  @@map("opportunity_stage")
++  @@schema("public")
++}
++
++enum ProposalStatus {
++  DRAFT
++  SENT
++  ACCEPTED
++  REJECTED
++  EXPIRED
++
++  @@map("proposal_status")
++  @@schema("public")
++}
++
+ model Lead {
+   id String @id @default(uuid()) @db.Uuid
+ 
+@@ -128,6 +162,9 @@
+   conversations  Conversation[]
+   followUps      FollowUp[]
+   tasks          Task[]
++  meetings       Meeting[]
++  opportunities  Opportunity[]
++  activities     ActivityEvent[]
+ 
+   @@index([status], map: "idx_leads_status")
+   @@index([country], map: "idx_leads_country")
+@@ -283,6 +320,7 @@
+   agentRuns  AgentRun[]
+   outreach   Outreach[]
+   activities ActivityEvent[]
++  opportunities Opportunity[]
+ 
+   @@index([status], map: "idx_campaigns_status")
+   @@index([createdAt], map: "idx_campaigns_created")
+@@ -330,6 +368,7 @@
+ 
+   campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+   lead     Lead?     @relation(fields: [leadId], references: [id], onDelete: Cascade)
++  lead     Lead?     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+ 
+   @@index([status, createdAt], map: "idx_jobs_status_created")
+   @@index([campaignId], map: "idx_jobs_campaign")
+@@ -508,6 +547,7 @@
+   id String @id @default(uuid()) @db.Uuid
+ 
+   campaignId String? @map("campaign_id") @db.Uuid
++  leadId     String? @map("lead_id") @db.Uuid
+ 
+   type     String @db.VarChar(100)
+   message  String @db.Text
+@@ -518,7 +558,81 @@
+   campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+ 
+   @@index([campaignId, createdAt], map: "idx_activity_campaign_created")
++  @@index([leadId, createdAt], map: "idx_activity_lead_created")
+   @@index([type, createdAt], map: "idx_activity_type_created")
+   @@map("activity_events")
+   @@schema("public")
+ }
++
++model Meeting {
++  id String @id @default(uuid()) @db.Uuid
++
++  leadId String @map("lead_id") @db.Uuid
++  opportunityId String? @map("opportunity_id") @db.Uuid
++
++  title String @db.VarChar(255)
++  status MeetingStatus @default(OFFERED)
++  scheduledAt DateTime? @map("scheduled_at") @db.Timestamptz(6)
++  durationMinutes Int @default(30) @map("duration_minutes")
++  meetingUrl String? @map("meeting_url") @db.VarChar(1000)
++  provider String? @db.VarChar(100)
++  providerEventId String? @unique @map("provider_event_id") @db.VarChar(255)
++  notes String? @db.Text
++  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
++  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
++
++  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
++  opportunity Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
++
++  @@index([leadId, status], map: "idx_meetings_lead_status")
++  @@index([scheduledAt], map: "idx_meetings_scheduled")
++  @@map("meetings")
++  @@schema("public")
++}
++
++model Opportunity {
++  id String @id @default(uuid()) @db.Uuid
++  leadId String @map("lead_id") @db.Uuid
++  campaignId String? @map("campaign_id") @db.Uuid
++  name String @db.VarChar(255)
++  stage OpportunityStage @default(OPEN)
++  value Decimal? @db.Decimal(12,2)
++  currency String? @db.VarChar(10)
++  owner String? @db.VarChar(255)
++  lossReason String? @map("loss_reason") @db.Text
++  wonAt DateTime? @map("won_at") @db.Timestamptz(6)
++  lostAt DateTime? @map("lost_at") @db.Timestamptz(6)
++  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
++  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
++
++  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
++  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
++  meetings Meeting[]
++  proposals Proposal[]
++
++  @@index([leadId, stage], map: "idx_opportunities_lead_stage")
++  @@index([campaignId], map: "idx_opportunities_campaign")
++  @@map("opportunities")
++  @@schema("public")
++}
++
++model Proposal {
++  id String @id @default(uuid()) @db.Uuid
++  opportunityId String @map("opportunity_id") @db.Uuid
++  title String @db.VarChar(255)
++  scope String @db.Text
++  content String? @db.Text
++  value Decimal? @db.Decimal(12,2)
++  currency String? @db.VarChar(10)
++  status ProposalStatus @default(DRAFT)
++  sentAt DateTime? @map("sent_at") @db.Timestamptz(6)
++  providerMessageId String? @map("provider_message_id") @db.VarChar(255)
++  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
++  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
++
++  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
++
++  @@index([opportunityId, status], map: "idx_proposals_opportunity_status")
++  @@map("proposals")
++  @@schema("public")
++}
+diff -ruN nexor_original/NexorAIOS-main/packages/database/src/client/index.ts nexor_work/NexorAIOS-main/packages/database/src/client/index.ts
+--- nexor_original/NexorAIOS-main/packages/database/src/client/index.ts	2026-08-29 16:11:41.000000000 +0000
++++ nexor_work/NexorAIOS-main/packages/database/src/client/index.ts	2026-08-30 03:00:29.997162491 +0000
+@@ -12,6 +12,9 @@
+   FollowUpStatus,
+   TaskStatus,
+   SocialPlatform,
++  MeetingStatus,
++  OpportunityStage,
++  ProposalStatus,
+ } from '@prisma/client';
+ import { getLogger } from '@nexor/logger';
+ 
+diff -ruN nexor_original/NexorAIOS-main/packages/database/src/index.ts nexor_work/NexorAIOS-main/packages/database/src/index.ts
+--- nexor_original/NexorAIOS-main/packages/database/src/index.ts	2026-08-29 16:11:41.000000000 +0000
++++ nexor_work/NexorAIOS-main/packages/database/src/index.ts	2026-08-30 03:00:20.027297688 +0000
+@@ -16,6 +16,9 @@
+   FollowUpStatus,
+   TaskStatus,
+   SocialPlatform,
++  MeetingStatus,
++  OpportunityStage,
++  ProposalStatus,
+   type DatabaseClients,
+   type DatabaseConfig,
+   type Prisma,
