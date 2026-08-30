@@ -368,7 +368,6 @@ model Job {
 
   campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   lead     Lead?     @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  lead     Lead?     @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
   @@index([status, createdAt], map: "idx_jobs_status_created")
   @@index([campaignId], map: "idx_jobs_campaign")
