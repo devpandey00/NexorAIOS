@@ -89,6 +89,40 @@ enum LeadStatus {
   @@schema("public")
 }
 
+enum MeetingStatus {
+  OFFERED
+  SCHEDULED
+  BOOKED
+  CANCELLED
+  COMPLETED
+  NO_SHOW
+
+  @@map("meeting_status")
+  @@schema("public")
+}
+
+enum OpportunityStage {
+  OPEN
+  QUALIFIED
+  PROPOSAL
+  WON
+  LOST
+
+  @@map("opportunity_stage")
+  @@schema("public")
+}
+
+enum ProposalStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+
+  @@map("proposal_status")
+  @@schema("public")
+}
+
 model Lead {
   id String @id @default(uuid()) @db.Uuid
 
@@ -128,6 +162,9 @@ model Lead {
   conversations  Conversation[]
   followUps      FollowUp[]
   tasks          Task[]
+  meetings       Meeting[]
+  opportunities  Opportunity[]
+  activities     ActivityEvent[]
 
   @@index([status], map: "idx_leads_status")
   @@index([country], map: "idx_leads_country")
@@ -283,6 +320,7 @@ model Campaign {
   agentRuns  AgentRun[]
   outreach   Outreach[]
   activities ActivityEvent[]
+  opportunities Opportunity[]
 
   @@index([status], map: "idx_campaigns_status")
   @@index([createdAt], map: "idx_campaigns_created")
@@ -329,6 +367,7 @@ model Job {
   updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  lead     Lead?     @relation(fields: [leadId], references: [id], onDelete: Cascade)
   lead     Lead?     @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
   @@index([status, createdAt], map: "idx_jobs_status_created")
@@ -508,6 +547,7 @@ model ActivityEvent {
   id String @id @default(uuid()) @db.Uuid
 
   campaignId String? @map("campaign_id") @db.Uuid
+  leadId     String? @map("lead_id") @db.Uuid
 
   type     String @db.VarChar(100)
   message  String @db.Text
@@ -518,7 +558,81 @@ model ActivityEvent {
   campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
   @@index([campaignId, createdAt], map: "idx_activity_campaign_created")
+  @@index([leadId, createdAt], map: "idx_activity_lead_created")
   @@index([type, createdAt], map: "idx_activity_type_created")
   @@map("activity_events")
+  @@schema("public")
+}
+
+model Meeting {
+  id String @id @default(uuid()) @db.Uuid
+
+  leadId String @map("lead_id") @db.Uuid
+  opportunityId String? @map("opportunity_id") @db.Uuid
+
+  title String @db.VarChar(255)
+  status MeetingStatus @default(OFFERED)
+  scheduledAt DateTime? @map("scheduled_at") @db.Timestamptz(6)
+  durationMinutes Int @default(30) @map("duration_minutes")
+  meetingUrl String? @map("meeting_url") @db.VarChar(1000)
+  provider String? @db.VarChar(100)
+  providerEventId String? @unique @map("provider_event_id") @db.VarChar(255)
+  notes String? @db.Text
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  opportunity Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+
+  @@index([leadId, status], map: "idx_meetings_lead_status")
+  @@index([scheduledAt], map: "idx_meetings_scheduled")
+  @@map("meetings")
+  @@schema("public")
+}
+
+model Opportunity {
+  id String @id @default(uuid()) @db.Uuid
+  leadId String @map("lead_id") @db.Uuid
+  campaignId String? @map("campaign_id") @db.Uuid
+  name String @db.VarChar(255)
+  stage OpportunityStage @default(OPEN)
+  value Decimal? @db.Decimal(12,2)
+  currency String? @db.VarChar(10)
+  owner String? @db.VarChar(255)
+  lossReason String? @map("loss_reason") @db.Text
+  wonAt DateTime? @map("won_at") @db.Timestamptz(6)
+  lostAt DateTime? @map("lost_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  meetings Meeting[]
+  proposals Proposal[]
+
+  @@index([leadId, stage], map: "idx_opportunities_lead_stage")
+  @@index([campaignId], map: "idx_opportunities_campaign")
+  @@map("opportunities")
+  @@schema("public")
+}
+
+model Proposal {
+  id String @id @default(uuid()) @db.Uuid
+  opportunityId String @map("opportunity_id") @db.Uuid
+  title String @db.VarChar(255)
+  scope String @db.Text
+  content String? @db.Text
+  value Decimal? @db.Decimal(12,2)
+  currency String? @db.VarChar(10)
+  status ProposalStatus @default(DRAFT)
+  sentAt DateTime? @map("sent_at") @db.Timestamptz(6)
+  providerMessageId String? @map("provider_message_id") @db.VarChar(255)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@index([opportunityId, status], map: "idx_proposals_opportunity_status")
+  @@map("proposals")
   @@schema("public")
 }

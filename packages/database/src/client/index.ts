@@ -12,6 +12,9 @@ import {
   FollowUpStatus,
   TaskStatus,
   SocialPlatform,
+  MeetingStatus,
+  OpportunityStage,
+  ProposalStatus,
 } from '@prisma/client';
 import { getLogger } from '@nexor/logger';
 

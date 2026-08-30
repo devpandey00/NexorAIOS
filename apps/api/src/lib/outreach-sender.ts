@@ -48,7 +48,7 @@ async function sendWhatsApp(to: string, message: string) {
   return data?.messages?.[0]?.id as string | undefined;
 }
 
-async function sendEmail(to: string, message: string) {
+export async function sendEmail(to: string, message: string) {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.OUTREACH_FROM_EMAIL;
   if (!apiKey || !from) throw new Error('Email credentials are not configured');

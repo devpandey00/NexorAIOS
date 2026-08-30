@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { leadService } from '@nexor/core';
 import { LeadStatus } from '@nexor/database';
 import { CreateLeadSchema } from '@/lib/validators/lead';
+import { assertTransition } from '@/lib/lead-state-machine';
 
 function isValidOperationalLead(lead: { businessName: string; status: LeadStatus }) {
   if (lead.status === LeadStatus.LOST) return false;
@@ -34,7 +35,15 @@ export async function PATCH(request: NextRequest) {
     if (status && !Object.values(LeadStatus).includes(status)) return NextResponse.json({ success: false, message: 'Invalid lead status' }, { status: 400 });
     const auditScore = body.auditScore === undefined ? undefined : Number(body.auditScore);
     if (auditScore !== undefined && (!Number.isInteger(auditScore) || auditScore < 0 || auditScore > 100)) return NextResponse.json({ success: false, message: 'auditScore must be an integer from 0 to 100' }, { status: 400 });
+    const current = await leadService.findById(id);
+    if (!current) return NextResponse.json({ success: false, message: 'Lead not found' }, { status: 404 });
+    if (status) assertTransition(current.status, status);
+    if ([LeadStatus.MEETING_BOOKED, LeadStatus.PROPOSAL_SENT, LeadStatus.WON, LeadStatus.LOST].includes(status as LeadStatus)) return NextResponse.json({ success: false, message: 'Use the dedicated Sales API for this transition' }, { status: 409 });
     const lead = await leadService.update(id, { ...(status ? { status } : {}), ...(auditScore !== undefined ? { auditScore } : {}), ...(typeof body.notes === 'string' ? { notes: body.notes } : {}) });
+    if (status && status !== current.status) {
+      const { getDatabaseClients } = await import('@nexor/database');
+      await getDatabaseClients().write.activityEvent.create({ data: { leadId: id, type: 'LEAD_STATUS_CHANGED', message: `Lead status changed: ${current.status} → ${status}`, metadata: { from: current.status, to: status } } });
+    }
     return NextResponse.json({ success: true, lead });
   } catch (error) { return NextResponse.json({ success: false, message: error instanceof Error ? error.message : String(error) }, { status: 400 }); }
 }

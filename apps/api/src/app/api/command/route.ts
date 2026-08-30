@@ -58,14 +58,15 @@ export async function POST(req: NextRequest) {
 
     const result = await commandExecutorService.execute(query, context);
 
+    const executionSuccess = Boolean(result.execution?.success);
     return NextResponse.json({
-      success: true,
+      success: executionSuccess,
       query,
       route: result.route,
       execution: result.execution,
       contextMemoryCount: Object.keys(memoryContext).length,
       durationMs: Date.now() - startedAt,
-    });
+    }, { status: executionSuccess ? 200 : 502 });
   } catch (error) {
     console.error('[NEXOR COMMAND ERROR]', error);
     return NextResponse.json(

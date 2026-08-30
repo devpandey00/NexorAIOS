@@ -54,7 +54,7 @@ export async function GET(req: Request) {
           continue;
         }
 
-        const terminal = await prisma.conversation.findFirst({ where: { leadId: candidate.leadId, status: { in: ['NOT_INTERESTED', 'WRONG_PERSON'] } }, select: { id: true } });
+        const terminal = candidate.lead.status === 'REPLIED' || candidate.lead.status === 'MEETING_BOOKED' || candidate.lead.status === 'PROPOSAL_SENT' || candidate.lead.status === 'WON' || candidate.lead.status === 'LOST' || Boolean(await prisma.conversation.findFirst({ where: { leadId: candidate.leadId, status: { in: ['NOT_INTERESTED', 'WRONG_PERSON', 'UNSUBSCRIBE'] } }, select: { id: true } }));
         if (terminal) {
           await prisma.followUp.update({ where: { id: candidate.id }, data: { status: FollowUpStatus.CANCELLED, notes: 'Cancelled because reply intelligence marked the lead as not contactable for follow-up.' } });
           skipped++;
