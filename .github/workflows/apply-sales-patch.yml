@@ -1,0 +1,43 @@
+name: Apply Sales Patch
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout current main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Verify patch applies cleanly
+        run: patch --dry-run -p2 < nexor-sales-final.patch
+
+      - name: Apply sales patch
+        run: patch -p2 < nexor-sales-final.patch
+
+      - name: Verify diff
+        run: |
+          git diff --check
+          git status --short
+
+      - name: Commit and push
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit. Patch may already be applied."
+            exit 0
+          fi
+          git add -A
+          git commit -m "feat(sales): complete automated sales pipeline"
+          git push origin main
