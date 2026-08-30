@@ -1,7 +1,7 @@
 import { getDatabaseClients } from '@nexor/database';
 
 export type SocialContentPlatform = 'INSTAGRAM' | 'FACEBOOK' | 'LINKEDIN' | 'YOUTUBE' | 'X' | 'TIKTOK';
-export type SocialContentStatus = 'DRAFT' | 'REVIEW' | 'APPROVED' | 'SCHEDULED' | 'PUBLISHED' | 'FAILED';
+export type SocialContentStatus = 'DRAFT' | 'REVIEW' | 'APPROVED' | 'SCHEDULED' | 'PUBLISHING' | 'PUBLISHED' | 'FAILED';
 
 export interface SocialContentRecord {
   id: string; platform: SocialContentPlatform; status: SocialContentStatus; title: string; caption: string; hashtags: string[];
@@ -32,6 +32,32 @@ export async function listSocialContent(input?: { platform?: string; status?: st
     FROM public.content_posts
     WHERE (${platform}::text IS NULL OR platform = ${platform}) AND (${status}::text IS NULL OR status = ${status})
     ORDER BY COALESCE(scheduled_at, created_at) DESC LIMIT ${limit}`;
+  return rows.map(normalizeRow);
+}
+
+/**
+ * Atomically claims due, SCHEDULED posts for publishing so that overlapping
+ * cron invocations (e.g. a slow run still in flight when the next tick fires)
+ * can never publish the same post twice. Uses SELECT ... FOR UPDATE SKIP
+ * LOCKED so concurrent callers each get a disjoint set of rows, then flips
+ * status to PUBLISHING in the same statement. Only rows this call actually
+ * claimed are returned; any post already claimed/published by another
+ * invocation is left untouched.
+ */
+export async function claimScheduledSocialContent(limit = 20): Promise<SocialContentRecord[]> {
+  const prisma = getPrisma();
+  const capped = Math.min(Math.max(limit, 1), 50);
+  const rows = await prisma.$queryRaw<SocialContentRecord[]>`
+    UPDATE public.content_posts SET status = 'PUBLISHING', updated_at = CURRENT_TIMESTAMP
+    WHERE id IN (
+      SELECT id FROM public.content_posts
+      WHERE status = 'SCHEDULED' AND scheduled_at IS NOT NULL AND scheduled_at <= CURRENT_TIMESTAMP
+      ORDER BY scheduled_at ASC
+      LIMIT ${capped}
+      FOR UPDATE SKIP LOCKED
+    )
+    RETURNING id, platform, status, title, caption, hashtags, media_url AS "mediaUrl", scheduled_at AS "scheduledAt",
+      published_at AS "publishedAt", external_id AS "externalId", error, created_at AS "createdAt", updated_at AS "updatedAt"`;
   return rows.map(normalizeRow);
 }
 
