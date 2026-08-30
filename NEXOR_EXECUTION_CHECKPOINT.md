@@ -18,15 +18,18 @@
 - Verified production deployment `dpl_2qZQ9hEWkGmpLNzoJS8xoqnbit5R` is `READY` for commit `884c6f2e...`.
 - `/api/health` currently returns HTTP 200 with database connected.
 - `/login` returned HTTP 200; unauthenticated `/` and `/dashboard` redirected to authentication as expected.
-- No Vercel runtime errors were found in the most recent one-hour production window.
+- No Vercel runtime errors were found in the most recent one-hour production window at the previous checkpoint.
 
-## Set 1 implementation checkpoint
-- Social content state transitions are enforced server-side; clients cannot mark a post `PUBLISHED` directly.
-- Scheduled social publishing persists provider failures as `FAILED` instead of leaving posts stuck in `SCHEDULED`.
-- Outbound sending is claim-safe and provider-confirmed before `SENT`.
-- Outreach scheduling fails closed without its required secret and validates future timestamps.
-- Outreach drafts verify the real Nexor session server-side instead of trusting a client-supplied identity header.
-- Video Factory → Social handoff requires a real render output URL before creating a social draft.
+## Social implementation checkpoint
+- Existing social content workspace, approval state machine, scheduled publishing queue, Meta publisher and video-to-social handoff were preserved.
+- Existing publishing supports verified Facebook and Instagram API flows; unsupported platforms fail closed rather than claiming publication.
+- Added migration `20260830150000_add_social_intelligence` for real trend references and social analytics snapshots.
+- Added `/api/social/trends`: fetches public Google Trends RSS data, persists source URLs, relevance and original content opportunities; provider failures return non-2xx.
+- Added `/api/social/analytics`: accepts and returns real provider analytics snapshots without fabricating metrics.
+- Added `/api/social/learning`: derives platform-level performance recommendations only from stored analytics.
+- Added `/api/social/creative-brief`: produces production-ready static/carousel/reel/story/short-video briefs using the existing Gemini adapter when configured, with an explicit deterministic fallback when it is not.
+- Added a Trend + Analytics / Creative Factory workspace to the Social Growth dashboard.
+- Social Growth now exposes Leads, Content, Trend + Analytics, Outreach and Jobs as distinct workspaces.
 
 ## Automation checkpoint
 - Realtime automation is scheduled every five minutes through `.github/workflows/automation-workers.yml`.
@@ -51,17 +54,19 @@
 - A previous CI run for commit `81982a86...` passed dependency installation and Prisma generation but failed at the lint step, causing typecheck/tests/build to be skipped.
 - The exact lint log is not exposed through the available GitHub API surface, so the failure must be reproduced by the next CI run or a real workspace before claiming CI green.
 - Docker Compose validation passed in that run.
+- The new social-intelligence commits were pushed to `main`; the repository status currently exposes pending Vercel checks, but no completed green build has been verified for the new commit yet.
 
 ## Provider-dependent work
 WhatsApp/Instagram/Facebook/LinkedIn/SMS/email sending, social publishing, Google/Meta Ads access, calendar integrations, external job submissions and AI media generation require valid provider/API credentials. Code must never claim external success without provider confirmation.
 
 ## Verification still required
-1. Add `CRON_SECRET` to Vercel Production environment variables using the same secret value used by the GitHub automation worker, then redeploy the latest `main`.
-2. Confirm `/api/cron/job-autopilot`, `/api/automations/run`, `/api/cron/followups`, `/api/cron/outreach`, and `/api/cron/social-publish` return genuine 2xx responses when authorized.
-3. Reproduce and fix the CI lint failure; then require typecheck, format check, unit tests and build to pass.
-4. Smoke-test login, dashboard, CRM CRUD, lead flow, research, outreach approval/send paths, social calendar/publishing, automation execution and video agent.
-5. Connect and test external providers one by one.
-6. Only mark provider workflows LIVE after real end-to-end confirmation.
+1. Apply `20260830150000_add_social_intelligence` to production using the existing migration workflow before calling Trend/Analytics production-live.
+2. Add `CRON_SECRET` to Vercel Production environment variables using the same secret value used by the GitHub automation worker, then redeploy the latest `main`.
+3. Confirm `/api/cron/job-autopilot`, `/api/automations/run`, `/api/cron/followups`, `/api/cron/outreach`, and `/api/cron/social-publish` return genuine 2xx responses when authorized.
+4. Reproduce and fix the CI lint failure; then require typecheck, format check, unit tests and build to pass.
+5. Smoke-test login, dashboard, CRM CRUD, lead flow, research, outreach approval/send paths, social calendar/publishing, social trend ingestion, analytics ingestion, automation execution and video agent.
+6. Connect and test external providers one by one.
+7. Only mark provider workflows LIVE after real end-to-end confirmation.
 
 ## Rules
 - Never fake provider success.
