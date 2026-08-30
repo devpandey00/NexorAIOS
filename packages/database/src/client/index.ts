@@ -48,22 +48,15 @@ function createPrismaClient(url: string, logQueries = false): PrismaClient {
 
 export function createDatabaseClients(config: DatabaseConfig): DatabaseClients {
   const write = createPrismaClient(config.writeUrl, config.logQueries);
-
   const read = createPrismaClient(config.readUrl ?? config.writeUrl, config.logQueries);
 
-  return {
-    write,
-    read,
-  };
+  return { write, read };
 }
 
 export function getDatabaseClients(): DatabaseClients {
   if (!clients) {
     const writeUrl = process.env['DATABASE_URL'];
-
-    if (!writeUrl) {
-      throw new Error('DATABASE_URL environment variable is required');
-    }
+    if (!writeUrl) throw new Error('DATABASE_URL environment variable is required');
 
     const databaseConfig: DatabaseConfig = {
       writeUrl,
@@ -85,31 +78,20 @@ export async function connectDatabase(): Promise<DatabaseClients> {
   const logger = getLogger();
 
   await db.write.$connect();
-
-  if (db.read !== db.write) {
-    await db.read.$connect();
-  }
+  if (db.read !== db.write) await db.read.$connect();
 
   logger.info({ component: 'database' }, 'Database connections established');
-
   return db;
 }
 
 export async function disconnectDatabase(): Promise<void> {
-  if (!clients) {
-    return;
-  }
+  if (!clients) return;
 
   const logger = getLogger();
-
   await clients.write.$disconnect();
-
-  if (clients.read !== clients.write) {
-    await clients.read.$disconnect();
-  }
+  if (clients.read !== clients.write) await clients.read.$disconnect();
 
   clients = undefined;
-
   logger.info({ component: 'database' }, 'Database connections closed');
 }
 
@@ -131,4 +113,7 @@ export {
   FollowUpStatus,
   TaskStatus,
   SocialPlatform,
+  MeetingStatus,
+  OpportunityStage,
+  ProposalStatus,
 };
