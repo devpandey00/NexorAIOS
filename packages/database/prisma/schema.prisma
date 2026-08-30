@@ -556,6 +556,8 @@ model ActivityEvent {
 
   campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
+  lead       Lead?     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
   @@index([campaignId, createdAt], map: "idx_activity_campaign_created")
   @@index([leadId, createdAt], map: "idx_activity_lead_created")
   @@index([type, createdAt], map: "idx_activity_type_created")
