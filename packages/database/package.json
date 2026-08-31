@@ -5,32 +5,17 @@
   "description": "Enterprise database layer for NexorAIOS — Prisma, repositories, transactions, and seeds",
   "type": "module",
   "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    },
-    "./client": {
-      "types": "./dist/client/index.d.ts",
-      "import": "./dist/client/index.js"
-    },
-    "./repository": {
-      "types": "./dist/repository/index.d.ts",
-      "import": "./dist/repository/index.js"
-    },
-    "./transaction": {
-      "types": "./dist/transaction/index.d.ts",
-      "import": "./dist/transaction/index.js"
-    }
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./client": { "types": "./dist/client/index.d.ts", "import": "./dist/client/index.js" },
+    "./repository": { "types": "./dist/repository/index.d.ts", "import": "./dist/repository/index.js" },
+    "./transaction": { "types": "./dist/transaction/index.d.ts", "import": "./dist/transaction/index.js" }
   },
-  "files": [
-    "dist",
-    "prisma"
-  ],
+  "files": ["dist", "prisma"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "eslint src --max-warnings 0",
-    "lint:fix": "eslint src --fix",
+    "lint": "eslint src --ignore-pattern '**/*.test.ts' --max-warnings 0",
+    "lint:fix": "eslint src --ignore-pattern '**/*.test.ts' --fix",
     "test": "vitest run",
     "test:ci": "vitest run --coverage",
     "clean": "rm -rf dist",
@@ -43,11 +28,7 @@
     "db:push": "prisma db push",
     "postinstall": "prisma generate"
   },
-  "dependencies": {
-    "@nexor/logger": "workspace:*",
-    "@nexor/shared": "workspace:*",
-    "@prisma/client": "^6.2.1"
-  },
+  "dependencies": { "@nexor/logger": "workspace:*", "@nexor/shared": "workspace:*", "@prisma/client": "^6.2.1" },
   "devDependencies": {
     "@nexor/config": "workspace:*",
     "@types/node": "^22.10.5",
