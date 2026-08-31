@@ -1,5 +1,4 @@
-import { LeadStatus } from '@prisma/client';
-import type { Lead, Prisma } from '@prisma/client';
+import type { LeadStatus, Lead, Prisma } from '@prisma/client';
 import { BaseRepository, type PaginationParams } from './base.repository.js';
 
 export interface LeadFilters extends PaginationParams { search?: string; status?: LeadStatus; country?: string; niche?: string; }
