@@ -8,13 +8,13 @@ import {
   OutreachStatus,
 } from '@nexor/database';
 
-function getPrisma() {
-  return getDatabaseClients().write;
-}
+function getPrisma() { return getDatabaseClients().write; }
 
 const BLOCKED_NAME_PATTERNS = [/\bjobs?\b/i, /\bvacanc(?:y|ies)\b/i, /\bcareers?\b/i, /\bhiring\b/i, /\bsalary\b/i, /\bapply now\b/i, /\bresume\b/i, /\bcv\b/i, /\binternship\b/i, /\btop\b/i, /\bbest\b/i, /\blist\b/i, /\bdirectory\b/i, /\bguide\b/i, /\barticle\b/i, /\bnews\b/i];
 const BLOCKED_SOURCES = new Set(['JOB', 'JOB_SEARCH', 'JOB-SEARCH', 'RECRUITMENT', 'CAREER', 'JOB_PORTAL']);
 const VALID_LEAD_TYPES = new Set(['BUSINESS', 'COMPANY', 'LOCAL_BUSINESS', 'AGENCY', 'PROFESSIONAL_SERVICE']);
+const MANUAL_SOCIAL_CHANNELS = new Set([OutreachChannel.INSTAGRAM, OutreachChannel.FACEBOOK, OutreachChannel.LINKEDIN]);
+const MANUAL_PENDING = 'MANUAL_PENDING' as OutreachStatus;
 
 function leadIsSendable(lead: { businessName: string; whatsapp: string | null; notes: string | null }) {
   if (!lead.whatsapp) return { ok: false, reason: 'NOT CONTACTABLE: WhatsApp number missing' };
@@ -26,9 +26,7 @@ function leadIsSendable(lead: { businessName: string; whatsapp: string | null; n
     const leadType = typeof metadata?.leadType === 'string' ? metadata.leadType.toUpperCase() : '';
     if (BLOCKED_SOURCES.has(source)) return { ok: false, reason: `Blocked source: ${source}` };
     if (leadType && !VALID_LEAD_TYPES.has(leadType)) return { ok: false, reason: `Blocked lead type: ${leadType}` };
-  } catch {
-    // Legacy free-form notes remain allowed; contact/name checks still apply.
-  }
+  } catch { /* legacy notes */ }
   return { ok: true, reason: 'Contactable operational business lead' };
 }
 
@@ -38,10 +36,8 @@ async function sendWhatsApp(to: string, message: string) {
   const version = process.env.WHATSAPP_API_VERSION ?? 'v23.0';
   if (!token || !phoneNumberId) throw new Error('WhatsApp credentials are not configured');
   const response = await fetch(`https://graph.facebook.com/${version}/${phoneNumberId}/messages`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: to.replace(/\D/g, ''), type: 'text', text: { preview_url: false, body: message } }),
-    cache: 'no-store',
+    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: to.replace(/\D/g, ''), type: 'text', text: { preview_url: false, body: message } }), cache: 'no-store',
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data?.error?.message ?? `WhatsApp send failed (${response.status})`);
@@ -56,10 +52,8 @@ export async function sendEmail(to: string, message: string) {
   const subject = lines[0]?.startsWith('Subject:') ? lines[0].replace(/^Subject:\s*/i, '').trim() : 'A quick observation about your business';
   const text = lines[0]?.startsWith('Subject:') ? lines.slice(2).join('\n') : message;
   const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from, to: [to], subject, text }),
-    cache: 'no-store',
+    method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from, to: [to], subject, text }), cache: 'no-store',
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data?.message ?? `Email send failed (${response.status})`);
@@ -68,7 +62,7 @@ export async function sendEmail(to: string, message: string) {
 
 export async function sendApprovedOutreach(id: string) {
   const prisma = getPrisma();
-  const outreach = await prisma.outreach.findUnique({ where: { id }, include: { lead: true } });
+  const outreach = await prisma.outreach.findUnique({ where: { id }, include: { lead: { include: { socialProfiles: true } } } });
   if (!outreach) throw new Error('Outreach not found');
   if (outreach.status === OutreachStatus.SENT) return { outreach, recipient: outreach.channel === OutreachChannel.WHATSAPP ? outreach.lead.whatsapp : outreach.lead.email, alreadySent: true };
   if (outreach.status !== OutreachStatus.APPROVED) throw new Error('Outreach must be approved before sending');
@@ -78,11 +72,20 @@ export async function sendApprovedOutreach(id: string) {
     if (!validation.ok) throw new Error(validation.reason);
   }
 
+  if (MANUAL_SOCIAL_CHANNELS.has(outreach.channel)) {
+    const profile = outreach.lead.socialProfiles.find((item) => item.platform === outreach.channel);
+    if (!profile?.url) throw new Error(`No saved ${outreach.channel} profile URL for manual send`);
+    const claimed = await prisma.outreach.updateMany({ where: { id, status: OutreachStatus.APPROVED }, data: { status: MANUAL_PENDING, scheduledAt: new Date(), error: null } });
+    if (claimed.count !== 1) {
+      const current = await prisma.outreach.findUnique({ where: { id } });
+      if (current?.status === MANUAL_PENDING || current?.status === OutreachStatus.SENT) return { outreach: current, recipient: profile.url, manual: true, alreadySent: current.status === OutreachStatus.SENT };
+      throw new Error('Outreach was claimed by another sender');
+    }
+    return { outreach: await prisma.outreach.findUnique({ where: { id } }), recipient: profile.url, profileUrl: profile.url, manual: true, alreadySent: false };
+  }
+
   const queuedAt = new Date();
-  const claimed = await prisma.outreach.updateMany({
-    where: { id, status: OutreachStatus.APPROVED },
-    data: { status: OutreachStatus.SCHEDULED, scheduledAt: queuedAt, error: null },
-  });
+  const claimed = await prisma.outreach.updateMany({ where: { id, status: OutreachStatus.APPROVED }, data: { status: OutreachStatus.SCHEDULED, scheduledAt: queuedAt, error: null } });
   if (claimed.count !== 1) {
     const current = await prisma.outreach.findUnique({ where: { id } });
     if (current?.status === OutreachStatus.SENT) return { outreach: current, recipient: outreach.channel === OutreachChannel.WHATSAPP ? outreach.lead.whatsapp : outreach.lead.email, alreadySent: true };
@@ -103,18 +106,14 @@ export async function sendApprovedOutreach(id: string) {
       if (!recipient) throw new Error('Lead has no email address');
       providerMessageId = await sendEmail(recipient, outreach.message);
     } else {
-      throw new Error(`Sending for ${outreach.channel} is not configured yet`);
+      throw new Error(`Unsupported automated outreach channel: ${outreach.channel}`);
     }
 
     const now = new Date();
     const result = await prisma.$transaction(async (tx) => {
       const sent = await tx.outreach.updateMany({ where: { id, status: OutreachStatus.SCHEDULED }, data: { status: OutreachStatus.SENT, sentAt: now, providerMessageId, error: null } });
       if (sent.count !== 1) throw new Error('Outreach state changed while provider was sending');
-      const conversation = await tx.conversation.upsert({
-        where: { leadId_channel: { leadId: outreach.leadId, channel } },
-        create: { leadId: outreach.leadId, channel, status: 'OPEN', lastMessageAt: now },
-        update: { lastMessageAt: now, status: 'OPEN' },
-      });
+      const conversation = await tx.conversation.upsert({ where: { leadId_channel: { leadId: outreach.leadId, channel } }, create: { leadId: outreach.leadId, channel, status: 'OPEN', lastMessageAt: now }, update: { lastMessageAt: now, status: 'OPEN' } });
       await tx.message.create({ data: { conversationId: conversation.id, direction: MessageDirection.OUTBOUND, content: outreach.message, providerMessageId } });
       await tx.lead.update({ where: { id: outreach.leadId }, data: { status: LeadStatus.CONTACTED } });
       const existingFollowUp = await tx.followUp.findFirst({ where: { leadId: outreach.leadId, status: { in: [FollowUpStatus.PENDING, FollowUpStatus.SCHEDULED] } } });
@@ -127,4 +126,25 @@ export async function sendApprovedOutreach(id: string) {
     await prisma.outreach.updateMany({ where: { id, status: OutreachStatus.SCHEDULED }, data: { status: OutreachStatus.FAILED, error: message } }).catch(() => undefined);
     throw new Error(message);
   }
+}
+
+export async function confirmManualOutreachSent(id: string) {
+  const prisma = getPrisma();
+  const existing = await prisma.outreach.findUnique({ where: { id }, include: { lead: true } });
+  if (!existing) throw new Error('Outreach not found');
+  if (existing.status === OutreachStatus.SENT) return { outreach: existing, alreadySent: true };
+  if (existing.status !== MANUAL_PENDING) throw new Error('Outreach is not awaiting manual confirmation');
+  const now = new Date();
+  const result = await prisma.$transaction(async (tx) => {
+    const confirmed = await tx.outreach.updateMany({ where: { id, status: MANUAL_PENDING }, data: { status: OutreachStatus.SENT, sentAt: now, error: null } });
+    if (confirmed.count !== 1) throw new Error('Manual send was already confirmed by another request');
+    const channel = existing.channel as unknown as ConversationChannel;
+    const conversation = await tx.conversation.upsert({ where: { leadId_channel: { leadId: existing.leadId, channel } }, create: { leadId: existing.leadId, channel, status: 'OPEN', lastMessageAt: now }, update: { lastMessageAt: now, status: 'OPEN' } });
+    await tx.message.create({ data: { conversationId: conversation.id, direction: MessageDirection.OUTBOUND, content: existing.message } });
+    await tx.lead.update({ where: { id: existing.leadId }, data: { status: LeadStatus.CONTACTED } });
+    const existingFollowUp = await tx.followUp.findFirst({ where: { leadId: existing.leadId, status: { in: [FollowUpStatus.PENDING, FollowUpStatus.SCHEDULED] } } });
+    if (!existingFollowUp) await tx.followUp.create({ data: { leadId: existing.leadId, status: FollowUpStatus.PENDING, scheduledAt: new Date(now.getTime() + 3 * 86400000), notes: `Follow up after manual outreach ${existing.id}` } });
+    return tx.outreach.findUnique({ where: { id } });
+  });
+  return { outreach: result, alreadySent: false };
 }
