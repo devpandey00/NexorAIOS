@@ -41,7 +41,7 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - name: Repair known Prisma relation drift
+      - name: Repair Prisma schema drift
         shell: bash
         run: |
           python3 - <<'PY'
@@ -49,6 +49,17 @@ jobs:
           p = Path('packages/database/prisma/schema.prisma')
           s = p.read_text()
           changed = False
+
+          old = '  APPROVED\n  SCHEDULED\n  SENT\n  FAILED\n  CANCELLED\n\n  @@map("outreach_status")'
+          new = '  APPROVED\n  SCHEDULED\n  MANUAL_PENDING\n  SENT\n  FAILED\n  CANCELLED\n\n  @@map("outreach_status")'
+          if old in s:
+              s = s.replace(old, new, 1)
+              changed = True
+              print('Added MANUAL_PENDING to OutreachStatus.')
+          elif '  MANUAL_PENDING\n  SENT\n  FAILED' in s:
+              print('MANUAL_PENDING already present.')
+          else:
+              print('OutreachStatus pattern not found; manual review required.')
 
           old = '  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)\n\n  @@index([campaignId, createdAt], map: "idx_activity_campaign_created")'
           new = '  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)\n  lead     Lead?     @relation(fields: [leadId], references: [id], onDelete: Cascade)\n\n  @@index([campaignId, createdAt], map: "idx_activity_campaign_created")'
