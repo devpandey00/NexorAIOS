@@ -38,7 +38,8 @@ export async function PATCH(request: NextRequest) {
     const current = await leadService.findById(id);
     if (!current) return NextResponse.json({ success: false, message: 'Lead not found' }, { status: 404 });
     if (status) assertTransition(current.status, status);
-    if ([LeadStatus.MEETING_BOOKED, LeadStatus.PROPOSAL_SENT, LeadStatus.WON, LeadStatus.LOST].includes(status as LeadStatus)) return NextResponse.json({ success: false, message: 'Use the dedicated Sales API for this transition' }, { status: 409 });
+    const closedStatuses: LeadStatus[] = [LeadStatus.MEETING_BOOKED, LeadStatus.PROPOSAL_SENT, LeadStatus.WON, LeadStatus.LOST];
+    if (status && closedStatuses.includes(status)) return NextResponse.json({ success: false, message: 'Use the dedicated Sales API for this transition' }, { status: 409 });
     const lead = await leadService.update(id, { ...(status ? { status } : {}), ...(auditScore !== undefined ? { auditScore } : {}), ...(typeof body.notes === 'string' ? { notes: body.notes } : {}) });
     if (status && status !== current.status) {
       const { getDatabaseClients } = await import('@nexor/database');
