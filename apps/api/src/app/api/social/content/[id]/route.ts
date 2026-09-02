@@ -8,6 +8,7 @@ const TRANSITIONS: Record<SocialContentStatus, SocialContentStatus[]> = {
   REVIEW: ['DRAFT', 'APPROVED'],
   APPROVED: ['REVIEW', 'SCHEDULED'],
   SCHEDULED: ['APPROVED'],
+  PUBLISHING: ['PUBLISHED', 'FAILED'],
   PUBLISHED: [],
   FAILED: ['APPROVED', 'DRAFT'],
 };
