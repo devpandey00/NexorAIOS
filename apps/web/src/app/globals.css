@@ -1,8 +1,53 @@
 @import "tailwindcss";
 
-:root {
-  --background: #07090d;
-  --foreground: #f5f7fa;
+/**
+ * NEXOR design tokens, merged into the existing Tailwind v4 setup.
+ * Tailwind v4 has no tailwind.config.js by default — tokens are declared
+ * as CSS variables and mapped to utilities via @theme inline, same
+ * pattern this file already used for --color-background/--color-foreground.
+ *
+ * Palette source: see docs/dashboard-design-notes.md for where these
+ * values came from and the light/dark conflicts found in the supplied
+ * design package.
+ */
+
+:root,
+[data-theme='dark'] {
+  color-scheme: dark;
+  --background: #0d0d0d;
+  --foreground: #e5e2e1;
+
+  --nx-surface: #121212;
+  --nx-surface-elevated: #1a1a1a;
+  --nx-surface-hover: #202020;
+  --nx-border: #262626;
+  --nx-text-secondary: #bacac5;
+  --nx-text-muted: #859490;
+  --nx-teal: #2dd4bf;
+  --nx-gold: #d4af37;
+  --nx-success: #2dd4bf;
+  --nx-warning: #e9c349;
+  --nx-danger: #ffb4ab;
+  --nx-info: #9fb8ff;
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+  --background: #f9f8f6;
+  --foreground: #201f1c;
+
+  --nx-surface: #ffffff;
+  --nx-surface-elevated: #f2f0ed;
+  --nx-surface-hover: #ece9e4;
+  --nx-border: #e4e0d9;
+  --nx-text-secondary: #4a463f;
+  --nx-text-muted: #837c6f;
+  --nx-teal: #0f9c8a;
+  --nx-gold: #a9820c;
+  --nx-success: #0f9c8a;
+  --nx-warning: #a9820c;
+  --nx-danger: #b3261e;
+  --nx-info: #3457c4;
 }
 
 @theme inline {
@@ -10,6 +55,24 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  --color-nx-surface: var(--nx-surface);
+  --color-nx-surface-elevated: var(--nx-surface-elevated);
+  --color-nx-surface-hover: var(--nx-surface-hover);
+  --color-nx-border: var(--nx-border);
+  --color-nx-text-primary: var(--foreground);
+  --color-nx-text-secondary: var(--nx-text-secondary);
+  --color-nx-text-muted: var(--nx-text-muted);
+  --color-nx-teal: var(--nx-teal);
+  --color-nx-gold: var(--nx-gold);
+  --color-nx-success: var(--nx-success);
+  --color-nx-warning: var(--nx-warning);
+  --color-nx-danger: var(--nx-danger);
+  --color-nx-info: var(--nx-info);
+
+  --radius-nx-control: 4px;
+  --radius-nx-panel: 6px;
+  --radius-nx-chip: 2px;
 }
 
 * {
@@ -19,7 +82,6 @@
 html {
   min-width: 320px;
   background: var(--background);
-  color-scheme: dark;
 }
 
 body {
@@ -29,6 +91,7 @@ body {
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  transition: background-color 200ms ease, color 200ms ease;
 }
 
 button,
