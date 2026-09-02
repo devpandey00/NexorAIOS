@@ -92,7 +92,6 @@ export function buildPersonalizedPitch(input: {
   return `${channelIntro}Hi ${input.businessName},\n\nI reviewed your website and noticed ${observation.toLowerCase()} ${input.requirement.toLowerCase()} may be worth looking at.\n\nBased on what I found, ${input.service} looks like the most relevant area to improve rather than taking a generic marketing approach.\n\nI put together a few specific observations for your business. Want me to send them over?\n\nBest,\nDev\nFounder • Nexor Media`;
 }
 
-
 export interface SalesBrief {
   businessSummary: string;
   industry: string;
@@ -124,9 +123,13 @@ export function buildSalesBrief(input: {
   const opportunities = [...input.intelligence.findings, ...seoFindings].filter((item, index, arr) => item && arr.indexOf(item) === index).slice(0, 8);
   const summary = `${input.businessName} is a ${input.niche} business in ${input.country} with a publicly reachable website and evidence captured during automated research.`;
   const opening = input.intelligence.findings[0] ? `I reviewed ${input.businessName} and noticed ${input.intelligence.findings[0].toLowerCase()}` : `I reviewed ${input.businessName}'s online presence and found a few measurable growth opportunities.`;
+  const contact: SalesBrief['contact'] = {};
+  if (input.email) contact.email = input.email;
+  if (input.phone) contact.phone = input.phone;
+
   return {
     businessSummary: summary, industry: input.niche, location: input.country, website: input.website,
-    websiteQuality: input.intelligence.score, seoFindings, socialFindings, technology, contact: { email: input.email, phone: input.phone },
+    websiteQuality: input.intelligence.score, seoFindings, socialFindings, technology, contact,
     growthOpportunities: opportunities, recommendedService: input.intelligence.service,
     whyThisService: `${input.intelligence.service} is recommended because the observed research signals point to ${input.intelligence.requirement.toLowerCase()}.`,
     salesAngle: `Lead with the verified observation, then offer a specific ${input.intelligence.service} improvement rather than a generic marketing pitch.`,
