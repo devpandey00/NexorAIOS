@@ -29,3 +29,4 @@ var __exportStar =
 Object.defineProperty(exports, '__esModule', { value: true });
 __exportStar(require('./lead/index.js'), exports);
 __exportStar(require('./whatsapp/index.js'), exports);
+__exportStar(require('./campaign/index.js'), exports);
