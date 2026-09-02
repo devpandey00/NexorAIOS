@@ -6,8 +6,8 @@ export interface ResearchSnapshot {
     h2?: string[];
   };
   technology?: { technologies?: string[] };
-  social?: Record<string, unknown>;
-  seo?: Record<string, unknown>;
+  social?: object;
+  seo?: object;
 }
 
 export interface LeadIntelligence {
