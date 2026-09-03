@@ -33,16 +33,26 @@ function titleCaseDomain(domain: string): string { return (domain.split('.')[0] 
 
 function extractResults(html: string, engine: Engine): SearchResult[] {
   const patterns: RegExp[] = engine === 'ddg'
-    ? [/<a[^>]+class=["'][^"']*result__a[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi]
+    ? [
+        /<a\b[^>]*class=["'][^"']*result__a[^"']*["'][^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi,
+        /<a\b[^>]*href=["']([^"']+)["'][^>]*class=["'][^"']*result__a[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi,
+      ]
     : engine === 'ddg-lite'
-      ? [/<a[^>]+class=["'][^"']*result-link[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi]
+      ? [
+          /<a\b[^>]*class=["'][^"']*result-link[^"']*["'][^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi,
+          /<a\b[^>]*href=["']([^"']+)["'][^>]*class=["'][^"']*result-link[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi,
+        ]
       : engine === 'bing'
         ? [/<li[^>]+class=["'][^"']*b_algo[^"']*["'][\s\S]*?<h2[^>]*>\s*<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi]
         : engine === 'google'
           ? [/<a[^>]+href=["'](?:\/url\?q=|)(https?:\/\/[^"'&]+)[^"']*["'][^>]*>[\s\S]*?<h3[^>]*>([\s\S]*?)<\/h3>/gi]
-          : [/<a[^>]+class=["'][^"']*result_header[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi];
+          : [
+              /<a\b[^>]*class=["'][^"']*result_header[^"']*["'][^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi,
+              /<a\b[^>]*href=["']([^"']+)["'][^>]*class=["'][^"']*result_header[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi,
+            ];
 
   const results: SearchResult[] = [];
+  const seen = new Set<string>();
   for (const pattern of patterns) {
     let match: RegExpExecArray | null;
     while ((match = pattern.exec(html)) !== null && results.length < MAX_RESULTS_PER_QUERY) {
@@ -51,11 +61,15 @@ function extractResults(html: string, engine: Engine): SearchResult[] {
       try {
         if (url.startsWith('//')) url = `https:${url}`;
         const parsed = new URL(url, 'https://example.com');
-        if (engine === 'ddg' || engine === 'ddg-lite') {
-          if (parsed.hostname.includes('duckduckgo.com') && parsed.searchParams.has('uddg')) url = decodeURIComponent(parsed.searchParams.get('uddg')!);
+        if ((engine === 'ddg' || engine === 'ddg-lite') && parsed.hostname.includes('duckduckgo.com') && parsed.searchParams.has('uddg')) {
+          url = decodeURIComponent(parsed.searchParams.get('uddg')!);
         }
       } catch { continue; }
-      if (/^https?:\/\//i.test(url) && title) results.push({ title, url });
+      if (!/^https?:\/\//i.test(url) || !title) continue;
+      const key = url.split('#')[0];
+      if (seen.has(key)) continue;
+      seen.add(key);
+      results.push({ title, url });
     }
   }
   return results;
