@@ -13,6 +13,7 @@ export type SocialStrategy = {
   keyMessage: string;
   cta: string;
   platform: string;
+  targetMarket?: string;
   postingWindow: string;
   creativeDirection: string;
   ideas: Array<{ title: string; hook: string; angle: string; format: string; cta: string }>;
@@ -27,30 +28,33 @@ export type StrategyInput = {
   goal: string;
   audience: string;
   offer?: string | null;
+  targetMarket?: string | null;
 };
 
 const PILLARS = ['Education', 'Authority', 'Case Studies', 'Problem/Solution', 'AI & Automation', 'Marketing Tips', 'Before/After', 'Industry Insights', 'Founder/Behind the Scenes', 'Offers', 'Social Proof', 'Lead Generation'];
 
 function fingerprint(input: StrategyInput) {
-  return createHash('sha256').update(JSON.stringify({ ...input, platform: input.platform.toUpperCase() })).digest('hex');
+  return createHash('sha256').update(JSON.stringify({ ...input, platform: input.platform.toUpperCase(), targetMarket: input.targetMarket?.toUpperCase() || 'INTERNATIONAL' })).digest('hex');
 }
 
 function fallback(input: StrategyInput): SocialStrategy {
   const topic = input.trendTopic?.trim() || input.niche;
   const offer = input.offer?.trim() || 'digital marketing, lead generation and automation';
+  const targetMarket = input.targetMarket?.trim() || 'INTERNATIONAL';
   const pillar = /AI|automation/i.test(topic) ? 'AI & Automation' : /case|result|before/i.test(topic) ? 'Case Studies' : 'Education';
   const format = input.platform.toUpperCase() === 'LINKEDIN' ? 'CAROUSEL' : input.platform.toUpperCase() === 'YOUTUBE' ? 'SHORT_VIDEO' : 'REEL';
   return {
-    opportunity: input.trendOpportunity?.trim() || `Turn ${topic} into a practical ${input.goal} content opportunity.`,
+    opportunity: input.trendOpportunity?.trim() || `Turn ${topic} into a practical ${input.goal} content opportunity for ${targetMarket}.`,
     pillar,
     audience: input.audience,
     objective: input.goal,
     format,
-    angle: `Show ${topic} through a practical business-growth lens without unsupported claims.`,
-    hook: `${topic}: the practical part most ${input.audience || 'business owners'} miss`,
+    angle: `Show ${topic} through a practical business-growth lens for ${targetMarket} without unsupported claims.`,
+    hook: `${topic}: the practical part most ${input.audience || 'business owners'} in ${targetMarket} miss`,
     keyMessage: `Use a focused process around ${topic} and connect it directly to ${input.goal}.`,
     cta: `DM Nexor to discuss ${offer}.`,
     platform: input.platform.toUpperCase(),
+    targetMarket,
     postingWindow: 'Test audience-local weekday lunch and evening windows; optimize after real analytics accumulate.',
     creativeDirection: 'Premium Nexor visual system, strong typography, restrained motion, original graphics, one clear CTA.',
     ideas: [
@@ -68,6 +72,7 @@ function normalize(raw: string, input: StrategyInput): SocialStrategy {
   return {
     ...base,
     ...parsed,
+    targetMarket: typeof parsed.targetMarket === 'string' && parsed.targetMarket.trim() ? parsed.targetMarket.trim() : base.targetMarket,
     format: allowed.includes(parsed.format as typeof allowed[number]) ? parsed.format as SocialStrategy['format'] : base.format,
     pillar: typeof parsed.pillar === 'string' && PILLARS.includes(parsed.pillar) ? parsed.pillar : base.pillar,
     ideas: Array.isArray(parsed.ideas) ? parsed.ideas.filter((x): x is { title: string; hook: string; angle: string; format: string; cta: string } => !!x && typeof x === 'object' && typeof x.title === 'string' && typeof x.hook === 'string' && typeof x.angle === 'string' && typeof x.format === 'string' && typeof x.cta === 'string').slice(0, 10) : base.ideas,
@@ -85,7 +90,7 @@ export async function generateSocialStrategy(input: StrategyInput) {
   let strategy = fallback(input);
   let ai = false;
   try {
-    const raw = await ollamaAnalyze(`You are Nexor Media's senior social strategist. Return ONLY valid JSON matching this shape: {"opportunity":string,"pillar":string,"audience":string,"objective":string,"format":"STATIC|CAROUSEL|REEL|STORY|SHORT_VIDEO","angle":string,"hook":string,"keyMessage":string,"cta":string,"platform":string,"postingWindow":string,"creativeDirection":string,"ideas":[{"title":string,"hook":string,"angle":string,"format":string,"cta":string}]}. Use only these pillars: ${PILLARS.join(', ')}. Business: Nexor Media. Platform: ${input.platform}. Niche: ${input.niche}. Goal: ${input.goal}. Audience: ${input.audience}. Offer: ${input.offer || 'digital marketing and growth services'}. Trend: ${input.trendTopic || 'none supplied'}. Opportunity: ${input.trendOpportunity || 'derive a useful opportunity'}. Never invent statistics, clients, testimonials or results.`);
+    const raw = await ollamaAnalyze(`You are Nexor Media's senior social strategist. Return ONLY valid JSON matching this shape: {"opportunity":string,"pillar":string,"audience":string,"objective":string,"format":"STATIC|CAROUSEL|REEL|STORY|SHORT_VIDEO","angle":string,"hook":string,"keyMessage":string,"cta":string,"platform":string,"targetMarket":string,"postingWindow":string,"creativeDirection":string,"ideas":[{"title":string,"hook":string,"angle":string,"format":string,"cta":string}]}. Use only these pillars: ${PILLARS.join(', ')}. Business: Nexor Media. Platform: ${input.platform}. Target market: ${input.targetMarket || 'INTERNATIONAL'}. Niche: ${input.niche}. Goal: ${input.goal}. Audience: ${input.audience}. Offer: ${input.offer || 'digital marketing and growth services'}. Trend: ${input.trendTopic || 'none supplied'}. Opportunity: ${input.trendOpportunity || 'derive a useful opportunity'}. Never invent statistics, clients, testimonials or results.`);
     strategy = normalize(raw, input);
     ai = true;
   } catch {
