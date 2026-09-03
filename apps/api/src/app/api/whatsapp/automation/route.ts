@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDatabaseClients, OutreachChannel, OutreachStatus, FollowUpStatus, TaskStatus } from '@nexor/database';
 import { outreachService } from '@nexor/ai';
 import { sendApprovedOutreach } from '@/lib/outreach-sender';
+import { getInternationalPricing } from '@/lib/international-pricing';
 
 export const runtime = 'nodejs';
 
@@ -44,9 +45,7 @@ export async function GET() {
     const approved = rawApproved.filter((item) => leadEligibility(item.lead).ok && Boolean(item.lead.whatsapp));
     const existingOutreachLeadIds = new Set([...rawDrafts, ...rawApproved, ...scheduled].map((item) => item.leadId));
     const rejected = [...rawDrafts, ...rawApproved, ...scheduled].filter((item) => !leadEligibility(item.lead).ok).map((item) => ({ id: item.id, businessName: item.lead.businessName, reason: leadEligibility(item.lead).reason }));
-    const notContactable = [
-      ...rawLeads.filter((lead) => leadEligibility(lead).ok && !lead.whatsapp && !existingOutreachLeadIds.has(lead.id)).slice(0, 50).map((lead) => ({ id: lead.id, businessName: lead.businessName, reason: 'NOT CONTACTABLE: WhatsApp number missing' }))
-    ];
+    const notContactable = [...rawLeads.filter((lead) => leadEligibility(lead).ok && !lead.whatsapp && !existingOutreachLeadIds.has(lead.id)).slice(0, 50).map((lead) => ({ id: lead.id, businessName: lead.businessName, reason: 'NOT CONTACTABLE: WhatsApp number missing' }))];
     return NextResponse.json({ success: true, stats: { drafts: drafts.length, approved: approved.length, scheduled: scheduled.length, sent, failed, replies: replies.length, notContactable: notContactable.length, rejected: rejected.length }, drafts, approved, scheduled, rejected, notContactable, replies, tasks });
   } catch (error) { return jsonError(error instanceof Error ? error.message : String(error), 500); }
 }
@@ -63,15 +62,14 @@ export async function POST(req: NextRequest) {
         if (created >= limit) break; const eligibility = leadEligibility(lead); if (!eligibility.ok) { rejected.push(`${lead.businessName}: ${eligibility.reason}`); continue; }
         const existing = await prisma.outreach.findFirst({ where: { leadId: lead.id, channel: OutreachChannel.WHATSAPP, status: { in: [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED, OutreachStatus.APPROVED, OutreachStatus.SCHEDULED] } } }); if (existing) { skipped++; continue; }
         try {
-          const context = researchContext(lead.notes); let message = '';
-          for (let attempt = 0; attempt < 2; attempt++) { const generated = await outreachService.generate({ businessName: lead.businessName, ownerName: lead.ownerName, niche: lead.niche, country: lead.country, website: lead.website, whatsapp: lead.whatsapp, auditScore: lead.auditScore, notes: lead.notes, verifiedResearch: context.research, verifiedScore: context.score, leadMetadata: { leadType: eligibility.leadType, source: eligibility.source }, uniquenessInstruction: `Create a genuinely different message for ${lead.businessName}. Use one or two verified findings from the supplied research. Do not reuse generic wording from these existing drafts: ${Array.from(generatedMessages).slice(-5).join(' | ')}` }); const candidate = typeof generated?.whatsapp === 'string' ? generated.whatsapp.trim() : ''; if (candidate && !generatedMessages.has(candidate.toLowerCase())) { message = candidate; break; } }
+          const context = researchContext(lead.notes); const pricing = getInternationalPricing(lead.country); let message = '';
+          for (let attempt = 0; attempt < 2; attempt++) { const generated = await outreachService.generate({ businessName: lead.businessName, ownerName: lead.ownerName, niche: lead.niche, country: lead.country, website: lead.website, whatsapp: lead.whatsapp, auditScore: lead.auditScore, notes: lead.notes, verifiedResearch: context.research, verifiedScore: context.score, leadMetadata: { leadType: eligibility.leadType, source: eligibility.source }, internationalPricing: pricing, uniquenessInstruction: `Create a genuinely different message for ${lead.businessName}. Use one or two verified findings from the supplied research. If a service is discussed, use only these standard ${pricing.currency} client-facing prices: website ${pricing.website}, Google Ads ${pricing.googleAds}/mo, Meta Ads ${pricing.metaAds}/mo, Google Business Profile setup ${pricing.googleBusinessProfile}, social media ${pricing.socialMedia}/mo. Ad spend is separate. Do not reveal INR or internal pricing. Do not reuse generic wording from these existing drafts: ${Array.from(generatedMessages).slice(-5).join(' | ')}` }); const candidate = typeof generated?.whatsapp === 'string' ? generated.whatsapp.trim() : ''; if (candidate && !generatedMessages.has(candidate.toLowerCase())) { message = candidate; break; } }
           if (!message) throw new Error('AI did not return a unique personalized WhatsApp draft'); generatedMessages.add(message.toLowerCase()); await prisma.outreach.create({ data: { leadId: lead.id, channel: OutreachChannel.WHATSAPP, status: OutreachStatus.DRAFT, message } }); created++;
         } catch (error) { errors.push(`${lead.businessName}: ${error instanceof Error ? error.message : String(error)}`); }
       }
       return NextResponse.json({ success: true, action, considered: leads.length, created, skipped, notContactable, rejected, errors });
     }
     const ids = Array.isArray(body?.ids) ? body.ids.filter((id: unknown): id is string => typeof id === 'string') : []; if (!ids.length) return jsonError('ids are required');
-
     if (action === 'approve') {
       const candidates = await prisma.outreach.findMany({ where: { id: { in: ids }, channel: OutreachChannel.WHATSAPP, status: { in: [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED] } }, include: { lead: true } });
       const valid = candidates.filter((item) => leadEligibility(item.lead).ok && Boolean(item.lead.whatsapp)); const validIds = valid.map((item) => item.id); const scheduledAt = new Date(Date.now() + 5 * 60 * 1000);
