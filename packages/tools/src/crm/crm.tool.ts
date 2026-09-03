@@ -2,7 +2,10 @@ import type { Tool, ToolInput, ToolOutput } from '../types/tool.js';
 
 const base = () => {
   const configured = process.env.NEXOR_API_URL?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim();
-  return (configured || 'http://localhost:3000').replace(/\/$/, '');
+  if (configured) return configured.replace(/\/$/, '');
+  const vercelUrl = process.env.VERCEL_URL?.trim();
+  if (vercelUrl) return `https://${vercelUrl}`;
+  return 'http://localhost:3000';
 };
 
 type ApiData = { message?: string; error?: string } & Record<string, unknown>;
