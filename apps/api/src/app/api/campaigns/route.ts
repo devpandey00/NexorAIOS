@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { campaignService } from '@nexor/core';
-import { runCampaign } from '@/lib/campaign-runner';
 
 export const runtime = 'nodejs';
-export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
   try {
@@ -18,26 +16,7 @@ export async function POST(req: NextRequest) {
     const campaign = await campaignService.create({ name, query });
     const job = await campaignService.createDiscoveryJob(campaign.id);
 
-    let result: unknown = null;
-    let executionStatus: 'started' | 'completed' | 'failed' = 'started';
-    try {
-      result = await runCampaign(campaign.id);
-      executionStatus = 'completed';
-    } catch (error) {
-      executionStatus = 'failed';
-      result = { error: error instanceof Error ? error.message : String(error) };
-    }
-
-    return NextResponse.json({
-      success: executionStatus !== 'failed',
-      executionStatus,
-      campaign: {
-        ...campaign,
-        status: executionStatus === 'completed' ? 'COMPLETED' : executionStatus === 'failed' ? 'FAILED' : campaign.status,
-      },
-      job,
-      result,
-    }, { status: executionStatus === 'failed' ? 502 : 201 });
+    return NextResponse.json({ success: true, executionStatus: 'started', campaign, job }, { status: 201 });
   } catch (error) {
     console.error('[CAMPAIGN CREATE ERROR]', error);
     return NextResponse.json({ success: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 });
