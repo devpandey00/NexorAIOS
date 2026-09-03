@@ -3,6 +3,7 @@ import ToolLibrary from '@/components/dashboard/ToolLibrary';
 import SalesMachinePanel from '@/components/dashboard/SalesMachinePanel';
 import VoiceAssistant from '@/components/dashboard/VoiceAssistant';
 import NexorOSModules from '@/components/dashboard/NexorOSModules';
+import DashboardPulse from '@/components/dashboard/DashboardPulse';
 import { getDatabaseClients, LeadStatus, OutreachStatus, CampaignStatus } from '@nexor/database';
 
 async function getSummary() {
@@ -136,6 +137,7 @@ export default async function Dashboard() {
         </section>
 
         <div className="relative space-y-4 p-4 lg:p-5">
+          <DashboardPulse summary={summary} />
           <VoiceAssistant />
           <NexorOSModules />
           <SalesMachinePanel />
