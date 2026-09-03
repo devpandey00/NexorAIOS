@@ -25,6 +25,7 @@ export async function POST(req: NextRequest) {
       goal: String(body.goal ?? ''),
       audience: String(body.audience ?? ''),
       offer: typeof body.offer === 'string' ? body.offer : null,
+      targetMarket: typeof body.targetMarket === 'string' ? body.targetMarket : 'INTERNATIONAL',
     });
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
