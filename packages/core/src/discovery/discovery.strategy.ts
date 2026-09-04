@@ -37,8 +37,13 @@ const QUERY_TEMPLATES: QueryTemplate[] = [
   (industry, location) => `${industry} ${location} phone`,
   (industry, location) => `${industry} in ${location}`,
   (industry, location, service) => `${industry} in ${location} ${service}`,
-  (industry, location) => `site:google.com/maps "${industry}" "${location}"`,
+  (industry, location) => `"${industry}" "${location}" local business`,
 ];
+
+function clean(values: string[] | undefined, fallback: string[]): string[] {
+  const result = (values ?? []).map((value: string) => value.trim()).filter(Boolean);
+  return result.length ? result : fallback;
+}
 
 function getQueryTemplate(index: number): QueryTemplate {
   return QUERY_TEMPLATES[index % QUERY_TEMPLATES.length] ?? QUERY_TEMPLATES[0]!;
@@ -46,10 +51,10 @@ function getQueryTemplate(index: number): QueryTemplate {
 
 export class DiscoveryStrategyService {
   createQueries(input: Partial<DiscoveryStrategy>, limit = 20): DiscoveryQuery[] {
-    const industries = input.industries?.map((value) => value.trim()).filter(Boolean).length ? input.industries!.map((value) => value.trim()).filter(Boolean) : DEFAULT_INDUSTRIES;
-    const locations = input.locations?.map((value) => value.trim()).filter(Boolean).length ? input.locations!.map((value) => value.trim()).filter(Boolean) : ['Lucknow', 'Delhi', 'Dubai', 'London', 'New York'];
-    const services = input.services?.map((value) => value.trim()).filter(Boolean).length ? input.services!.map((value) => value.trim()).filter(Boolean) : DEFAULT_SERVICES;
-    const intents = input.intents?.map((value) => value.trim()).filter(Boolean).length ? input.intents!.map((value) => value.trim()).filter(Boolean) : DEFAULT_INTENTS;
+    const industries = clean(input.industries, DEFAULT_INDUSTRIES);
+    const locations = clean(input.locations, ['Lucknow', 'Delhi', 'Dubai', 'London', 'New York']);
+    const services = clean(input.services, DEFAULT_SERVICES);
+    const intents = clean(input.intents, DEFAULT_INTENTS);
     const queries: DiscoveryQuery[] = [];
     const seen = new Set<string>();
     const safeLimit = Math.max(1, Math.min(100, Math.floor(limit)));
@@ -64,7 +69,6 @@ export class DiscoveryStrategyService {
         i += 1;
         continue;
       }
-
       const query = getQueryTemplate(i)(industry, location, service).replace(/\s+/g, ' ').trim();
       const key = query.toLowerCase();
       if (!seen.has(key)) {
