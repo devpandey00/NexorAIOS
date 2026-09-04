@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabaseClients, JobStatus, JobType } from '@nexor/database';
+import { getSessionUser } from '../../../lib/auth';
+
+export const runtime = 'nodejs';
 
 function getDb() { return getDatabaseClients().write; }
 const secret = process.env.CRON_SECRET || process.env.OUTREACH_API_SECRET || '';
@@ -14,9 +17,9 @@ const profile = {
 };
 const locations = (process.env.JOB_TARGET_LOCATIONS || 'India,Remote,Lucknow').split(',').map(s => s.trim()).filter(Boolean);
 
-function authorized(req: NextRequest) {
-  if (!secret) return process.env.NODE_ENV !== 'production';
-  return req.headers.get('authorization') === `Bearer ${secret}` || req.headers.get('x-cron-secret') === secret;
+async function authorized(req: NextRequest) {
+  if (secret && (req.headers.get('authorization') === `Bearer ${secret}` || req.headers.get('x-cron-secret') === secret)) return true;
+  return Boolean(await getSessionUser(req));
 }
 
 function domain(url: string) {
@@ -75,8 +78,12 @@ async function html(rawUrl: string) {
   } catch { return ''; } finally { clearTimeout(timer); }
 }
 
+function buildQueries() {
+  return locations.flatMap(location => profile.roles.flatMap(role => [`"${role}" "${location}" jobs hiring`, `"${role}" "${location}" apply`, `site:linkedin.com/jobs "${role}" "${location}"`, `site:indeed.com "${role}" "${location}"`, `site:naukri.com "${role}" "${location}"`])).slice(0, 40);
+}
+
 async function searchJobs() {
-  const queries = locations.flatMap(location => profile.roles.flatMap(role => [`"${role}" "${location}" jobs hiring`, `"${role}" "${location}" apply`, `site:linkedin.com/jobs "${role}" "${location}"`, `site:indeed.com "${role}" "${location}"`, `site:naukri.com "${role}" "${location}"`])).slice(0, 30);
+  const queries = buildQueries().slice(0, 30);
   const pages = await Promise.allSettled(queries.map(async q => { const r = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}&kl=in-en`, { headers: { 'User-Agent': 'Mozilla/5.0 NexorAIOS Job Autopilot' }, cache: 'no-store' }); return r.ok ? r.text() : ''; }));
   const found: { title: string; url: string; source: string }[] = []; const seen = new Set<string>();
   const re = /<a[^>]+class="[^\"]*result__a[^\"]*"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
@@ -144,14 +151,14 @@ async function apply(limit = 10) {
 }
 
 export async function GET(req: NextRequest) {
-  if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  if (!await authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   const db = getDb();
   const jobs = await db.job.findMany({ where: { type: JobType.ANALYTICS }, orderBy: { createdAt: 'desc' }, take: 250 });
   return NextResponse.json({ success: true, profile, jobs: jobs.map(j => ({ id: j.id, ...((j.payload || {}) as any), status: j.status, error: j.error })).filter(j => j.kind === 'JOB_OPPORTUNITY') });
 }
 
 export async function POST(req: NextRequest) {
-  if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  if (!await authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   try {
     const body = await req.json().catch(() => ({}));
     const result = body.mode === 'discover' ? await discover() : body.mode === 'apply' ? await apply(Number(body.limit || 10)) : { discovery: await discover(), application: await apply(Number(body.limit || 10)) };
@@ -162,7 +169,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  if (!await authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   const db = getDb();
   const { id, action } = await req.json();
   if (!id || !['approve', 'reject'].includes(action)) return NextResponse.json({ success: false, error: 'id and action are required' }, { status: 400 });
