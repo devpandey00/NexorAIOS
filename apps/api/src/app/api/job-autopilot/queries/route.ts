@@ -46,4 +46,4 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ success: true, queries, roles: requestedRoles, locations: requestedLocations, count: queries.length });
 }
 
-// Query generation is authenticated for both browser sessions and cron callers.
+// Strict TypeScript: callback parameters are explicitly typed for Vercel production builds.
