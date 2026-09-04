@@ -5,26 +5,13 @@
   "description": "Shared types, errors, events, and constants for NexorAIOS",
   "type": "module",
   "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    },
-    "./errors": {
-      "types": "./dist/errors/index.d.ts",
-      "import": "./dist/errors/index.js"
-    },
-    "./events": {
-      "types": "./dist/events/index.d.ts",
-      "import": "./dist/events/index.js"
-    },
-    "./constants": {
-      "types": "./dist/constants/index.d.ts",
-      "import": "./dist/constants/index.js"
-    }
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./errors": { "types": "./dist/errors/index.d.ts", "import": "./dist/errors/index.js" },
+    "./events": { "types": "./dist/events/index.d.ts", "import": "./dist/events/index.js" },
+    "./constants": { "types": "./dist/constants/index.d.ts", "import": "./dist/constants/index.js" },
+    "./brand": { "types": "./dist/brand/index.d.ts", "import": "./dist/brand/index.js" }
   },
-  "files": [
-    "dist"
-  ],
+  "files": ["dist"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
