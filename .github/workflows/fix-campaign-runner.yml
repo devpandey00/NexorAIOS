@@ -1,0 +1,45 @@
+name: Fix Campaign Runner
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.event.head_commit.message != 'fix: campaign runner compound key'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Patch malformed Prisma compound key
+        shell: bash
+        run: |
+          set -euo pipefail
+          file="apps/api/src/lib/campaign-runner.ts"
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('apps/api/src/lib/campaign-runner.ts')
+          s = p.read_text()
+          old = 'campaignId_leadId: campaignId, leadId: lead.id'
+          new = 'campaignId_leadId: { campaignId, leadId: lead.id }'
+          if old not in s:
+              raise SystemExit('Malformed compound-key pattern not found; no patch applied.')
+          s = s.replace(old, new)
+          p.write_text(s)
+          PY
+          git diff --check
+          git diff -- apps/api/src/lib/campaign-runner.ts
+      - name: Commit and push fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/api/src/lib/campaign-runner.ts
+          git commit -m "fix: campaign runner compound key"
+          git push origin main
