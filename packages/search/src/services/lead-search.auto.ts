@@ -75,7 +75,7 @@ export class LeadSearchService {
           }
           errors.push('serper: zero usable results');
         } catch (error) {
-          errors.push(`serper: ${errors.length ? 'zero usable results' : 'zero usable results'}`);
+          errors.push(`serper: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
     }
