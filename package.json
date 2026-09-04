@@ -17,7 +17,7 @@
     "lint:fix": "pnpm -r lint:fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "pnpm -r typecheck",
+    "typecheck": "pnpm --filter @nexor/search build && pnpm -r typecheck",
     "test": "pnpm -r test",
     "test:ci": "pnpm -r test:ci",
     "clean": "pnpm -r clean && rm -rf node_modules",
