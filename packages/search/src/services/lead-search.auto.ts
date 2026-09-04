@@ -3,6 +3,8 @@ import { serperSearch } from '../providers/serper.provider.js';
 import { freeWebSearch } from '../providers/free.provider.js';
 import { openStreetMapSearch } from '../providers/openstreetmap.provider.js';
 
+// Production lead-search result contract. Keep provider diagnostics typed here so
+// callers can surface actionable discovery failures without weakening the package type-check.
 export interface LeadSearchResult {
   success: boolean;
   count: number;
