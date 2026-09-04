@@ -24,24 +24,28 @@ export function assessLead(research: ResearchSnapshot): LeadIntelligence {
   const social = research.social ?? {};
   const findings: string[] = [];
   const strengths: string[] = [];
-  let score = 50;
+
+  // Start from a healthy operational baseline. The previous implementation
+  // started at 50 and only deducted points, making 60+ qualification
+  // mathematically impossible and therefore preventing outreach drafts.
+  let score = 70;
 
   if (website.title) strengths.push('The website has a page title.');
   else {
     findings.push('The website is missing a clear page title.');
-    score -= 12;
+    score -= 8;
   }
 
   if (website.description) strengths.push('The website has a meta description.');
   else {
     findings.push('The website is missing a meta description, which can weaken search presentation.');
-    score -= 10;
+    score -= 8;
   }
 
   if (website.h1?.length) strengths.push('The homepage has a visible H1 heading.');
   else {
     findings.push('The homepage does not expose a clear H1 heading.');
-    score -= 8;
+    score -= 7;
   }
 
   if (technologies.length) strengths.push(`Detected technology: ${technologies.slice(0, 4).join(', ')}.`);
@@ -49,7 +53,7 @@ export function assessLead(research: ResearchSnapshot): LeadIntelligence {
     strengths.push('Social profiles were detected from the website.');
   } else {
     findings.push('No social profile links were detected from the website.');
-    score -= 6;
+    score -= 5;
   }
 
   const tech = technologies.join(' ').toLowerCase();
@@ -91,7 +95,6 @@ export function buildPersonalizedPitch(input: {
 
   return `${channelIntro}Hi ${input.businessName},\n\nI reviewed your website and noticed ${observation.toLowerCase()} ${input.requirement.toLowerCase()} may be worth looking at.\n\nBased on what I found, ${input.service} looks like the most relevant area to improve rather than taking a generic marketing approach.\n\nI put together a few specific observations for your business. Want me to send them over?\n\nBest,\nDev\nFounder • Nexor Media`;
 }
-
 
 export interface SalesBrief {
   businessSummary: string;
