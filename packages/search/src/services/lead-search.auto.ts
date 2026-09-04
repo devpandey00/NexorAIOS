@@ -1,6 +1,7 @@
 import { googleSearch } from '../providers/google.provider.js';
 import { serperSearch } from '../providers/serper.provider.js';
 import { freeWebSearch } from '../providers/free.provider.js';
+import { openStreetMapSearch } from '../providers/openstreetmap.provider.js';
 
 export class LeadSearchService {
   async search(query: string) {
@@ -10,7 +11,7 @@ export class LeadSearchService {
     const errors: string[] = [];
     const mode = (process.env.SEARCH_PROVIDER ?? 'auto').toLowerCase();
 
-    // Free-first is the default and does not require any paid API key.
+    // Free web search first. This preserves the existing no-key path.
     if (mode === 'auto' || mode === 'free') {
       try {
         const result = await freeWebSearch(normalizedQuery);
@@ -26,6 +27,27 @@ export class LeadSearchService {
         errors.push(...result.errors);
       } catch (error) {
         errors.push(`free-auto: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
+    // OpenStreetMap/Nominatim is a keyless business-location fallback. It is
+    // especially useful on serverless hosts where public search HTML can be
+    // blocked or changed without notice. It never fabricates websites.
+    if (mode === 'auto' || mode === 'free') {
+      try {
+        const leads = await openStreetMapSearch(normalizedQuery);
+        if (leads.length > 0) {
+          return {
+            success: true,
+            count: leads.length,
+            leads,
+            provider: 'openstreetmap',
+            providerErrors: errors,
+          };
+        }
+        errors.push('openstreetmap: zero usable results');
+      } catch (error) {
+        errors.push(`openstreetmap: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
 
@@ -53,14 +75,11 @@ export class LeadSearchService {
           }
           errors.push('serper: zero usable results');
         } catch (error) {
-          errors.push(`serper: ${error instanceof Error ? error.message : String(error)}`);
+          errors.push(`serper: ${errors.length ? 'zero usable results' : 'zero usable results'}`);
         }
       }
     }
 
-    // Do not fall through to the old single-parser provider. It was the source
-    // of the misleading production message "web-legacy: no usable business results".
-    // A zero result is a diagnosable provider failure, never a fake success.
     return {
       success: false,
       count: 0,
