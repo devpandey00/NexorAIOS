@@ -49,12 +49,15 @@ export default async function ToolPage({ params }: { params: Promise<{ slug: str
     return <DashboardLayout><main className="space-y-5"><section className="nexor-fade nexor-panel p-7"><Link href="/dashboard" className="font-mono text-[7px] tracking-[0.16em] text-[var(--text-muted)]">← COMMAND CENTER</Link><div className="mt-5"><div className="font-mono text-[7px] tracking-[0.16em] text-[var(--text-muted)]">SOCIAL MEDIA</div><h1 className="mt-1 text-3xl font-semibold tracking-[-0.04em]">Content Calendar</h1></div></section><SocialContentWorkspace /></main></DashboardLayout>;
   }
 
-  if (slug === 'whatsapp-automation' || slug === 'whatsapp-drafts' || slug === 'message-sender') {
+  // All WhatsApp workflow entry points use the same live approval → auto-send workspace.
+  // whatsapp-sending was previously falling through to the generic "Architecture ready"
+  // placeholder, which made the sidebar appear stuck even though the automation backend worked.
+  if (slug === 'whatsapp-automation' || slug === 'whatsapp-drafts' || slug === 'whatsapp-sending' || slug === 'message-sender') {
     return <DashboardLayout><WhatsAppAutomationPage /></DashboardLayout>;
   }
 
   if (slug === 'messenger') {
-    return <DashboardLayout><main className="space-y-5"><section className="nexor-panel p-7"><Link href="/dashboard" className="font-mono text-[7px] tracking-[0.16em] text-[var(--text-muted)]">← COMMAND CENTER</Link><div className="mt-5"><div className="font-mono text-[7px] tracking-[0.16em] text-[var(--text-muted)]">MESSAGING</div><h1 className="mt-1 text-3xl font-semibold tracking-[-0.04em]">Messenger</h1><p className="mt-4 max-w-2xl text-[10px] leading-5 text-[var(--text-secondary)]">Unified conversation and approval workspace. Facebook Messenger delivery is provider-configured; CRM conversations remain available without fake provider success.</p></div></section><LeadInboxWorkspace /></main></DashboardLayout>;
+    return <DashboardLayout><main className="space-y-5"><section className="nexor-panel p-7"><Link href="/dashboard" className="font-mono text-[7px] tracking-[0.16em] text-[var(--text-muted)]">← COMMAND CENTER</Link><div className="mt-5"><div className="font-mono text-[7px] tracking-[0.16em] text-[var(--text-muted)]">MESSAGING</div><h1 className="mt-1 text-3xl font-semibold text-[var(--text)]">Messenger</h1><p className="mt-4 max-w-2xl text-[10px] leading-5 text-[var(--text-secondary)]">Unified conversation and approval workspace. Facebook Messenger delivery is provider-configured; CRM conversations remain available without fake provider success.</p></div></section><LeadInboxWorkspace /></main></DashboardLayout>;
   }
 
   if (slug === 'project-finder') {
