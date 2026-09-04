@@ -8,13 +8,16 @@ export interface LeadSearchResult {
   count: number;
   leads: Awaited<ReturnType<typeof serperSearch>>;
   provider: string;
+  errorCode?: string;
   providerErrors?: string[];
 }
 
 function dedupeLeads(leads: LeadSearchResult['leads']) {
   const seen = new Set<string>();
   return leads.filter((lead) => {
-    const key = [lead.website, lead.phone, lead.name].map((value) => String(value ?? '').trim().toLowerCase().replace(/\/$/, '')).join('|');
+    const key = [lead.website, lead.phone, lead.name]
+      .map((value) => String(value ?? '').trim().toLowerCase().replace(/\/$/, ''))
+      .join('|');
     if (!key || seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -69,7 +72,14 @@ export class LeadSearchService {
       }
     }
 
-    return { success: false, count: 0, leads: [], provider: mode, errorCode: 'SEARCH_UNAVAILABLE', providerErrors: errors.length ? errors : ['No usable search results from configured providers.'] };
+    return {
+      success: false,
+      count: 0,
+      leads: [],
+      provider: mode,
+      errorCode: 'SEARCH_UNAVAILABLE',
+      providerErrors: errors.length ? errors : ['No usable search results from configured providers.'],
+    };
   }
 
   async searchMany(queries: string[]): Promise<LeadSearchResult> {
@@ -77,15 +87,26 @@ export class LeadSearchService {
     const errors: string[] = [];
     const allLeads: LeadSearchResult['leads'] = [];
     const providers = new Set<string>();
+
     for (const query of uniqueQueries) {
       const result = await this.search(query);
       providers.add(result.provider);
       allLeads.push(...result.leads);
       if (result.providerErrors?.length) errors.push(...result.providerErrors.map((error) => `${query}: ${error}`));
     }
+
     const leads = dedupeLeads(allLeads);
-    if (leads.length > 0) return { success: true, count: leads.length, leads, provider: [...providers].join('+'), providerErrors: errors };
-    return { success: false, count: 0, leads: [], provider: [...providers].join('+') || 'none', errorCode: 'SEARCH_UNAVAILABLE', providerErrors: errors.length ? errors : ['No usable search results for any discovery query.'] };
+    if (leads.length > 0) {
+      return { success: true, count: leads.length, leads, provider: [...providers].join('+'), providerErrors: errors };
+    }
+    return {
+      success: false,
+      count: 0,
+      leads: [],
+      provider: [...providers].join('+') || 'none',
+      errorCode: 'SEARCH_UNAVAILABLE',
+      providerErrors: errors.length ? errors : ['No usable search results for any discovery query.'],
+    };
   }
 }
 
