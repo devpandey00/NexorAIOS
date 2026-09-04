@@ -45,3 +45,5 @@ export async function POST(req: NextRequest) {
   const queries = buildQueries(requestedRoles, requestedLocations);
   return NextResponse.json({ success: true, queries, roles: requestedRoles, locations: requestedLocations, count: queries.length });
 }
+
+// Query generation is authenticated for both browser sessions and cron callers.
