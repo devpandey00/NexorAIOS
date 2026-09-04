@@ -60,9 +60,6 @@ export async function runCampaign(campaignId: string) {
         if (!lead) { lead = await prisma.lead.create({ data: { businessName, niche, country, website: normalizedWebsite || undefined, whatsapp: normalizedPhone || undefined, status: LeadStatus.NEW } }); createdThisRun = true; }
         await prisma.campaignLead.upsert({ where: { campaignId_leadId: { campaignId, leadId: lead.id } }, create: { campaignId, leadId: lead.id }, update: {} });
 
-        // A business without a website is still a real prospect. Do not discard it just
-        // because automated website research cannot run; phone/contact availability is
-        // enough to create a sales-ready lead for manual follow-up.
         if (!result.website) {
           const fallbackScore = normalizedPhone ? 65 : 55;
           await prisma.lead.update({ where: { id: lead.id }, data: { auditScore: fallbackScore, status: fallbackScore >= 60 ? LeadStatus.QUALIFIED : LeadStatus.RESEARCHED, notes: JSON.stringify({ source: 'campaign-discovery', discoveryQueries, qualification: normalizedPhone ? 'contactable_business_without_website' : 'business_without_website' }) } });
@@ -77,8 +74,6 @@ export async function runCampaign(campaignId: string) {
         let research;
         try { research = await researchService.analyze(result.website); } catch (researchError) { console.error(`[LEAD RESEARCH ERROR] ${result.name}`, researchError); research = { success: false } as const; }
         if (!research.success) {
-          // Preserve the discovered business instead of converting a research failure
-          // into a lost lead. A reachable website itself is actionable prospect data.
           const fallbackScore = normalizedPhone ? 65 : 60;
           await prisma.lead.update({ where: { id: lead.id }, data: { auditScore: fallbackScore, status: LeadStatus.QUALIFIED, notes: JSON.stringify({ source: 'campaign-discovery', discoveryQueries, qualification: 'website_research_unavailable' }) } });
           if (normalizedPhone) {
@@ -101,7 +96,7 @@ export async function runCampaign(campaignId: string) {
       } catch (error) { failed++; processed++; console.error(`[CAMPAIGN LEAD ERROR] ${result.name}`, error); }
       await prisma.campaign.update({ where: { id: campaignId }, data: { processedLeads: processed, successfulLeads: successful, failedLeads: failed } });
     }
-    await prisma.$transaction([prisma.job.update({ where: { id: job.id }, data: { status: JobStatus.COMPLETED, completedAt: new Date(), result: { discovered: searchResult.count, processed, successful, failed, qualified, provider: searchResult.provider, queries: discoveryQueries } }),prisma.campaign.update({ where: { id: campaignId }, data: { status: failed > 0 ? CampaignStatus.PARTIALLY_COMPLETED : CampaignStatus.COMPLETED, completedAt: new Date(), totalLeads: searchResult.count, processedLeads: processed, successfulLeads: successful, failedLeads: failed } })]);
+    await prisma.$transaction([prisma.job.update({ where: { id: job.id }, data: { status: JobStatus.COMPLETED, completedAt: new Date(), result: { discovered: searchResult.count, processed, successful, failed, qualified, provider: searchResult.provider, queries: discoveryQueries } } }),prisma.campaign.update({ where: { id: campaignId }, data: { status: failed > 0 ? CampaignStatus.PARTIALLY_COMPLETED : CampaignStatus.COMPLETED, completedAt: new Date(), totalLeads: searchResult.count, processedLeads: processed, successfulLeads: successful, failedLeads: failed } })]);
     return { success: true, campaignId, discovered: searchResult.count, processed, successful, failed, qualified, provider: searchResult.provider, queries: discoveryQueries };
   } catch (error) { await prisma.$transaction([prisma.job.update({ where: { id: job.id }, data: { status: JobStatus.FAILED, completedAt: new Date(), error: error instanceof Error ? error.message : String(error) } }),prisma.campaign.update({ where: { id: campaignId }, data: { status: CampaignStatus.FAILED, completedAt: new Date() } })]); throw error; }
 }
