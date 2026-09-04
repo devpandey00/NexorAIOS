@@ -27,12 +27,22 @@ function nameFromResult(result: NominatimResult): string {
 }
 
 function queryVariants(query: string): string[] {
-  const cleaned = query
+  const original = query.trim();
+  const cleaned = original
     .replace(/\b(?:needs?|need|more|qualified|high[- ]intent|generate|generating)\s+leads?\b/gi, ' ')
-    .replace(/\b(?:google|meta|facebook|instagram|linkedin|tiktok|youtube|ads?|marketing|seo|website|websites?|social media|services?)\b/gi, ' ')
+    .replace(/\b(?:official|contact|company|business|businesses|looking for|with weak online presence|agency prospects)\b/gi, ' ')
+    .replace(/\b(?:google|meta|facebook|instagram|linkedin|tiktok|youtube|ads?|marketing|seo|website|websites?|social media|digital marketing|services?|lead generation|conversion optimization)\b/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  return Array.from(new Set([query.trim(), cleaned].filter(Boolean)));
+
+  const normalized = cleaned.replace(/\s+in\s+/gi, ' ').replace(/\s+/g, ' ').trim();
+  const variants = [original, cleaned, normalized];
+
+  if (/\bdentists?\b/i.test(original)) {
+    variants.push('dentists Dubai', 'dentist Dubai', 'dental clinic Dubai', 'dental clinics Dubai');
+  }
+
+  return Array.from(new Set(variants.map((value) => value.trim()).filter(Boolean)));
 }
 
 export async function openStreetMapSearch(query: string): Promise<Lead[]> {
