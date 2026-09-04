@@ -12,17 +12,30 @@ interface SerperResponse {
   organic?: SerperResult[];
 }
 
+function googleRegion(query: string): string {
+  const q = query.toLowerCase();
+  if (/\b(dubai|abu dhabi|uae|united arab emirates)\b/.test(q)) return 'ae';
+  if (/\b(london|uk|united kingdom|england)\b/.test(q)) return 'gb';
+  if (/\b(toronto|canada)\b/.test(q)) return 'ca';
+  if (/\b(sydney|melbourne|australia)\b/.test(q)) return 'au';
+  if (/\b(singapore)\b/.test(q)) return 'sg';
+  if (/\b(new york|los angeles|miami|chicago|houston|dallas|usa|united states)\b/.test(q)) return 'us';
+  if (/\b(delhi|mumbai|bangalore|bengaluru|lucknow|india)\b/.test(q)) return 'in';
+  return 'us';
+}
+
 export async function serperSearch(query: string): Promise<Lead[]> {
   const apiKey = process.env.SERPER_API_KEY;
   if (!apiKey) return [];
 
+  const normalizedQuery = query.trim();
   const response = await fetch(SERPER_URL, {
     method: 'POST',
     headers: {
       'X-API-KEY': apiKey,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ q: query.trim(), gl: 'in', hl: 'en', num: 30 }),
+    body: JSON.stringify({ q: normalizedQuery, gl: googleRegion(normalizedQuery), hl: 'en', num: 30 }),
     cache: 'no-store',
   });
 
