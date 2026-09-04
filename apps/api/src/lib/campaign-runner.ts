@@ -23,16 +23,14 @@ function buildDiscoveryQueries(query: string): string[] {
   const location = locationMatch?.[1]?.trim() ?? '';
   const industry = (locationMatch ? withoutService.slice(0, locationMatch.index).replace(/\bin\s*$/i, '').trim() : withoutService).trim();
   if (!industry || !location) return [normalized];
-
-  const queries = [
+  return [...new Set([
     `${industry} ${location}`,
     `${industry} ${location} official website`,
     `${industry} ${location} contact`,
     `${industry} ${location} ${service}`.trim(),
     `${industry} ${location} clinic website`,
     `${industry} ${location} business website`,
-  ];
-  return [...new Set(queries.map((item) => item.replace(/\s+/g, ' ').trim()).filter(Boolean))];
+  ].map((item) => item.replace(/\s+/g, ' ').trim()).filter(Boolean))];
 }
 
 async function findDuplicateLead(input: { website?: string; email?: string; whatsapp?: string; socialUrls?: string[]; businessName: string }) {
@@ -52,11 +50,7 @@ export async function runCampaign(campaignId: string) {
     const discoveryQueries = buildDiscoveryQueries(campaign.query);
     console.info('[LEAD DISCOVERY] queries', discoveryQueries);
     const searchResult = await leadSearchService.searchMany(discoveryQueries);
-    if (!searchResult.success) throw new Error(`Lead discovery failed: ${(searchResult.providerErrors ?? []).join(' | ') || 'search provider unavailable'}`);
-    if (searchResult.count === 0) {
-      const diagnostics = (searchResult.providerErrors ?? []).join(' | ');
-      throw new Error(`Lead discovery returned 0 results${diagnostics ? `: ${diagnostics}` : '. Check search-provider configuration and query targeting.'}`);
-    }
+    if (!searchResult.success || searchResult.count === 0) throw new Error(`Lead discovery failed: ${(searchResult.providerErrors ?? []).join(' | ') || 'no usable results'}`);
     let processed = 0, successful = 0, failed = 0, qualified = 0; const niche = inferNiche(campaign.query); const country = inferCountry(campaign.query);
     for (const result of searchResult.leads) {
       try {
@@ -65,12 +59,40 @@ export async function runCampaign(campaignId: string) {
         let lead = await findDuplicateLead({ businessName, website: normalizedWebsite, whatsapp: normalizedPhone }); let createdThisRun = false;
         if (!lead) { lead = await prisma.lead.create({ data: { businessName, niche, country, website: normalizedWebsite || undefined, whatsapp: normalizedPhone || undefined, status: LeadStatus.NEW } }); createdThisRun = true; }
         await prisma.campaignLead.upsert({ where: { campaignId_leadId: { campaignId, leadId: lead.id } }, create: { campaignId, leadId: lead.id }, update: {} });
-        if (!result.website) { if (normalizedPhone && !lead.whatsapp) await prisma.lead.update({ where: { id: lead.id }, data: { whatsapp: normalizedPhone } }); processed++; successful++; continue; }
-        const research = await researchService.analyze(result.website); if (!research.success) { processed++; failed++; continue; }
+
+        // A business without a website is still a real prospect. Do not discard it just
+        // because automated website research cannot run; phone/contact availability is
+        // enough to create a sales-ready lead for manual follow-up.
+        if (!result.website) {
+          const fallbackScore = normalizedPhone ? 65 : 55;
+          await prisma.lead.update({ where: { id: lead.id }, data: { auditScore: fallbackScore, status: fallbackScore >= 60 ? LeadStatus.QUALIFIED : LeadStatus.RESEARCHED, notes: JSON.stringify({ source: 'campaign-discovery', discoveryQueries, qualification: normalizedPhone ? 'contactable_business_without_website' : 'business_without_website' }) } });
+          if (normalizedPhone) {
+            qualified++;
+            const existingDraft = await prisma.outreach.findFirst({ where: { leadId: lead.id, channel: OutreachChannel.WHATSAPP, status: { in: [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED, OutreachStatus.APPROVED, OutreachStatus.SCHEDULED, OutreachStatus.SENT] } }, orderBy: { createdAt: 'desc' } });
+            if (!existingDraft) await prisma.outreach.create({ data: { leadId: lead.id, campaignId, channel: OutreachChannel.WHATSAPP, status: OutreachStatus.APPROVAL_REQUIRED, message: `Hi ${businessName}, I came across your business in ${country} and noticed an opportunity to improve your online lead generation. I can share a few specific ideas for your business. Want me to send them over?\n\nBest,\nDev\nFounder • Nexor Media` } });
+          }
+          processed++; successful++; continue;
+        }
+
+        let research;
+        try { research = await researchService.analyze(result.website); } catch (researchError) { console.error(`[LEAD RESEARCH ERROR] ${result.name}`, researchError); research = { success: false } as const; }
+        if (!research.success) {
+          // Preserve the discovered business instead of converting a research failure
+          // into a lost lead. A reachable website itself is actionable prospect data.
+          const fallbackScore = normalizedPhone ? 65 : 60;
+          await prisma.lead.update({ where: { id: lead.id }, data: { auditScore: fallbackScore, status: LeadStatus.QUALIFIED, notes: JSON.stringify({ source: 'campaign-discovery', discoveryQueries, qualification: 'website_research_unavailable' }) } });
+          if (normalizedPhone) {
+            qualified++;
+            const existingDraft = await prisma.outreach.findFirst({ where: { leadId: lead.id, channel: OutreachChannel.WHATSAPP, status: { in: [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED, OutreachStatus.APPROVED, OutreachStatus.SCHEDULED, OutreachStatus.SENT] } }, orderBy: { createdAt: 'desc' } });
+            if (!existingDraft) await prisma.outreach.create({ data: { leadId: lead.id, campaignId, channel: OutreachChannel.WHATSAPP, status: OutreachStatus.APPROVAL_REQUIRED, message: `Hi ${businessName}, I reviewed your online presence and found a few opportunities that could help generate more enquiries. Want me to send the specific observations?\n\nBest,\nDev\nFounder • Nexor Media` } });
+          }
+          processed++; successful++; continue;
+        }
+
         const intelligence = assessLead({ website: research.website, technology: research.technology, social: Object.fromEntries(Object.entries(research.social ?? {})), seo: Object.fromEntries(Object.entries(research.seo ?? {})) });
-        const salesBrief = intelligence.score >= 60 ? buildSalesBrief({ businessName, niche, country, website: result.website, intelligence, research, email: research.contacts?.emails?.[0], phone: research.contacts?.phones?.[0] }) : null;
         const email = research.contacts?.emails?.[0]; const phone = research.contacts?.phones?.[0]; const normalizedResearchPhone = phone ? normalizePhone(phone) : normalizedPhone; const social = Object.fromEntries(Object.entries(research.social ?? {})) as Record<string, unknown>; const socialUrls = Object.values(social).filter((value): value is string => typeof value === 'string' && value.startsWith('http'));
-        if (createdThisRun) { const duplicateAfterResearch = await findDuplicateLead({ website: normalizedWebsite, email, whatsapp: normalizedResearchPhone, socialUrls, businessName }); if (duplicateAfterResearch && duplicateAfterResearch.id !== lead.id) { await prisma.lead.delete({ where: { id: lead.id } }); lead = duplicateAfterResearch; await prisma.campaignLead.upsert({ where: { campaignId_leadId: { campaignId, leadId: lead.id } }, create: { campaignId, leadId: lead.id }, update: {} }); } }
+        const salesBrief = intelligence.score >= 60 ? buildSalesBrief({ businessName, niche, country, website: result.website, intelligence, research, email, phone }) : null;
+        if (createdThisRun) { const duplicateAfterResearch = await findDuplicateLead({ website: normalizedWebsite, email, whatsapp: normalizedResearchPhone, socialUrls, businessName }); if (duplicateAfterResearch && duplicateAfterResearch.id !== lead.id) { await prisma.lead.delete({ where: { id: lead.id } }); lead = duplicateAfterResearch; await prisma.campaignLead.upsert({ where: { campaignId_leadId: campaignId, leadId: lead.id }, create: { campaignId, leadId: lead.id }, update: {} }); } }
         await prisma.lead.update({ where: { id: lead.id }, data: { businessName, niche, country: lead.country === 'Unknown' ? country : lead.country, email: email ?? lead.email, whatsapp: normalizedResearchPhone || lead.whatsapp, auditScore: intelligence.score, status: intelligence.score >= 60 ? LeadStatus.QUALIFIED : LeadStatus.RESEARCHED, notes: JSON.stringify({ research, intelligence, salesBrief, source: 'campaign-discovery', discoveryQueries }) } });
         const socialEntries = [['INSTAGRAM', social.instagram],['FACEBOOK', social.facebook],['LINKEDIN', social.linkedin],['YOUTUBE', social.youtube],['X', social.x ?? social.twitter],['TIKTOK', social.tiktok]] as const;
         for (const [platform, url] of socialEntries) { if (typeof url !== 'string' || !url) continue; await prisma.socialProfile.upsert({ where: { leadId_platform: { leadId: lead.id, platform } }, create: { leadId: lead.id, platform, url, confidence: 100, source: 'website-research' }, update: { url, confidence: 100, source: 'website-research' } }); }
@@ -79,7 +101,7 @@ export async function runCampaign(campaignId: string) {
       } catch (error) { failed++; processed++; console.error(`[CAMPAIGN LEAD ERROR] ${result.name}`, error); }
       await prisma.campaign.update({ where: { id: campaignId }, data: { processedLeads: processed, successfulLeads: successful, failedLeads: failed } });
     }
-    await prisma.$transaction([prisma.job.update({ where: { id: job.id }, data: { status: JobStatus.COMPLETED, completedAt: new Date(), result: { discovered: searchResult.count, processed, successful, failed, qualified, provider: searchResult.provider, queries: discoveryQueries } } }),prisma.campaign.update({ where: { id: campaignId }, data: { status: failed > 0 ? CampaignStatus.PARTIALLY_COMPLETED : CampaignStatus.COMPLETED, completedAt: new Date(), totalLeads: searchResult.count, processedLeads: processed, successfulLeads: successful, failedLeads: failed } })]);
+    await prisma.$transaction([prisma.job.update({ where: { id: job.id }, data: { status: JobStatus.COMPLETED, completedAt: new Date(), result: { discovered: searchResult.count, processed, successful, failed, qualified, provider: searchResult.provider, queries: discoveryQueries } }),prisma.campaign.update({ where: { id: campaignId }, data: { status: failed > 0 ? CampaignStatus.PARTIALLY_COMPLETED : CampaignStatus.COMPLETED, completedAt: new Date(), totalLeads: searchResult.count, processedLeads: processed, successfulLeads: successful, failedLeads: failed } })]);
     return { success: true, campaignId, discovered: searchResult.count, processed, successful, failed, qualified, provider: searchResult.provider, queries: discoveryQueries };
   } catch (error) { await prisma.$transaction([prisma.job.update({ where: { id: job.id }, data: { status: JobStatus.FAILED, completedAt: new Date(), error: error instanceof Error ? error.message : String(error) } }),prisma.campaign.update({ where: { id: campaignId }, data: { status: CampaignStatus.FAILED, completedAt: new Date() } })]); throw error; }
 }
