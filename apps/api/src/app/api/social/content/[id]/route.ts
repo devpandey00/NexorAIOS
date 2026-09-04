@@ -4,7 +4,7 @@ import { getSocialContent, updateSocialContent, type SocialContentStatus } from 
 export const runtime = 'nodejs';
 
 const TRANSITIONS: Record<SocialContentStatus, SocialContentStatus[]> = {
-  DRAFT: ['REVIEW'],
+  DRAFT: ['REVIEW', 'APPROVED'],
   REVIEW: ['DRAFT', 'APPROVED'],
   APPROVED: ['REVIEW', 'SCHEDULED'],
   SCHEDULED: ['APPROVED'],
