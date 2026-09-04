@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     const allowed = (await listAgents()).map(x => x.name);
     if (!allowed.includes(agent)) throw new Error('Unknown agent');
     const db = getDatabaseClients().write;
-    const rows = await db.$queryRawUnsafe<Array<{ id: string }>>(`INSERT INTO public.aios_agent_runs (agent,status,input,user_id,started_at) VALUES ($1,'RUNNING',$2::jsonb,$3::uuid,now()) RETURNING id`, agent, JSON.stringify(body.input ?? {}), user.id);
-    return NextResponse.json({ success: true, runId: rows[0]?.id, status: 'RUNNING', note: 'Agent execution is permission-scoped; external side effects remain approval-gated.' }, { status: 202 });
+    const rows = await db.$queryRawUnsafe<Array<{ id: string }>>(`INSERT INTO public.aios_agent_runs (agent,status,input,user_id) VALUES ($1,'QUEUED',$2::jsonb,$3::uuid) RETURNING id`, agent, JSON.stringify(body.input ?? {}), user.id);
+    return NextResponse.json({ success: true, runId: rows[0]?.id, status: 'QUEUED', approvalRequired: true, note: 'Run queued for the agent executor. No external side effect is reported as executed here.' }, { status: 202 });
   } catch (error) { return NextResponse.json({ success: false, error: error instanceof Error ? error.message : String(error) }, { status: 400 }); }
 }
