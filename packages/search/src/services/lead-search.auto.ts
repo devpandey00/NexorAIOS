@@ -29,29 +29,30 @@ export class LeadSearchService {
     const normalizedQuery = query.trim();
     if (!normalizedQuery) return { success: true, count: 0, leads: [], provider: 'none' };
     const errors: string[] = [];
-    const mode = (process.env.SEARCH_PROVIDER ?? 'auto').toLowerCase();
+    // Free is the safe default. Paid providers are only used when explicitly selected.
+    const mode = (process.env.SEARCH_PROVIDER ?? 'free').toLowerCase();
 
-    if (mode === 'auto' || mode === 'google') {
+    if (mode === 'google') {
       if (process.env.GOOGLE_PLACES_API_KEY) {
         try {
           const leads = await googleSearch(normalizedQuery);
           if (leads.length) return { success: true, count: leads.length, leads, provider: 'google-places', providerErrors: errors };
           errors.push('google-places: zero usable results');
         } catch (error) { errors.push(`google-places: ${error instanceof Error ? error.message : String(error)}`); }
-      } else if (mode === 'google') errors.push('google-places: GOOGLE_PLACES_API_KEY is not configured');
+      } else errors.push('google-places: GOOGLE_PLACES_API_KEY is not configured');
     }
 
-    if (mode === 'auto' || mode === 'serper') {
+    if (mode === 'serper') {
       if (process.env.SERPER_API_KEY) {
         try {
           const leads = await serperSearch(normalizedQuery);
           if (leads.length) return { success: true, count: leads.length, leads, provider: 'serper', providerErrors: errors };
           errors.push('serper: zero usable results');
         } catch (error) { errors.push(`serper: ${error instanceof Error ? error.message : String(error)}`); }
-      } else if (mode === 'serper') errors.push('serper: SERPER_API_KEY is not configured');
+      } else errors.push('serper: SERPER_API_KEY is not configured');
     }
 
-    if (mode === 'auto' || mode === 'free') {
+    if (mode === 'free') {
       try {
         const leads = await openStreetMapSearch(normalizedQuery);
         if (leads.length) return { success: true, count: leads.length, leads, provider: 'openstreetmap', providerErrors: errors };
