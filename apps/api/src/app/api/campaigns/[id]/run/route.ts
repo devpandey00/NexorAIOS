@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { runCampaign } from '@/lib/campaign-runner';
 
+export const maxDuration = 60;
+
 export async function POST(_req: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
