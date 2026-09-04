@@ -1,4 +1,4 @@
-export type NexorBrandConfig = {
+export interface NexorBrandConfig {
   name: string;
   shortName: string;
   founder: string;
@@ -13,9 +13,9 @@ export type NexorBrandConfig = {
   tone: string;
   services: string[];
   defaultHashtags: string[];
-};
+}
 
-const env = (key: string, fallback: string) => process.env[key]?.trim() || fallback;
+const env = (key: string, fallback: string) => process.env[key]?.trim() ?? fallback;
 
 export const NEXOR_BRAND: NexorBrandConfig = {
   name: env('NEXOR_BRAND_NAME', 'Nexor Media'),
@@ -34,7 +34,9 @@ export const NEXOR_BRAND: NexorBrandConfig = {
   defaultHashtags: ['#NexorMedia', '#DigitalMarketing', '#LeadGeneration', '#MarketingStrategy', '#AIAutomation'],
 };
 
-export function nexorShortName() { return NEXOR_BRAND.shortName; }
+export function nexorShortName() {
+  return NEXOR_BRAND.shortName;
+}
 
 export function nexorOutreachSignature() {
   return `Best,\n${NEXOR_BRAND.founder}\n${NEXOR_BRAND.name}`;
