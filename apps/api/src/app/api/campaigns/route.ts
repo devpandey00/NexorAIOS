@@ -3,6 +3,7 @@ import { campaignService } from '@nexor/core';
 
 export const runtime = 'nodejs';
 
+// Production-safe campaign creation: enqueue discovery after the campaign exists.
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
