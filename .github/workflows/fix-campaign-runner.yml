@@ -2,14 +2,14 @@ name: Fix Campaign Runner
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
 
 permissions:
   contents: write
 
 jobs:
   fix:
-    if: github.event.head_commit.message != 'fix: campaign runner compound key'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,7 +20,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          file="apps/api/src/lib/campaign-runner.ts"
           python - <<'PY'
           from pathlib import Path
           p = Path('apps/api/src/lib/campaign-runner.ts')
@@ -28,16 +27,19 @@ jobs:
           old = 'campaignId_leadId: campaignId, leadId: lead.id'
           new = 'campaignId_leadId: { campaignId, leadId: lead.id }'
           if old not in s:
-              raise SystemExit('Malformed compound-key pattern not found; no patch applied.')
-          s = s.replace(old, new)
-          p.write_text(s)
+              print('Compound key already fixed; nothing to do.')
+              raise SystemExit(0)
+          p.write_text(s.replace(old, new))
           PY
           git diff --check
-          git diff -- apps/api/src/lib/campaign-runner.ts
-      - name: Commit and push fix
+      - name: Commit and push fix when needed
         shell: bash
         run: |
           set -euo pipefail
+          if git diff --quiet -- apps/api/src/lib/campaign-runner.ts; then
+            echo "No change required."
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add apps/api/src/lib/campaign-runner.ts
