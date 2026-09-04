@@ -12,6 +12,8 @@ export interface LeadSearchResult {
   providerErrors?: string[];
 }
 
+const TARGET_LEADS = 30;
+
 function dedupeLeads(leads: LeadSearchResult['leads']) {
   const seen = new Set<string>();
   return leads.filter((lead) => {
@@ -50,8 +52,6 @@ export class LeadSearchService {
     }
 
     if (mode === 'auto' || mode === 'free') {
-      // OSM is the deterministic free fallback for local-business discovery. Run it
-      // before scraping public search-engine HTML, which is frequently blocked on Vercel.
       try {
         const leads = await openStreetMapSearch(normalizedQuery);
         if (leads.length) return { success: true, count: leads.length, leads, provider: 'openstreetmap', providerErrors: errors };
@@ -73,13 +73,16 @@ export class LeadSearchService {
     const errors: string[] = [];
     const allLeads: LeadSearchResult['leads'] = [];
     const providers = new Set<string>();
+
     for (const query of uniqueQueries) {
       const result = await this.search(query);
       providers.add(result.provider);
       allLeads.push(...result.leads);
       if (result.providerErrors?.length) errors.push(...result.providerErrors.map((error) => `${query}: ${error}`));
+      if (dedupeLeads(allLeads).length >= TARGET_LEADS) break;
     }
-    const leads = dedupeLeads(allLeads);
+
+    const leads = dedupeLeads(allLeads).slice(0, TARGET_LEADS);
     if (leads.length) return { success: true, count: leads.length, leads, provider: [...providers].join('+'), providerErrors: errors };
     return { success: false, count: 0, leads: [], provider: [...providers].join('+') || 'none', errorCode: 'SEARCH_UNAVAILABLE', providerErrors: errors.length ? errors : ['No usable search results for any discovery query.'] };
   }
