@@ -10,12 +10,30 @@ export function extractContacts(html: string): ContactData {
 
   // Extract emails from mailto: links
   const emailLinks = $("a[href^='mailto:']")
-    .map((_, el) => $(el).attr('href')?.replace('mailto:', ''))
+    .map((_, el) => $(el).attr('href')?.replace('mailto:', '').split('?')[0])
     .get();
 
   // Extract phones from tel: links
   const phoneLinks = $("a[href^='tel:']")
-    .map((_, el) => $(el).attr('href')?.replace('tel:', ''))
+    .map((_, el) => $(el).attr('href')?.replace('tel:', '').split('?')[0])
+    .get();
+
+  // Many businesses publish WhatsApp chat buttons instead of tel: links.
+  // Capture the phone parameter from wa.me and api.whatsapp.com links.
+  const whatsappLinks = $("a[href*='wa.me/'], a[href*='api.whatsapp.com/send']")
+    .map((_, el) => {
+      const href = $(el).attr('href') ?? '';
+      try {
+        const url = new URL(href, 'https://example.com');
+        const phone = url.searchParams.get('phone');
+        if (phone) return phone;
+        const match = url.pathname.match(/\/([+\d][\d\s().-]{8,})$/);
+        return match?.[1];
+      } catch {
+        const match = href.match(/wa\.me\/([+\d][\d\s().-]{8,})/i);
+        return match?.[1];
+      }
+    })
     .get();
 
   // Fallback email regex
@@ -29,8 +47,8 @@ export function extractContacts(html: string): ContactData {
 
   const phones = [
     ...new Set(
-      [...phoneLinks, ...regexPhones].filter((phone) => {
-        const digits = phone.replace(/\D/g, '');
+      [...phoneLinks, ...whatsappLinks, ...regexPhones].filter((phone) => {
+        const digits = String(phone).replace(/\D/g, '');
         return digits.length >= 10 && digits.length <= 15;
       }),
     ),
