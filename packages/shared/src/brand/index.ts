@@ -21,7 +21,7 @@ export const NEXOR_BRAND: NexorBrandConfig = {
   name: env('NEXOR_BRAND_NAME', 'Nexor Media'),
   shortName: env('NEXOR_BRAND_SHORT_NAME', 'Nexor'),
   founder: env('NEXOR_FOUNDER_NAME', 'Dev Pandey'),
-  website: env('NEXOR_WEBSITE', 'https://nexormedia.com'),
+  website: env('NEXOR_WEBSITE', ''),
   contactEmail: env('NEXOR_CONTACT_EMAIL', ''),
   whatsapp: env('NEXOR_WHATSAPP', ''),
   instagram: env('NEXOR_INSTAGRAM', ''),
