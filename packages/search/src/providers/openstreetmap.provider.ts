@@ -26,51 +26,63 @@ function nameFromResult(result: NominatimResult): string {
   return result.display_name?.split(',')[0]?.trim() || '';
 }
 
+function queryVariants(query: string): string[] {
+  const cleaned = query
+    .replace(/\b(?:needs?|need|more|qualified|high[- ]intent|generate|generating)\s+leads?\b/gi, ' ')
+    .replace(/\b(?:google|meta|facebook|instagram|linkedin|tiktok|youtube|ads?|marketing|seo|website|websites?|social media|services?)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return Array.from(new Set([query.trim(), cleaned].filter(Boolean)));
+}
+
 export async function openStreetMapSearch(query: string): Promise<Lead[]> {
   const normalized = query.trim();
   if (!normalized) return [];
 
-  const url = new URL(NOMINATIM_URL);
-  url.searchParams.set('q', normalized);
-  url.searchParams.set('format', 'jsonv2');
-  url.searchParams.set('addressdetails', '1');
-  url.searchParams.set('extratags', '1');
-  url.searchParams.set('limit', '30');
+  for (const variant of queryVariants(normalized)) {
+    const url = new URL(NOMINATIM_URL);
+    url.searchParams.set('q', variant);
+    url.searchParams.set('format', 'jsonv2');
+    url.searchParams.set('addressdetails', '1');
+    url.searchParams.set('extratags', '1');
+    url.searchParams.set('limit', '30');
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-  try {
-    const response = await fetch(url.toString(), {
-      headers: {
-        accept: 'application/json',
-        'user-agent': 'NexorAIOS/1.0 lead-discovery (+https://nexoraios-main-1.vercel.app)',
-      },
-      cache: 'no-store',
-      signal: controller.signal,
-    });
-
-    if (!response.ok) throw new Error(`OpenStreetMap search failed (${response.status})`);
-    const data = (await response.json()) as NominatimResult[];
-
-    const seen = new Set<string>();
-    return data
-      .map((result) => {
-        const name = nameFromResult(result);
-        const tags = result.extratags ?? {};
-        return {
-          name,
-          website: tags.website || tags['contact:website'] || '',
-          phone: tags.phone || tags['contact:phone'],
-          address: addressFromResult(result),
-        } satisfies Lead;
-      })
-      .filter((lead) => {
-        if (!lead.name || seen.has(lead.name.toLowerCase())) return false;
-        seen.add(lead.name.toLowerCase());
-        return true;
+    try {
+      const response = await fetch(url.toString(), {
+        headers: {
+          accept: 'application/json',
+          'user-agent': 'NexorAIOS/1.0 lead-discovery (+https://nexoraios-main-1.vercel.app)',
+        },
+        cache: 'no-store',
+        signal: controller.signal,
       });
-  } finally {
-    clearTimeout(timer);
+
+      if (!response.ok) continue;
+      const data = (await response.json()) as NominatimResult[];
+      const seen = new Set<string>();
+      const leads = data
+        .map((result) => {
+          const name = nameFromResult(result);
+          const tags = result.extratags ?? {};
+          return {
+            name,
+            website: tags.website || tags['contact:website'] || '',
+            phone: tags.phone || tags['contact:phone'],
+            address: addressFromResult(result),
+          } satisfies Lead;
+        })
+        .filter((lead) => {
+          if (!lead.name || seen.has(lead.name.toLowerCase())) return false;
+          seen.add(lead.name.toLowerCase());
+          return true;
+        });
+      if (leads.length) return leads;
+    } finally {
+      clearTimeout(timer);
+    }
   }
+  return [];
 }
