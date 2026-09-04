@@ -18,6 +18,14 @@ function addressFromResult(result: NominatimResult): string | undefined {
   return Object.values(address).filter(Boolean).join(', ') || undefined;
 }
 
+function nameFromResult(result: NominatimResult): string {
+  const explicit = result.name?.trim();
+  if (explicit) return explicit;
+  const tagged = result.extratags?.name?.trim();
+  if (tagged) return tagged;
+  return result.display_name?.split(',')[0]?.trim() || '';
+}
+
 export async function openStreetMapSearch(query: string): Promise<Lead[]> {
   const normalized = query.trim();
   if (!normalized) return [];
@@ -48,7 +56,7 @@ export async function openStreetMapSearch(query: string): Promise<Lead[]> {
     const seen = new Set<string>();
     return data
       .map((result) => {
-        const name = result.name?.trim() || '';
+        const name = nameFromResult(result);
         const tags = result.extratags ?? {};
         return {
           name,
