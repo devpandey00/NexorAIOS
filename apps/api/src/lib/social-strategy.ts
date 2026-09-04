@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { getDatabaseClients } from '@nexor/database';
 import { ollamaAnalyze } from '@nexor/ai';
+import { NEXOR_BRAND, nexorShortName } from '@nexor/shared';
 
 export type SocialStrategy = {
   opportunity: string;
@@ -52,15 +53,15 @@ function fallback(input: StrategyInput): SocialStrategy {
     angle: `Show ${topic} through a practical business-growth lens for ${targetMarket} without unsupported claims.`,
     hook: `${topic}: the practical part most ${input.audience || 'business owners'} in ${targetMarket} miss`,
     keyMessage: `Use a focused process around ${topic} and connect it directly to ${input.goal}.`,
-    cta: `DM Nexor to discuss ${offer}.`,
+    cta: `DM ${nexorShortName()} to discuss ${offer}.`,
     platform: input.platform.toUpperCase(),
     targetMarket,
     postingWindow: 'Test audience-local weekday lunch and evening windows; optimize after real analytics accumulate.',
-    creativeDirection: 'Premium Nexor visual system, strong typography, restrained motion, original graphics, one clear CTA.',
+    creativeDirection: `Premium ${NEXOR_BRAND.name} visual system, strong typography, restrained motion, original graphics, one clear CTA.`,
     ideas: [
-      { title: `3 mistakes with ${topic}`, hook: `Stop doing these three things with ${topic}.`, angle: 'Problem/Solution', format, cta: 'Save this and DM Nexor for an audit.' },
-      { title: `${topic} explained simply`, hook: `If ${topic} feels complicated, start here.`, angle: 'Education', format, cta: 'Follow for practical growth systems.' },
-      { title: `${topic} → ${input.goal}`, hook: `Here is how to connect ${topic} to a measurable business goal.`, angle: 'Lead Generation', format, cta: 'DM Nexor to map the next step.' },
+      { title: `3 mistakes with ${topic}`, hook: `Stop doing these three things with ${topic}.`, angle: 'Problem/Solution', format, cta: `Save this and DM ${nexorShortName()} for an audit.` },
+      { title: `${topic} explained simply`, hook: `If ${topic} feels complicated, start here.`, angle: 'Education', format, cta: `Follow for practical ${nexorShortName()} growth systems.` },
+      { title: `${topic} → ${input.goal}`, hook: `Here is how to connect ${topic} to a measurable business goal.`, angle: 'Lead Generation', format, cta: `DM ${nexorShortName()} to map the next step.` },
     ],
   };
 }
@@ -90,7 +91,7 @@ export async function generateSocialStrategy(input: StrategyInput) {
   let strategy = fallback(input);
   let ai = false;
   try {
-    const raw = await ollamaAnalyze(`You are Nexor Media's senior social strategist. Return ONLY valid JSON matching this shape: {"opportunity":string,"pillar":string,"audience":string,"objective":string,"format":"STATIC|CAROUSEL|REEL|STORY|SHORT_VIDEO","angle":string,"hook":string,"keyMessage":string,"cta":string,"platform":string,"targetMarket":string,"postingWindow":string,"creativeDirection":string,"ideas":[{"title":string,"hook":string,"angle":string,"format":string,"cta":string}]}. Use only these pillars: ${PILLARS.join(', ')}. Business: Nexor Media. Platform: ${input.platform}. Target market: ${input.targetMarket || 'INTERNATIONAL'}. Niche: ${input.niche}. Goal: ${input.goal}. Audience: ${input.audience}. Offer: ${input.offer || 'digital marketing and growth services'}. Trend: ${input.trendTopic || 'none supplied'}. Opportunity: ${input.trendOpportunity || 'derive a useful opportunity'}. Never invent statistics, clients, testimonials or results.`);
+    const raw = await ollamaAnalyze(`You are ${NEXOR_BRAND.name}'s senior social strategist. Return ONLY valid JSON matching this shape: {"opportunity":string,"pillar":string,"audience":string,"objective":string,"format":"STATIC|CAROUSEL|REEL|STORY|SHORT_VIDEO","angle":string,"hook":string,"keyMessage":string,"cta":string,"platform":string,"targetMarket":string,"postingWindow":string,"creativeDirection":string,"ideas":[{"title":string,"hook":string,"angle":string,"format":string,"cta":string}]}. Use only these pillars: ${PILLARS.join(', ')}. Business: ${NEXOR_BRAND.name}. Platform: ${input.platform}. Target market: ${input.targetMarket || 'INTERNATIONAL'}. Niche: ${input.niche}. Goal: ${input.goal}. Audience: ${input.audience}. Offer: ${input.offer || 'digital marketing and growth services'}. Trend: ${input.trendTopic || 'none supplied'}. Opportunity: ${input.trendOpportunity || 'derive a useful opportunity'}. Never invent statistics, clients, testimonials or results.`);
     strategy = normalize(raw, input);
     ai = true;
   } catch {
