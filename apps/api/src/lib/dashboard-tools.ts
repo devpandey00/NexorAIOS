@@ -1,12 +1,5 @@
 export type ToolStatus = 'ready' | 'connect' | 'building';
-
-export interface NexorTool {
-  slug: string;
-  name: string;
-  group: string;
-  description: string;
-  status: ToolStatus;
-}
+export interface NexorTool { slug: string; name: string; group: string; description: string; status: ToolStatus; }
 
 const groups: Array<[string, string[]]> = [
   ['Command & Autopilot', ['Autopilot','AI Command Center','Automation Center','Message Drafter']],
@@ -20,41 +13,15 @@ const groups: Array<[string, string[]]> = [
   ['Google Advertising', ['Google Ads Overview','Search Campaigns','Keyword Planner','Search Terms','Ad Copy Studio','Conversion Tracking','Google Reporting','Google Optimization','Google ROAS','Shopping Ads']],
   ['SEO & Analytics', ['SEO Audit','Keyword Research','On-Page SEO','Technical SEO','Local SEO','Search Console','GA4 Analytics','GTM Tracking','Competitor SEO','SEO Reporting']],
   ['Web & AI Ops', ['Website Projects','Landing Page Builder','Website Audit','WordPress Manager','Forms & Leads','Sitemap Manager','Schema Builder','AI Agents']],
+  ['AI Growth Suite', ['Lead Hunter Pro','Website Audit Bot','Social Audit Bot','Personalized Outreach','Follow-up Autopilot','Lead Qualification AI','Proposal Generator','Sales Call Copilot','Deal Closer','Trend Radar','Content Factory','Reel Script Generator','Creative Director AI','Content Calendar AI','Performance Learner','Repurpose Engine','Competitor Watch','Daily CEO Briefing','Ask Nexor AI','AI Task Manager','AI Memory','Risk Radar','Cashflow Dashboard','Invoice Reminder AI','Client Profitability','Monthly P&L Assistant','Payment Follow-up','Client Health Score','Monthly Report Generator','Campaign Performance Report','Client Renewal Radar']],
 ];
 
-// READY means this tool has a real execution workspace wired to a real backend flow.
-// Provider-dependent operations still expose configuration errors instead of fake success.
 const readyTools = new Set([
-  'Autopilot',
-  'Lead Finder',
-  'Lead Inbox',
-  'Company Prospecting',
-  'Influencer Prospecting',
-  'Job Search',
-  'Project Finder',
-  'Message Drafter',
-  'Message Sender',
-  'WhatsApp Automation',
-  'WhatsApp Drafts',
-  'Messenger',
-  'Content Calendar',
-  'Social Media Manager',
-  'Video Editing',
+  'Autopilot','Lead Finder','Lead Inbox','Company Prospecting','Influencer Prospecting','Job Search','Project Finder','Message Drafter','Message Sender','WhatsApp Automation','WhatsApp Drafts','Messenger','Content Calendar','Social Media Manager','Video Editing',
+  'Lead Hunter Pro','Website Audit Bot','Social Audit Bot','Personalized Outreach','Follow-up Autopilot','Lead Qualification AI','Proposal Generator','Sales Call Copilot','Deal Closer','Trend Radar','Content Factory','Reel Script Generator','Creative Director AI','Content Calendar AI','Performance Learner','Repurpose Engine','Competitor Watch','Daily CEO Briefing','Ask Nexor AI','AI Task Manager','AI Memory','Risk Radar','Cashflow Dashboard','Invoice Reminder AI','Client Profitability','Monthly P&L Assistant','Payment Follow-up','Client Health Score','Monthly Report Generator','Campaign Performance Report','Client Renewal Radar',
 ]);
 
-export const nexorTools: NexorTool[] = groups.flatMap(([group, names]) =>
-  names.map((name) => ({
-    slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
-    name,
-    group,
-    description: `Workspace for ${name.toLowerCase()} inside NexorAIOS.`,
-    status: readyTools.has(name) ? 'ready' : 'connect',
-  })),
-);
-
+export const nexorTools: NexorTool[] = groups.flatMap(([group, names]) => names.map(name => ({ slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''), name, group, description: `Workspace for ${name.toLowerCase()} inside NexorAIOS.`, status: readyTools.has(name) ? 'ready' : 'connect' })));
 export const toolGroups = groups.map(([name]) => name);
 export const toolCount = nexorTools.length;
-
-export function getTool(slug: string): NexorTool | undefined {
-  return nexorTools.find((tool) => tool.slug === slug);
-}
+export function getTool(slug: string): NexorTool | undefined { return nexorTools.find(tool => tool.slug === slug); }
