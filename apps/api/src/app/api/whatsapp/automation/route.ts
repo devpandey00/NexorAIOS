@@ -23,8 +23,8 @@ export async function GET(req: NextRequest) {
   if (!(await authorized(req))) return jsonError('Unauthorized', 401); const prisma = getPrisma();
   try {
     const [rawDrafts, rawApproved, scheduled, rawLeads, sent, failed, replies, tasks] = await Promise.all([
-      prisma.outreach.findMany({ where: { channel: OutreachChannel.WHATSAPP, status: { in: [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED] }, lead: { whatsapp: { not: null } } }, include: { lead: true }, orderBy: { createdAt: 'desc' }, take: 100 }),
-      prisma.outreach.findMany({ where: { channel: OutreachChannel.WHATSAPP, status: OutreachStatus.APPROVED, lead: { whatsapp: { not: null } } }, include: { lead: true }, orderBy: { approvedAt: 'asc' }, take: 100 }),
+      prisma.outreach.findMany({ where: { channel: OutreachChannel.WHATSAPP, status: { in: [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED] } }, include: { lead: true }, orderBy: { createdAt: 'desc' }, take: 100 }),
+      prisma.outreach.findMany({ where: { channel: OutreachChannel.WHATSAPP, status: OutreachStatus.APPROVED }, include: { lead: true }, orderBy: { approvedAt: 'asc' }, take: 100 }),
       prisma.outreach.findMany({ where: { channel: OutreachChannel.WHATSAPP, status: OutreachStatus.SCHEDULED }, include: { lead: true }, orderBy: { scheduledAt: 'asc' }, take: 100 }),
       prisma.lead.findMany({ where: { status: { in: ['NEW', 'RESEARCHED', 'QUALIFIED', 'PITCH_READY'] } }, orderBy: { updatedAt: 'desc' }, take: 100 }),
       prisma.outreach.count({ where: { channel: OutreachChannel.WHATSAPP, status: OutreachStatus.SENT } }), prisma.outreach.count({ where: { channel: OutreachChannel.WHATSAPP, status: OutreachStatus.FAILED } }),
@@ -42,8 +42,9 @@ export async function POST(req: NextRequest) {
     const body = await req.json(); const action = typeof body?.action === 'string' ? body.action : '';
     if (action === 'run_due') {
       const now = new Date(); const limit = Math.min(Math.max(Number(body.limit ?? process.env.OUTREACH_MAX_PER_RUN ?? 2), 1), 20);
-      const queued = await prisma.outreach.findMany({ where: { channel: OutreachChannel.WHATSAPP, status: { in: [OutreachStatus.APPROVED, OutreachStatus.SCHEDULED] }, scheduledAt: { lte: now }, lead: { whatsapp: { not: null } } }, orderBy: { scheduledAt: 'asc' }, take: limit });
-      const leadIds = [...new Set(queued.map((item) => item.leadId))]; const leadRows = await prisma.lead.findMany({ where: { id: { in: leadIds } }, select: { id: true, businessName: true } }); const leadNames = new Map(leadRows.map((lead) => [lead.id, lead.businessName]));
+      const candidates = await prisma.outreach.findMany({ where: { channel: OutreachChannel.WHATSAPP, status: { in: [OutreachStatus.APPROVED, OutreachStatus.SCHEDULED] }, scheduledAt: { lte: now } }, orderBy: { scheduledAt: 'asc' }, take: Math.min(limit * 5, 100) });
+      const leadIds = [...new Set(candidates.map((item) => item.leadId))]; const leadRows = await prisma.lead.findMany({ where: { id: { in: leadIds }, whatsapp: { not: null } }, select: { id: true, businessName: true } }); const leadNames = new Map(leadRows.map((lead) => [lead.id, lead.businessName]));
+      const queued = candidates.filter((item) => leadNames.has(item.leadId)).slice(0, limit);
       let sent = 0; let failed = 0; const results: Array<{ id: string; businessName: string; success: boolean; error?: string }> = [];
       for (const item of queued) { try { const result = await sendApprovedOutreach(item.id); sent += result.alreadySent ? 0 : 1; results.push({ id: item.id, businessName: leadNames.get(item.leadId) ?? 'Unknown lead', success: true }); } catch (error) { failed++; results.push({ id: item.id, businessName: leadNames.get(item.leadId) ?? 'Unknown lead', success: false, error: error instanceof Error ? error.message : String(error) }); } }
       return NextResponse.json({ success: true, action, queued: queued.length, sent, failed, results, ranAt: now.toISOString() });
