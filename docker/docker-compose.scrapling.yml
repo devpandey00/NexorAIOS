@@ -1,0 +1,27 @@
+services:
+  scrapling-worker:
+    build:
+      context: ../services/scrapling-worker
+    container_name: nexoraios-scrapling
+    restart: unless-stopped
+    environment:
+      SCRAPLING_WORKER_HOST: 0.0.0.0
+      SCRAPLING_WORKER_PORT: 8787
+      SCRAPLING_WORKER_API_KEY: ${SCRAPLING_WORKER_API_KEY:?Set SCRAPLING_WORKER_API_KEY before starting}
+      SCRAPLING_MAX_RESULTS: ${SCRAPLING_MAX_RESULTS:-50}
+      SCRAPLING_FETCH_TIMEOUT: ${SCRAPLING_FETCH_TIMEOUT:-12}
+    ports:
+      - '127.0.0.1:8787:8787'
+    networks:
+      - nexoraios
+    healthcheck:
+      test: ['CMD', 'python', '-c', "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+networks:
+  nexoraios:
+    external: true
+    name: nexoraios-network
