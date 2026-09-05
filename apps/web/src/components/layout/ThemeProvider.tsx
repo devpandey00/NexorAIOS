@@ -12,7 +12,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const stored = window.localStorage.getItem(STORAGE_KEY) as Theme | null;
     const initial = stored ?? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
-    setThemeState(initial);
+    const frame = window.requestAnimationFrame(() => setThemeState(initial));
+    return () => window.cancelAnimationFrame(frame);
   }, []);
 
   useEffect(() => {
