@@ -7,7 +7,7 @@ export type GrowthToolAction = 'LEAD_HUNTER'|'WEBSITE_AUDIT'|'SOCIAL_AUDIT'|'OUT
 const s=(v:unknown,f='')=>String(v??f).trim(); const n=(v:unknown,f=0)=>Number(v??f); const clamp=(v:number,a:number,b:number)=>Math.max(a,Math.min(b,v));
 async function rows<T>(q:string,f:T[]=[]){try{return await getDatabaseClients().read.$queryRawUnsafe<T[]>(q)}catch{return f}}
 
-export async function runGrowthTool(action:GrowthToolAction,input:Record<string,unknown>={},userId?:string){
+export async function runGrowthTool(action:GrowthToolAction,input:Record<string,unknown>={},userId?:string):Promise<Record<string, unknown>>{
  await ensureAiosPlatform(); const brand=NEXOR_BRAND.name; const business=s(input.businessName||input.companyName,'Target business'); const website=s(input.website); const industry=s(input.industry,'business');
  switch(action){
  case 'LEAD_HUNTER':{const leads=await getDatabaseClients().read.lead.findMany({orderBy:[{auditScore:'desc'},{createdAt:'desc'}],take:clamp(n(input.limit,25),1,100)});return{action,count:leads.length,prospects:leads.map(x=>({id:x.id,businessName:x.businessName,website:x.website,country:x.country,score:x.auditScore,email:x.email,phone:x.phone,status:x.status}))}}
