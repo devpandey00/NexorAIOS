@@ -17,6 +17,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Run automatic campaign discovery
+        continue-on-error: true
         env:
           NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
@@ -25,19 +26,17 @@ jobs:
           test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required'; exit 1; }
           body_file="$(mktemp)"
           echo "Running /api/campaigns/auto/run"
-          http_code="$(curl --fail-with-body --silent --show-error --max-time 300 \
-            -o "$body_file" -w '%{http_code}' \
-            -H "Authorization: Bearer $CRON_SECRET" \
-            "$NEXOR_BASE_URL/api/campaigns/auto/run")"
+          http_code="$(curl --silent --show-error --max-time 300 -o "$body_file" -w '%{http_code}' -H "Authorization: Bearer $CRON_SECRET" "$NEXOR_BASE_URL/api/campaigns/auto/run")"
           cat "$body_file"
           echo
           rm -f "$body_file"
           if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then
-            echo "Campaign discovery returned HTTP $http_code; refusing to treat redirect/error as success."
+            echo "Campaign discovery returned HTTP $http_code; continuing so downstream automation workers still run."
             exit 1
           fi
 
       - name: Run durable Nexor automation scheduler
+        continue-on-error: true
         env:
           NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
@@ -46,48 +45,68 @@ jobs:
           test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required'; exit 1; }
           body_file="$(mktemp)"
           echo "Running /api/automations/run"
-          http_code="$(curl --fail-with-body --silent --show-error --max-time 120 \
-            -o "$body_file" -w '%{http_code}' \
-            -H "Authorization: Bearer $CRON_SECRET" \
-            -H "Content-Type: application/json" \
-            -X POST \
-            "$NEXOR_BASE_URL/api/automations/run")"
+          http_code="$(curl --silent --show-error --max-time 120 -o "$body_file" -w '%{http_code}' -H "Authorization: Bearer $CRON_SECRET" -H "Content-Type: application/json" -X POST "$NEXOR_BASE_URL/api/automations/run")"
           cat "$body_file"
           echo
           rm -f "$body_file"
           if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then
-            echo "Automation scheduler returned HTTP $http_code; refusing to treat redirect/error as success."
+            echo "Automation scheduler returned HTTP $http_code; continuing so outreach workers still run."
             exit 1
           fi
 
-      - name: Run due follow-ups, outreach and social posts
+      - name: Run due follow-ups
+        continue-on-error: true
         env:
           NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           set -euo pipefail
           test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required'; exit 1; }
-          test -n "$NEXOR_BASE_URL" || { echo 'NEXOR_BASE_URL is required'; exit 1; }
+          body_file="$(mktemp)"
+          echo "Running /api/cron/followups"
+          http_code="$(curl --silent --show-error --max-time 120 -o "$body_file" -w '%{http_code}' -H "Authorization: Bearer $CRON_SECRET" "$NEXOR_BASE_URL/api/cron/followups")"
+          cat "$body_file"
+          echo
+          rm -f "$body_file"
+          if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then
+            echo "Follow-up worker returned HTTP $http_code; continuing."
+            exit 1
+          fi
 
-          call_worker() {
-            local path="$1"
-            local body_file
-            body_file="$(mktemp)"
-            echo "Running $path"
-            http_code="$(curl --fail-with-body --silent --show-error --max-time 120 \
-              -o "$body_file" -w '%{http_code}' \
-              -H "Authorization: Bearer $CRON_SECRET" \
-              "$NEXOR_BASE_URL$path")"
-            cat "$body_file"
-            echo
-            if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then
-              echo "Worker $path returned HTTP $http_code; refusing to treat redirect/error as success."
-              rm -f "$body_file"
-              exit 1
-            fi
-            rm -f "$body_file"
-          }
+      - name: Run due outreach
+        continue-on-error: true
+        env:
+          NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required'; exit 1; }
+          body_file="$(mktemp)"
+          echo "Running /api/cron/outreach"
+          http_code="$(curl --silent --show-error --max-time 120 -o "$body_file" -w '%{http_code}' -H "Authorization: Bearer $CRON_SECRET" "$NEXOR_BASE_URL/api/cron/outreach")"
+          cat "$body_file"
+          echo
+          rm -f "$body_file"
+          if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then
+            echo "Outreach worker returned HTTP $http_code; continuing."
+            exit 1
+          fi
 
-          call_worker /api/cron/followups
-          call_worker /api/cron/outreach
-          call_worker /api/cron/social-publish
+      - name: Run due social publishing
+        continue-on-error: true
+        env:
+          NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required'; exit 1; }
+          body_file="$(mktemp)"
+          echo "Running /api/cron/social-publish"
+          http_code="$(curl --silent --show-error --max-time 120 -o "$body_file" -w '%{http_code}' -H "Authorization: Bearer $CRON_SECRET" "$NEXOR_BASE_URL/api/cron/social-publish")"
+          cat "$body_file"
+          echo
+          rm -f "$body_file"
+          if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then
+            echo "Social publishing worker returned HTTP $http_code; continuing."
+            exit 1
+          fi
