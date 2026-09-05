@@ -8,7 +8,7 @@ function getDb() {
 }
 
 function authorizedBySecret(req: NextRequest) {
-  const secret = process.env.CRON_SECRET || process.env.AUTOMATION_API_SECRET;
+  const secret = process.env.CRON_SECRET;
   if (!secret) return false;
   const supplied = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') || req.headers.get('x-cron-secret') || '';
   return supplied === secret;
