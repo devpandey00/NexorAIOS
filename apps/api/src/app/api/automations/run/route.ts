@@ -136,7 +136,7 @@ export async function POST(req: NextRequest) {
      )
      INSERT INTO "public"."automation_runs" ("id","schedule_id","status","input","started_at","created_at")
      SELECT gen_random_uuid(),"id",'RUNNING',"input",NOW(),NOW() FROM claimed
-     RETURNING "id","schedule_id","input",(SELECT "workflow" FROM "public"."automation_schedules" WHERE "id"="schedule_id") AS "workflow'`,
+     RETURNING "id","schedule_id","input",(SELECT "workflow" FROM "public"."automation_schedules" WHERE "id"="schedule_id") AS "workflow"`,
   );
 
   const results: Array<Record<string, unknown>> = [];
