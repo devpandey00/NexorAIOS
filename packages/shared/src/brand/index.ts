@@ -30,8 +30,22 @@ export const NEXOR_BRAND: NexorBrandConfig = {
   accentColor: env('NEXOR_ACCENT_COLOR', '#7C3AED'),
   font: env('NEXOR_FONT', 'Inter'),
   tone: env('NEXOR_TONE', 'confident, concise, professional, helpful'),
-  services: ['Digital Marketing', 'Lead Generation', 'Google Ads', 'Meta Ads', 'Social Media', 'AI Automation', 'Web Development'],
-  defaultHashtags: ['#NexorMedia', '#DigitalMarketing', '#LeadGeneration', '#MarketingStrategy', '#AIAutomation'],
+  services: [
+    'Digital Marketing',
+    'Lead Generation',
+    'Google Ads',
+    'Meta Ads',
+    'Social Media',
+    'AI Automation',
+    'Web Development',
+  ],
+  defaultHashtags: [
+    '#NexorMedia',
+    '#DigitalMarketing',
+    '#LeadGeneration',
+    '#MarketingStrategy',
+    '#AIAutomation',
+  ],
 };
 
 export function nexorShortName() {
