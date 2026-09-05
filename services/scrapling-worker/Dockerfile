@@ -1,0 +1,11 @@
+FROM ghcr.io/d4vinci/scrapling:0.4.9
+
+WORKDIR /app
+COPY app.py /app/app.py
+
+ENV PYTHONUNBUFFERED=1
+ENV SCRAPLING_WORKER_HOST=0.0.0.0
+ENV SCRAPLING_WORKER_PORT=8787
+
+EXPOSE 8787
+CMD ["python", "/app/app.py"]
