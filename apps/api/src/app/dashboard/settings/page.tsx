@@ -29,7 +29,7 @@ export default function SettingsPage() {
       <div className="text-[11px] font-semibold">WhatsApp setup</div>
       <ol className="mt-4 space-y-3 text-[9px] leading-5 text-[var(--text-secondary)]">
         <li><b>1.</b> Add the Meta WhatsApp Cloud API access token and phone number ID to Vercel Production.</li>
-        <li><b>2.</b> Create/approve a Meta WhatsApp message template for business-initiated first contact. Nexor passes the personalized draft as template body variable <code className="rounded bg-[var(--surface-2)] px-1">{{1}}</code>.</li>
+        <li><b>2.</b> Create/approve a Meta WhatsApp message template for business-initiated first contact. Nexor passes the personalized draft as template body variable <code className="rounded bg-[var(--surface-2)] px-1">{'{{1}}'}</code>.</li>
         <li><b>3.</b> Set <code className="rounded bg-[var(--surface-2)] px-1">WHATSAPP_TEMPLATE_NAME</code> and <code className="rounded bg-[var(--surface-2)] px-1">WHATSAPP_TEMPLATE_LANGUAGE</code> in Vercel Production.</li>
         <li><b>4.</b> Set the same random <code className="rounded bg-[var(--surface-2)] px-1">CRON_SECRET</code> in Vercel Production and GitHub Actions. Never paste the secret into chat.</li>
         <li><b>5.</b> Redeploy after changing environment variables, then use <Link href="/dashboard/tools/whatsapp-sending" className="text-[var(--accent)] underline">WhatsApp Sending</Link> → <b>Run Due Sends Now</b>.</li>
