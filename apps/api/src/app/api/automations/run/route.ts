@@ -5,7 +5,6 @@ import { executeWorkflow, type SupportedWorkflow } from '@nexor/tools';
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
-const db = getDatabaseClients().write;
 const MINUTE_MS = 60_000;
 const MAX_CRON_LOOKAHEAD_MINUTES = 366 * 24 * 60;
 
@@ -118,6 +117,10 @@ function nextCronRun(expression: string, from: Date, timezone: string) {
 
 export async function POST(req: NextRequest) {
   if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+
+  // Resolve the database lazily so Next.js can build/collect this route
+  // without requiring production-only DATABASE_URL during compilation.
+  const db = getDatabaseClients().write;
 
   const claimed = await db.$queryRawUnsafe<Array<{ id: string; schedule_id: string; workflow: string; input: Record<string, unknown> }>>(
     `WITH due AS (
