@@ -10,7 +10,7 @@ import {
 
 function getPrisma() { return getDatabaseClients().write; }
 
-const BLOCKED_NAME_PATTERNS = [/\bjobs?\b/i, /\bvacanc(?:y|ies)\b/i, /\bcareers?\b/i, /\bhiring\b/i, /\bsalary\b/i, /\bapply now\b/i, /\bresume\b/i, /\bcv\b/i, /\binternship\b/i, /\btop\b/i, /\bbest\b/i, /\blist\b/i, /\bdirectory\b/i, /\bguide\b/i, /\barticle\b/i, /\bnews\b/i];
+const BLOCKED_NAME_PATTERNS = [/\bjobs?\b/i, /\bvacanc(?:y|ies)\b/i, /\bcareers?\b/i, /\bhiring\b/i, /\bsalary\b/i, /\bapply now\b/i, /\bresume\b/i, /\bcv\b/i, /\binternship\b/i, /\brecruitment\b/i, /\btop\b/i, /\bbest\b/i, /\blist\b/i, /\bdirectory\b/i, /\bguide\b/i, /\barticle\b/i, /\bnews\b/i];
 const BLOCKED_SOURCES = new Set(['JOB', 'JOB_SEARCH', 'JOB-SEARCH', 'RECRUITMENT', 'CAREER', 'JOB_PORTAL']);
 const VALID_LEAD_TYPES = new Set(['BUSINESS', 'COMPANY', 'LOCAL_BUSINESS', 'AGENCY', 'PROFESSIONAL_SERVICE']);
 const MANUAL_SOCIAL_CHANNELS: Set<OutreachChannel> = new Set([OutreachChannel.INSTAGRAM, OutreachChannel.FACEBOOK, OutreachChannel.LINKEDIN]);
@@ -30,17 +30,72 @@ function leadIsSendable(lead: { businessName: string; whatsapp: string | null; n
   return { ok: true, reason: 'Contactable operational business lead' };
 }
 
+function whatsappConfig() {
+  const token = process.env.WHATSAPP_ACCESS_TOKEN?.trim();
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID?.trim();
+  const templateName = process.env.WHATSAPP_TEMPLATE_NAME?.trim();
+  const templateLanguage = process.env.WHATSAPP_TEMPLATE_LANGUAGE?.trim() || 'en_US';
+  return { token, phoneNumberId, templateName, templateLanguage, configured: Boolean(token && phoneNumberId) };
+}
+
+export function getWhatsAppProviderStatus() {
+  const config = whatsappConfig();
+  return {
+    configured: config.configured,
+    mode: config.templateName ? 'template' : 'session_text',
+    templateConfigured: Boolean(config.templateName),
+    templateLanguage: config.templateLanguage,
+  };
+}
+
 async function sendWhatsApp(to: string, message: string) {
-  const token = process.env.WHATSAPP_ACCESS_TOKEN;
-  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const { token, phoneNumberId, templateName, templateLanguage } = whatsappConfig();
   const version = process.env.WHATSAPP_API_VERSION ?? 'v23.0';
-  if (!token || !phoneNumberId) throw new Error('WhatsApp credentials are not configured');
+  if (!token || !phoneNumberId) {
+    throw new Error('WhatsApp Cloud API is not configured: add WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID in Vercel Production.');
+  }
+
+  const recipient = to.replace(/\D/g, '');
+  if (!recipient || recipient.length < 8) throw new Error('Lead WhatsApp number is invalid after normalization.');
+
+  // Cold/business-initiated WhatsApp outreach must use a Meta-approved template.
+  // Set WHATSAPP_TEMPLATE_NAME + WHATSAPP_TEMPLATE_LANGUAGE for automated first contact.
+  // The template should contain one body variable ({{1}}) used for the personalized message.
+  const payload = templateName
+    ? {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: recipient,
+        type: 'template',
+        template: {
+          name: templateName,
+          language: { code: templateLanguage },
+          components: [{ type: 'body', parameters: [{ type: 'text', text: message }] }],
+        },
+      }
+    : {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: recipient,
+        type: 'text',
+        text: { preview_url: false, body: message },
+      };
+
   const response = await fetch(`https://graph.facebook.com/${version}/${phoneNumberId}/messages`, {
-    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: to.replace(/\D/g, ''), type: 'text', text: { preview_url: false, body: message } }), cache: 'no-store',
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    cache: 'no-store',
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data?.error?.message ?? `WhatsApp send failed (${response.status})`);
+  if (!response.ok) {
+    const providerMessage = data?.error?.message ?? `WhatsApp send failed (${response.status})`;
+    const code = data?.error?.code ? ` [Meta ${data.error.code}]` : '';
+    if (!templateName && (data?.error?.code === 131047 || /24.?hour|template/i.test(providerMessage))) {
+      throw new Error('Meta rejected this first-contact message because it is outside the WhatsApp customer-service window. Configure an approved WHATSAPP_TEMPLATE_NAME and WHATSAPP_TEMPLATE_LANGUAGE for cold outreach.');
+    }
+    throw new Error(`${providerMessage}${code}`);
+  }
   return data?.messages?.[0]?.id as string | undefined;
 }
 
