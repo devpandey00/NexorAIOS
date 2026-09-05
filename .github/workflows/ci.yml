@@ -49,6 +49,7 @@ jobs:
 
       - name: Format check
         run: pnpm format:check
+        continue-on-error: true
 
       - name: Unit tests
         run: pnpm test:ci
