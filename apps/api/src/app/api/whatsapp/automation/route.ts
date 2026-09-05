@@ -4,7 +4,7 @@ import { outreachService } from '@nexor/ai';
 import { NEXOR_BRAND } from '@nexor/shared';
 import { getInternationalPricing } from '@/lib/international-pricing';
 import { getSessionUser } from '@/lib/auth';
-import { sendApprovedOutreach } from '@/lib/outreach-sender';
+import { sendApprovedOutreach, getWhatsAppProviderStatus } from '@/lib/outreach-sender';
 
 export const runtime = 'nodejs';
 
@@ -61,7 +61,7 @@ export async function GET(req: NextRequest) {
     const existingOutreachLeadIds = new Set([...rawDrafts, ...rawApproved, ...scheduled].map((item) => item.leadId));
     const rejected = [...rawDrafts, ...rawApproved, ...scheduled].filter((item) => !leadEligibility(item.lead).ok).map((item) => ({ id: item.id, businessName: item.lead.businessName, reason: leadEligibility(item.lead).reason }));
     const notContactable = rawLeads.filter((lead) => leadEligibility(lead).ok && !lead.whatsapp && !existingOutreachLeadIds.has(lead.id)).slice(0, 50).map((lead) => ({ id: lead.id, businessName: lead.businessName, reason: 'NOT CONTACTABLE: WhatsApp number missing' }));
-    return NextResponse.json({ success: true, stats: { drafts: drafts.length, approved: approved.length, scheduled: scheduled.length, sent, failed, replies: replies.length, notContactable: notContactable.length, rejected: rejected.length }, drafts, approved, scheduled, rejected, notContactable, replies, tasks });
+    return NextResponse.json({ success: true, provider: getWhatsAppProviderStatus(), stats: { drafts: drafts.length, approved: approved.length, scheduled: scheduled.length, sent, failed, replies: replies.length, notContactable: notContactable.length, rejected: rejected.length }, drafts, approved, scheduled, rejected, notContactable, replies, tasks });
   } catch (error) { return jsonError(error instanceof Error ? error.message : String(error), 500); }
 }
 
@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
     if (action === 'run_due') {
       const now = new Date();
       const limit = Math.min(Math.max(Number(body.limit ?? process.env.OUTREACH_MAX_PER_RUN ?? 2), 1), 20);
-      const queued = await prisma.outreach.findMany({ where: { channel: OutreachChannel.WHATSAPP, status: { in: [OutreachStatus.APPROVED, OutreachStatus.SCHEDULED] }, scheduledAt: { lte: now }, lead: { whatsapp: { not: null } } }, orderBy: { scheduledAt: 'asc' }, take: limit });
+      const queued = await prisma.outreach.findMany({ where: { channel: OutreachChannel.WHATSAPP, status: { in: [OutreachStatus.APPROVED, OutreachStatus.SCHEDULED] }, scheduledAt: { lte: now }, lead: { whatsapp: { not: null } } }, include: { lead: true }, orderBy: { scheduledAt: 'asc' }, take: limit });
       let sent = 0; let failed = 0; const results: Array<{ id: string; businessName: string; success: boolean; error?: string }> = [];
       for (const item of queued) {
         try {
