@@ -5,6 +5,8 @@ function getConfig() {
   return { baseUrl, apiKey, sessionId, configured: Boolean(baseUrl && apiKey && sessionId) };
 }
 
+const OPENWA_TIMEOUT_MS = 15_000;
+
 export function getOpenWAStatus() {
   const config = getConfig();
   return {
@@ -27,21 +29,34 @@ export async function sendOpenWAText(to: string, text: string) {
     throw new Error('OpenWA is not configured: add OPENWA_BASE_URL, OPENWA_API_KEY and OPENWA_SESSION_ID in Vercel Production.');
   }
 
-  const response = await fetch(`${baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/messages/send-text`, {
-    method: 'POST',
-    headers: {
-      'X-API-Key': apiKey,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ chatId: chatIdFromPhone(to), text }),
-    cache: 'no-store',
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), OPENWA_TIMEOUT_MS);
 
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const providerMessage = data?.message ?? data?.error ?? `OpenWA send failed (${response.status})`;
-    throw new Error(String(providerMessage));
+  try {
+    const response = await fetch(`${baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/messages/send-text`, {
+      method: 'POST',
+      headers: {
+        'X-API-Key': apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ chatId: chatIdFromPhone(to), text }),
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const providerMessage = data?.message ?? data?.error ?? `OpenWA send failed (${response.status})`;
+      throw new Error(String(providerMessage));
+    }
+
+    return (data?.messageId ?? data?.id ?? data?.message?.id) as string | undefined;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error(`OpenWA request timed out after ${OPENWA_TIMEOUT_MS / 1000}s.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-
-  return (data?.messageId ?? data?.id ?? data?.message?.id) as string | undefined;
 }
