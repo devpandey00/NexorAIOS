@@ -1,5 +1,7 @@
 name: Repair Workspace Lockfile
 
+# Lockfile repair commits are made by this workflow; ordinary source pushes
+# still trigger the normal CI workflow so production builds stay validated.
 on:
   push:
     branches:
