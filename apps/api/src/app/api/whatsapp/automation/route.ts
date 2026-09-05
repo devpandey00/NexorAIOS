@@ -4,6 +4,7 @@ import { outreachService } from '@nexor/ai';
 import { NEXOR_BRAND } from '@nexor/shared';
 import { getInternationalPricing } from '@/lib/international-pricing';
 import { getSessionUser } from '@/lib/auth';
+import { sendApprovedOutreach } from '@/lib/outreach-sender';
 
 export const runtime = 'nodejs';
 
@@ -26,7 +27,8 @@ function leadEligibility(lead: { businessName: string; website: string | null; n
   const leadType = typeof metadata.leadType === 'string' ? metadata.leadType.toUpperCase() : ''; const source = typeof metadata.source === 'string' ? metadata.source.toUpperCase() : ''; const name = lead.businessName.trim();
   if (!name || JOB_OR_CONTENT_PATTERNS.some((pattern) => pattern.test(name))) return { ok: false, reason: 'Not an operational business lead' };
   if (BLOCKED_SOURCES.has(source) || (leadType && !VALID_LEAD_TYPES.has(leadType))) return { ok: false, reason: `Blocked lead type/source: ${leadType || 'unknown'} / ${source || 'unknown'}` };
-  if (lead.website) { try { if (NON_BUSINESS_PATHS.test(new URL(lead.website).pathname)) return { ok: false, reason: 'Website is a job/content/listing page' }; } catch { return { ok: false, reason: 'Invalid lead website' }; } }
+  if (lead.website) { try { if (NON_BUSINESS_PATHS.test(new URL(lead.website).pathname)) return { ok: false, reason: 'Website is a job/content/listing page' }; } catch { return { ok: false, reason: 'Invalid lead website' }; }
+  }
   return { ok: true, reason: 'Operational business lead', leadType: leadType || 'BUSINESS', source: source || 'UNKNOWN' };
 }
 function researchContext(notes: string | null) { const parsed = parseNotes(notes); return { research: parsed.research ?? {}, score: parsed.score ?? {}, metadata: parsed.metadata ?? {} }; }
@@ -68,6 +70,25 @@ export async function POST(req: NextRequest) {
   const prisma = getPrisma();
   try {
     const body = await req.json(); const action = typeof body?.action === 'string' ? body.action : '';
+
+    if (action === 'run_due') {
+      const now = new Date();
+      const limit = Math.min(Math.max(Number(body.limit ?? process.env.OUTREACH_MAX_PER_RUN ?? 2), 1), 20);
+      const queued = await prisma.outreach.findMany({ where: { channel: OutreachChannel.WHATSAPP, status: { in: [OutreachStatus.APPROVED, OutreachStatus.SCHEDULED] }, scheduledAt: { lte: now }, lead: { whatsapp: { not: null } } }, orderBy: { scheduledAt: 'asc' }, take: limit });
+      let sent = 0; let failed = 0; const results: Array<{ id: string; businessName: string; success: boolean; error?: string }> = [];
+      for (const item of queued) {
+        try {
+          const result = await sendApprovedOutreach(item.id);
+          sent += result.alreadySent ? 0 : 1;
+          results.push({ id: item.id, businessName: item.lead?.businessName ?? 'Unknown lead', success: true });
+        } catch (error) {
+          failed++;
+          results.push({ id: item.id, businessName: item.lead?.businessName ?? 'Unknown lead', success: false, error: error instanceof Error ? error.message : String(error) });
+        }
+      }
+      return NextResponse.json({ success: true, action, queued: queued.length, sent, failed, results, ranAt: now.toISOString() });
+    }
+
     if (action === 'generate') {
       const limit = Math.min(Math.max(Number(body.limit ?? 10), 1), 25); const ids = Array.isArray(body.leadIds) ? body.leadIds.filter((id: unknown): id is string => typeof id === 'string') : [];
       const leads = await prisma.lead.findMany({ where: { ...(ids.length ? { id: { in: ids } } : {}), status: { in: ['NEW', 'RESEARCHED', 'QUALIFIED', 'PITCH_READY'] }, whatsapp: { not: null } }, orderBy: { updatedAt: 'desc' }, take: 100 });
@@ -108,7 +129,7 @@ export async function POST(req: NextRequest) {
       const result = await prisma.outreach.updateMany({ where: { id: { in: ids }, channel: OutreachChannel.WHATSAPP, status: { in: [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED, OutreachStatus.APPROVED, OutreachStatus.SCHEDULED] } }, data: { status: OutreachStatus.CANCELLED } }); return NextResponse.json({ success: true, action, updated: result.count });
     }
     if (action === 'schedule') return jsonError('Manual scheduling is disabled. Approve the draft; Nexor will schedule it automatically.');
-    if (action === 'send') return jsonError('Manual sending is disabled. Approve the draft; Nexor will send it automatically.');
-    return jsonError('Unknown action. Use generate, approve or cancel.');
+    if (action === 'send') return jsonError('Manual sending is disabled. Approve the draft; use Run Due Sends to execute the approved automation now.');
+    return jsonError('Unknown action. Use generate, approve, run_due or cancel.');
   } catch (error) { return jsonError(error instanceof Error ? error.message : String(error), 500); }
 }
