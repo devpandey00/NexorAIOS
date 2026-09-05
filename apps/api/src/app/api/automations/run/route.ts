@@ -20,7 +20,7 @@ type CronSpec = {
 };
 
 function authorized(req: NextRequest) {
-  const secret = process.env.CRON_SECRET || process.env.AUTOMATION_API_SECRET;
+  const secret = process.env.CRON_SECRET;
   if (!secret) return process.env.NODE_ENV !== 'production';
   const supplied = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') || req.headers.get('x-cron-secret') || '';
   return supplied === secret;
@@ -136,7 +136,7 @@ export async function POST(req: NextRequest) {
      )
      INSERT INTO "public"."automation_runs" ("id","schedule_id","status","input","started_at","created_at")
      SELECT gen_random_uuid(),"id",'RUNNING',"input",NOW(),NOW() FROM claimed
-     RETURNING "id","schedule_id","input",(SELECT "workflow" FROM "public"."automation_schedules" WHERE "id"="schedule_id") AS "workflow"`,
+     RETURNING "id","schedule_id","input",(SELECT "workflow" FROM "public"."automation_schedules" WHERE "id"="schedule_id") AS "workflow'`,
   );
 
   const results: Array<Record<string, unknown>> = [];
