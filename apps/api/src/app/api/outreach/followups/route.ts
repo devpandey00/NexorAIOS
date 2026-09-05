@@ -1,9 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { FollowUpStatus, getDatabaseClients, OutreachChannel, OutreachStatus } from '@nexor/database';
+import { getSessionUser } from '@/lib/auth';
 
 function getPrisma() { return getDatabaseClients().write; }
 
-export async function GET() {
+async function authorized(req: NextRequest) {
+  const secret = process.env.OUTREACH_API_SECRET?.trim();
+  if (secret && req.headers.get('authorization') === `Bearer ${secret}`) return true;
+  return Boolean(await getSessionUser(req));
+}
+
+export async function GET(req: NextRequest) {
+  if (!(await authorized(req))) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   try {
     const prisma = getPrisma();
     const followUps = await prisma.followUp.findMany({ where: { status: { in: [FollowUpStatus.PENDING, FollowUpStatus.SCHEDULED] } }, include: { lead: true }, orderBy: { scheduledAt: 'asc' }, take: 200 });
@@ -11,7 +19,8 @@ export async function GET() {
   } catch (error) { return NextResponse.json({ success: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 }); }
 }
 
-export async function POST() {
+export async function POST(req: NextRequest) {
+  if (!(await authorized(req))) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   try {
     const prisma = getPrisma();
     const due = await prisma.followUp.findMany({ where: { status: { in: [FollowUpStatus.PENDING, FollowUpStatus.SCHEDULED] }, scheduledAt: { lte: new Date() } }, include: { lead: true }, orderBy: { scheduledAt: 'asc' }, take: 100 });
@@ -37,6 +46,7 @@ export async function POST() {
 }
 
 export async function PATCH(req: NextRequest) {
+  if (!(await authorized(req))) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   try {
     const prisma = getPrisma();
     const body = await req.json();
