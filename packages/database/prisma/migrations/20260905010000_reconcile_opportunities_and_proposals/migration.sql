@@ -48,12 +48,16 @@ SET lead_id = nl.id
 FROM new_leads nl
 WHERE nl.notes = 'Created while reconciling the legacy opportunities table: ' || o.id::text;
 
+ALTER TABLE public.opportunities
+  ALTER COLUMN name SET NOT NULL,
+  ALTER COLUMN lead_id SET NOT NULL;
+
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_opportunities_lead_id') THEN
     ALTER TABLE public.opportunities
       ADD CONSTRAINT fk_opportunities_lead_id
-      FOREIGN KEY (lead_id) REFERENCES public.leads(id) ON DELETE SET NULL;
+      FOREIGN KEY (lead_id) REFERENCES public.leads(id) ON DELETE CASCADE;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_opportunities_campaign_id') THEN
     ALTER TABLE public.opportunities
