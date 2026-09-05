@@ -1,0 +1,30 @@
+services:
+  openwa:
+    image: ghcr.io/rmyndharis/openwa:latest
+    container_name: nexor-openwa
+    restart: unless-stopped
+    ports:
+      - "${OPENWA_PORT:-2785}:2785"
+    environment:
+      NODE_ENV: production
+      API_MASTER_KEY: ${OPENWA_API_MASTER_KEY:?set OPENWA_API_MASTER_KEY}
+      DATABASE_TYPE: sqlite
+      DATABASE_NAME: /app/data/openwa.sqlite
+      DATABASE_SYNCHRONIZE: "true"
+      SESSION_DATA_PATH: /app/data/sessions
+      PUPPETEER_HEADLESS: "true"
+      PUPPETEER_ARGS: --no-sandbox,--disable-setuid-sandbox,--disable-dev-shm-usage,--disable-gpu
+      STORAGE_TYPE: local
+      STORAGE_LOCAL_PATH: /app/data/media
+      REDIS_ENABLED: "false"
+    volumes:
+      - openwa-data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:2785/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  openwa-data:
