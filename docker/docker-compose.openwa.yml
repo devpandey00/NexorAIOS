@@ -1,0 +1,40 @@
+# NexorAIOS OpenWA gateway
+# Run this on a persistent VPS/server, NOT on Vercel.
+# OpenWA keeps WhatsApp authentication/session state in /app/data.
+services:
+  openwa:
+    image: ghcr.io/rmyndharis/openwa:latest
+    container_name: nexoraios-openwa
+    restart: unless-stopped
+    init: true
+    shm_size: 1gb
+    ports:
+      - "2785:2785"
+    environment:
+      NODE_ENV: production
+      API_PORT: 2785
+      LOG_LEVEL: info
+      DATABASE_TYPE: sqlite
+      DATABASE_NAME: /app/data/openwa.sqlite
+      DATABASE_SYNCHRONIZE: "false"
+      ENGINE_TYPE: ${OPENWA_ENGINE_TYPE:-whatsapp-web.js}
+      SESSION_DATA_PATH: /app/data/sessions
+      STORAGE_TYPE: local
+      STORAGE_LOCAL_PATH: /app/data/media
+      PLUGINS_ENABLED: "true"
+      PLUGINS_DIR: /app/data/plugins
+      PUPPETEER_HEADLESS: "true"
+      PUPPETEER_ARGS: "--no-sandbox,--disable-setuid-sandbox,--disable-dev-shm-usage,--disable-gpu"
+      API_MASTER_KEY: ${OPENWA_API_MASTER_KEY:?Set OPENWA_API_MASTER_KEY before starting OpenWA}
+    volumes:
+      - openwa-data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:2785/api/health/ready', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  openwa-data:
+    driver: local
