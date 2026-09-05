@@ -3,13 +3,15 @@
 # OpenWA keeps WhatsApp authentication/session state in /app/data.
 services:
   openwa:
-    image: ghcr.io/rmyndharis/openwa:latest
+    image: ghcr.io/rmyndharis/openwa:0.23.3
     container_name: nexoraios-openwa
     restart: unless-stopped
     init: true
     shm_size: 1gb
+    # Keep the API private to the host. Put it behind a TLS reverse proxy
+    # (Caddy/Nginx/Traefik) before NexorAIOS accesses it over the internet.
     ports:
-      - "2785:2785"
+      - "127.0.0.1:2785:2785"
     environment:
       NODE_ENV: production
       API_PORT: 2785
