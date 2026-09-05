@@ -17,7 +17,7 @@
     "lint:fix": "pnpm -r lint:fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "pnpm --filter @nexor/logger build && pnpm --filter @nexor/database build && pnpm --filter @nexor/search build && pnpm -r typecheck",
+    "typecheck": "pnpm -r build && pnpm -r typecheck",
     "test": "pnpm -r test",
     "test:ci": "pnpm -r test:ci",
     "clean": "pnpm -r clean && rm -rf node_modules",
@@ -29,7 +29,7 @@
     "docker:up": "docker compose -f docker/docker-compose.yml up -d",
     "docker:down": "docker compose -f docker/docker-compose.yml down",
     "docker:logs": "docker compose -f docker/docker-compose.yml logs -f",
-    "docker:reset": "docker compose -f docker/docker-compose.yml down -v && docker compose -f docker/docker-compose.yml up -d",
+    "docker:reset": "pnpm docker:down && docker compose -f docker/docker-compose.yml down -v && docker compose -f docker/docker-compose.yml up -d",
     "prepare": "husky"
   },
   "devDependencies": {
