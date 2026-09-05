@@ -3,6 +3,9 @@ import DashboardLayout from '@/components/dashboard/DashboardLayout';
 import AiosOperationsPanel from '@/components/dashboard/AiosOperationsPanel';
 import { getCommandCenter } from '@/lib/aios-platform';
 
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 const money = (n: number) => new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(n);
 
 export default async function AiosCommandCenter() {
