@@ -11,71 +11,74 @@ async function db() {
   if (!initialized) {
     if (!initializing) {
       initializing = (async () => {
-        await prisma.$executeRawUnsafe(`
-          CREATE TABLE IF NOT EXISTS public.aios_companies (
+        const schemaStatements = [
+          `CREATE TABLE IF NOT EXISTS public.aios_companies (
             id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name varchar(255) NOT NULL, website varchar(1000), industry varchar(150), location varchar(255), owner_name varchar(255), notes text,
             created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(), UNIQUE(name, website)
-          );
-          CREATE TABLE IF NOT EXISTS public.aios_contacts (
+          )`,
+          `CREATE TABLE IF NOT EXISTS public.aios_contacts (
             id uuid PRIMARY KEY DEFAULT gen_random_uuid(), company_id uuid REFERENCES public.aios_companies(id) ON DELETE CASCADE, lead_id uuid REFERENCES public.leads(id) ON DELETE SET NULL,
             name varchar(255), email varchar(255), phone varchar(50), linkedin varchar(1000), instagram varchar(1000), created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
-          );
-          CREATE TABLE IF NOT EXISTS public.aios_approvals (
+          )`,
+          `CREATE TABLE IF NOT EXISTS public.aios_approvals (
             id uuid PRIMARY KEY DEFAULT gen_random_uuid(), action varchar(100) NOT NULL, target_type varchar(100) NOT NULL, target_id varchar(255), payload jsonb NOT NULL DEFAULT '{}'::jsonb,
             reason text, status varchar(40) NOT NULL DEFAULT 'PENDING', created_by uuid, approved_by uuid, created_at timestamptz NOT NULL DEFAULT now(), approved_at timestamptz, executed_at timestamptz,
             provider_response jsonb, error text
-          );
-          CREATE INDEX IF NOT EXISTS idx_aios_approvals_status_created ON public.aios_approvals(status, created_at);
-          CREATE TABLE IF NOT EXISTS public.aios_automations (
+          )`,
+          `CREATE INDEX IF NOT EXISTS idx_aios_approvals_status_created ON public.aios_approvals(status, created_at)`,
+          `CREATE TABLE IF NOT EXISTS public.aios_automations (
             id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name varchar(255) NOT NULL, description text, enabled boolean NOT NULL DEFAULT true, trigger_type varchar(100) NOT NULL,
             conditions jsonb NOT NULL DEFAULT '[]'::jsonb, actions jsonb NOT NULL DEFAULT '[]'::jsonb, created_by uuid, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
-          );
-          CREATE TABLE IF NOT EXISTS public.aios_automation_runs (
+          )`,
+          `CREATE TABLE IF NOT EXISTS public.aios_automation_runs (
             id uuid PRIMARY KEY DEFAULT gen_random_uuid(), automation_id uuid NOT NULL REFERENCES public.aios_automations(id) ON DELETE CASCADE, status varchar(40) NOT NULL DEFAULT 'QUEUED',
             trigger_payload jsonb, result jsonb, error text, attempts int NOT NULL DEFAULT 0, started_at timestamptz, completed_at timestamptz, created_at timestamptz NOT NULL DEFAULT now()
-          );
-          CREATE INDEX IF NOT EXISTS idx_aios_automation_runs_status ON public.aios_automation_runs(status, created_at);
-          CREATE TABLE IF NOT EXISTS public.aios_invoices (
+          )`,
+          `CREATE INDEX IF NOT EXISTS idx_aios_automation_runs_status ON public.aios_automation_runs(status, created_at)`,
+          `CREATE TABLE IF NOT EXISTS public.aios_invoices (
             id uuid PRIMARY KEY DEFAULT gen_random_uuid(), invoice_number varchar(80) NOT NULL UNIQUE, client_name varchar(255) NOT NULL, client_email varchar(255), opportunity_id uuid REFERENCES public.opportunities(id) ON DELETE SET NULL,
             subtotal numeric(12,2) NOT NULL DEFAULT 0, discount numeric(12,2) NOT NULL DEFAULT 0, tax numeric(12,2) NOT NULL DEFAULT 0, total numeric(12,2) NOT NULL DEFAULT 0,
             currency varchar(10) NOT NULL DEFAULT 'INR', status varchar(40) NOT NULL DEFAULT 'DRAFT', issue_date timestamptz NOT NULL DEFAULT now(), due_date timestamptz, notes text, created_by uuid,
             created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
-          );
-          CREATE TABLE IF NOT EXISTS public.aios_invoice_items (
+          )`,
+          `CREATE TABLE IF NOT EXISTS public.aios_invoice_items (
             id uuid PRIMARY KEY DEFAULT gen_random_uuid(), invoice_id uuid NOT NULL REFERENCES public.aios_invoices(id) ON DELETE CASCADE, description varchar(500) NOT NULL,
             quantity numeric(12,2) NOT NULL DEFAULT 1, unit_price numeric(12,2) NOT NULL DEFAULT 0, amount numeric(12,2) NOT NULL DEFAULT 0
-          );
-          CREATE TABLE IF NOT EXISTS public.aios_payments (
+          )`,
+          `CREATE TABLE IF NOT EXISTS public.aios_payments (
             id uuid PRIMARY KEY DEFAULT gen_random_uuid(), invoice_id uuid NOT NULL REFERENCES public.aios_invoices(id) ON DELETE CASCADE, amount numeric(12,2) NOT NULL,
             method varchar(80), reference varchar(255), status varchar(40) NOT NULL DEFAULT 'RECORDED', paid_at timestamptz, provider_response jsonb, created_by uuid, created_at timestamptz NOT NULL DEFAULT now()
-          );
-          CREATE INDEX IF NOT EXISTS idx_aios_payments_invoice ON public.aios_payments(invoice_id);
-          CREATE TABLE IF NOT EXISTS public.aios_client_workspaces (
+          )`,
+          `CREATE INDEX IF NOT EXISTS idx_aios_payments_invoice ON public.aios_payments(invoice_id)`,
+          `CREATE TABLE IF NOT EXISTS public.aios_client_workspaces (
             id uuid PRIMARY KEY DEFAULT gen_random_uuid(), client_name varchar(255) NOT NULL, client_email varchar(255), company_name varchar(255), owner_user_id uuid,
             status varchar(40) NOT NULL DEFAULT 'ONBOARDING', goals text, services jsonb NOT NULL DEFAULT '[]'::jsonb, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
-          );
-          CREATE TABLE IF NOT EXISTS public.aios_client_onboarding (
+          )`,
+          `CREATE TABLE IF NOT EXISTS public.aios_client_onboarding (
             id uuid PRIMARY KEY DEFAULT gen_random_uuid(), workspace_id uuid NOT NULL REFERENCES public.aios_client_workspaces(id) ON DELETE CASCADE, checklist jsonb NOT NULL DEFAULT '{}'::jsonb,
             completed_at timestamptz, updated_at timestamptz NOT NULL DEFAULT now(), UNIQUE(workspace_id)
-          );
-          CREATE TABLE IF NOT EXISTS public.aios_notifications (
+          )`,
+          `CREATE TABLE IF NOT EXISTS public.aios_notifications (
             id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid, type varchar(100) NOT NULL, title varchar(255) NOT NULL, body text, href varchar(1000), read boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now()
-          );
-          CREATE INDEX IF NOT EXISTS idx_aios_notifications_user_read ON public.aios_notifications(user_id, read, created_at);
-          CREATE TABLE IF NOT EXISTS public.aios_audit_logs (
+          )`,
+          `CREATE INDEX IF NOT EXISTS idx_aios_notifications_user_read ON public.aios_notifications(user_id, read, created_at)`,
+          `CREATE TABLE IF NOT EXISTS public.aios_audit_logs (
             id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid, action varchar(150) NOT NULL, target_type varchar(100), target_id varchar(255), before_state jsonb, after_state jsonb,
             provider_response jsonb, success boolean NOT NULL DEFAULT true, error text, created_at timestamptz NOT NULL DEFAULT now()
-          );
-          CREATE INDEX IF NOT EXISTS idx_aios_audit_logs_target ON public.aios_audit_logs(target_type, target_id, created_at);
-          CREATE TABLE IF NOT EXISTS public.aios_agent_runs (
+          )`,
+          `CREATE INDEX IF NOT EXISTS idx_aios_audit_logs_target ON public.aios_audit_logs(target_type, target_id, created_at)`,
+          `CREATE TABLE IF NOT EXISTS public.aios_agent_runs (
             id uuid PRIMARY KEY DEFAULT gen_random_uuid(), agent varchar(100) NOT NULL, status varchar(40) NOT NULL DEFAULT 'QUEUED', input jsonb, output jsonb, error text, user_id uuid,
             started_at timestamptz, completed_at timestamptz, created_at timestamptz NOT NULL DEFAULT now()
-          );
-          CREATE TABLE IF NOT EXISTS public.aios_forecast_snapshots (
+          )`,
+          `CREATE TABLE IF NOT EXISTS public.aios_forecast_snapshots (
             id uuid PRIMARY KEY DEFAULT gen_random_uuid(), period_start timestamptz NOT NULL, period_end timestamptz NOT NULL, pipeline numeric(12,2) NOT NULL DEFAULT 0,
             weighted_pipeline numeric(12,2) NOT NULL DEFAULT 0, won_revenue numeric(12,2) NOT NULL DEFAULT 0, outstanding numeric(12,2) NOT NULL DEFAULT 0, methodology jsonb NOT NULL DEFAULT '{}'::jsonb, created_at timestamptz NOT NULL DEFAULT now()
-          );
-        `);
+          )`,
+        ];
+        for (const statement of schemaStatements) {
+          await prisma.$executeRawUnsafe(statement);
+        }
         initialized = true;
       })().finally(() => { initializing = null; });
     }
