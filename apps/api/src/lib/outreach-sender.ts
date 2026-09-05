@@ -7,6 +7,7 @@ import {
   OutreachChannel,
   OutreachStatus,
 } from '@nexor/database';
+import { getOpenWAStatus, sendOpenWAText } from './openwa';
 
 function getPrisma() { return getDatabaseClients().write; }
 
@@ -39,20 +40,25 @@ function whatsappConfig() {
 }
 
 export function getWhatsAppProviderStatus() {
+  const openwa = getOpenWAStatus();
   const config = whatsappConfig();
   return {
-    configured: config.configured,
-    mode: config.templateName ? 'template' : 'session_text',
+    configured: openwa.configured || config.configured,
+    mode: openwa.configured ? 'openwa' : (config.templateName ? 'template' : 'session_text'),
+    openwaConfigured: openwa.configured,
     templateConfigured: Boolean(config.templateName),
     templateLanguage: config.templateLanguage,
   };
 }
 
 async function sendWhatsApp(to: string, message: string) {
+  const openwa = getOpenWAStatus();
+  if (openwa.configured) return sendOpenWAText(to, message);
+
   const { token, phoneNumberId, templateName, templateLanguage } = whatsappConfig();
   const version = process.env.WHATSAPP_API_VERSION ?? 'v23.0';
   if (!token || !phoneNumberId) {
-    throw new Error('WhatsApp Cloud API is not configured: add WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID in Vercel Production.');
+    throw new Error('WhatsApp provider is not configured: add OpenWA (OPENWA_BASE_URL, OPENWA_API_KEY, OPENWA_SESSION_ID) or Meta Cloud API credentials in Vercel Production.');
   }
 
   const recipient = to.replace(/\D/g, '');
