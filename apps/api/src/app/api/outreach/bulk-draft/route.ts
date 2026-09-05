@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabaseClients, LeadStatus, OutreachChannel, OutreachStatus } from '@nexor/database';
+import { getSessionUser } from '@/lib/auth';
 
 function getPrisma() { return getDatabaseClients().write; }
 const MAX_BATCH = 100;
 const SUPPORTED_CHANNELS: OutreachChannel[] = [OutreachChannel.EMAIL, OutreachChannel.WHATSAPP];
 
-function authorized(req: NextRequest) {
-  const secret = process.env.OUTREACH_API_SECRET;
-  return !secret || req.headers.get('authorization') === `Bearer ${secret}`;
+async function authorized(req: NextRequest) {
+  const secret = process.env.OUTREACH_API_SECRET?.trim();
+  if (secret && req.headers.get('authorization') === `Bearer ${secret}`) return true;
+  return Boolean(await getSessionUser(req));
 }
 
 function buildMessage(channel: OutreachChannel, lead: { businessName: string; ownerName: string | null; website: string | null; auditScore: number | null }) {
@@ -18,7 +20,7 @@ function buildMessage(channel: OutreachChannel, lead: { businessName: string; ow
 }
 
 export async function POST(req: NextRequest) {
-  if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  if (!(await authorized(req))) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   try {
     const prisma = getPrisma();
     const body = await req.json().catch(() => ({}));
