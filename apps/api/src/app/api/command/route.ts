@@ -3,8 +3,15 @@ import { commandExecutorService } from '@nexor/ai';
 import { getDatabaseClients } from '@nexor/database';
 import { MemoryService } from '@nexor/core';
 import { runAutopilot } from '@/lib/autopilot-runner';
+import { getSessionUser } from '@/lib/auth';
 
 export const maxDuration = 300;
+
+async function authorized(req: NextRequest) {
+  const secret = process.env.OUTREACH_API_SECRET?.trim();
+  if (secret && req.headers.get('authorization') === `Bearer ${secret}`) return true;
+  return Boolean(await getSessionUser(req));
+}
 
 function getDb() {
   return getDatabaseClients().write;
@@ -20,6 +27,7 @@ function isStartCommand(query: string) {
 }
 
 export async function POST(req: NextRequest) {
+  if (!(await authorized(req))) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   const startedAt = Date.now();
 
   try {
