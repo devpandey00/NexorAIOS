@@ -29,30 +29,31 @@ export class LeadSearchService {
     const normalizedQuery = query.trim();
     if (!normalizedQuery) return { success: true, count: 0, leads: [], provider: 'none' };
     const errors: string[] = [];
-    // Free is the safe default. Paid providers are only used when explicitly selected.
-    const mode = (process.env.SEARCH_PROVIDER ?? 'free').toLowerCase();
+    // Auto mode tries every configured provider instead of stopping at one dead provider.
+    // Set SEARCH_PROVIDER to google, serper, or free to force a single provider.
+    const mode = (process.env.SEARCH_PROVIDER ?? 'auto').toLowerCase();
 
-    if (mode === 'google') {
+    if (mode === 'google' || mode === 'auto') {
       if (process.env.GOOGLE_PLACES_API_KEY) {
         try {
           const leads = await googleSearch(normalizedQuery);
           if (leads.length) return { success: true, count: leads.length, leads, provider: 'google-places', providerErrors: errors };
           errors.push('google-places: zero usable results');
         } catch (error) { errors.push(`google-places: ${error instanceof Error ? error.message : String(error)}`); }
-      } else errors.push('google-places: GOOGLE_PLACES_API_KEY is not configured');
+      } else if (mode === 'google') errors.push('google-places: GOOGLE_PLACES_API_KEY is not configured');
     }
 
-    if (mode === 'serper') {
+    if (mode === 'serper' || mode === 'auto') {
       if (process.env.SERPER_API_KEY) {
         try {
           const leads = await serperSearch(normalizedQuery);
           if (leads.length) return { success: true, count: leads.length, leads, provider: 'serper', providerErrors: errors };
           errors.push('serper: zero usable results');
         } catch (error) { errors.push(`serper: ${error instanceof Error ? error.message : String(error)}`); }
-      } else errors.push('serper: SERPER_API_KEY is not configured');
+      } else if (mode === 'serper') errors.push('serper: SERPER_API_KEY is not configured');
     }
 
-    if (mode === 'free') {
+    if (mode === 'free' || mode === 'auto') {
       try {
         const leads = await openStreetMapSearch(normalizedQuery);
         if (leads.length) return { success: true, count: leads.length, leads, provider: 'openstreetmap', providerErrors: errors };
