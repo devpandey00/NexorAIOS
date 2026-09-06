@@ -4,7 +4,8 @@ import { outreachService } from '@nexor/ai';
 import { NEXOR_BRAND } from '@nexor/shared';
 import { getInternationalPricing } from '@/lib/international-pricing';
 import { getSessionUser } from '@/lib/auth';
-import { sendApprovedOutreach, getWhatsAppProviderStatus } from '@/lib/outreach-sender';
+import { sendApprovedOutreach, getWhatsAppProviderStatus, sendReportEmail } from '@/lib/outreach-sender';
+import { createWhatsAppApprovalToken, getApprovalBaseUrl } from '@/lib/whatsapp-approval';
 
 export const runtime = 'nodejs';
 function getPrisma() { return getDatabaseClients().write; }
@@ -21,15 +22,19 @@ const NON_BUSINESS_PATHS = /\/(jobs?|careers?|vacancies|blog|article|news|catego
 const VALID_LEAD_TYPES = new Set(['BUSINESS','COMPANY','LOCAL_BUSINESS','AGENCY','PROFESSIONAL_SERVICE']);
 const BLOCKED_SOURCES = new Set(['JOB','JOB_SEARCH','JOB-SEARCH','RECRUITMENT','CAREER','JOB_PORTAL']);
 function parseNotes(notes: string | null) { if (!notes) return {} as Record<string, any>; try { const parsed = JSON.parse(notes); return parsed && typeof parsed === 'object' ? parsed as Record<string, any> : {}; } catch { return {}; } }
-function leadEligibility(lead: { businessName: string; website: string | null; notes: string | null }) {
+function leadEligibility(lead: { businessName: string; website: string | null; notes: string | null; country?: string | null; whatsapp?: string | null }) {
   const parsed = parseNotes(lead.notes); const metadata = parsed.metadata ?? parsed;
   const leadType = typeof metadata.leadType === 'string' ? metadata.leadType.toUpperCase() : '';
   const source = typeof metadata.source === 'string' ? metadata.source.toUpperCase() : '';
+  const optIn = metadata.whatsappOptIn === true || metadata.whatsappOptIn === 'true' || metadata.whatsapp_opt_in === true || metadata.whatsapp_opt_in === 'true';
   const name = lead.businessName.trim();
   if (!name || JOB_OR_CONTENT_PATTERNS.some((p) => p.test(name))) return { ok:false, reason:'Not an operational business lead' };
   if (BLOCKED_SOURCES.has(source) || (leadType && !VALID_LEAD_TYPES.has(leadType))) return { ok:false, reason:`Blocked lead type/source: ${leadType || 'unknown'} / ${source || 'unknown'}` };
   if (lead.website) { try { if (NON_BUSINESS_PATHS.test(new URL(lead.website).pathname)) return { ok:false, reason:'Website is a job/content/listing page' }; } catch { return { ok:false, reason:'Invalid lead website' }; } }
-  return { ok:true, reason:'Operational business lead', leadType:leadType || 'BUSINESS', source:source || 'UNKNOWN' };
+  if (!lead.country?.trim() || /^(india|in|ind)$/i.test(lead.country.trim())) return { ok:false, reason:'International clients only: India/unknown country excluded' };
+  if (!lead.whatsapp) return { ok:false, reason:'NOT CONTACTABLE: WhatsApp number missing' };
+  if (!optIn) return { ok:false, reason:'WHATSAPP HOLD: recipient opt-in is not recorded' };
+  return { ok:true, reason:'International operational business lead with recorded WhatsApp opt-in', leadType:leadType || 'BUSINESS', source:source || 'UNKNOWN' };
 }
 function researchContext(notes: string | null) { const parsed = parseNotes(notes); return { research:parsed.research ?? {}, score:parsed.score ?? {} }; }
 function jsonError(message:string,status=400) { return NextResponse.json({success:false,error:message},{status}); }
@@ -41,20 +46,12 @@ function fallbackWhatsAppDraft(lead:{businessName:string;ownerName:string|null},
   return `${greeting}\n\n${observation}\n\nI help businesses improve their website, Google/Meta Ads and lead generation. If you'd like, I can share a few specific suggestions for ${lead.businessName.trim()} without any obligation.\n\nBest,\n${NEXOR_BRAND.founder}\n${NEXOR_BRAND.name}`;
 }
 function automationReady() { const provider=getWhatsAppProviderStatus(); return { provider, ready:Boolean(provider.openwaConfigured || (provider.configured && provider.templateConfigured)) }; }
-async function promoteReadyDrafts(prisma:any) {
-  const { ready } = automationReady(); if (!ready) return 0;
-  const candidates=await prisma.outreach.findMany({where:{channel:OutreachChannel.WHATSAPP,status:{in:[OutreachStatus.DRAFT,OutreachStatus.APPROVAL_REQUIRED]}},select:{id:true},take:100});
-  if (!candidates.length) return 0;
-  const scheduledAt=new Date(Date.now()+5*60*1000);
-  const result=await prisma.outreach.updateMany({where:{id:{in:candidates.map((x:any)=>x.id)},status:{in:[OutreachStatus.DRAFT,OutreachStatus.APPROVAL_REQUIRED]}},data:{status:OutreachStatus.APPROVED,approvedAt:new Date(),scheduledAt,error:null}});
-  return result.count;
-}
 
 export async function GET(req:NextRequest) {
   if (!(await authorized(req))) return jsonError('Unauthorized',401); const prisma=getPrisma();
   try {
     const oneDayAgo=new Date(Date.now()-86400000);
-    const [draftsRaw,approved,scheduled,rawLeads,sent,failed,failedLast24h,recentFailedRaw]=await Promise.all([
+    const [draftsRaw,approved,scheduled,rawLeads,sent,failed,failedLast24h,recentFailedRaw,waitingCount]=await Promise.all([
       prisma.outreach.findMany({where:{channel:OutreachChannel.WHATSAPP,status:{in:[OutreachStatus.DRAFT,OutreachStatus.APPROVAL_REQUIRED]}},include:{lead:true},orderBy:{createdAt:'desc'},take:100}),
       prisma.outreach.findMany({where:{channel:OutreachChannel.WHATSAPP,status:OutreachStatus.APPROVED},include:{lead:true},orderBy:{approvedAt:'asc'},take:100}),
       prisma.outreach.findMany({where:{channel:OutreachChannel.WHATSAPP,status:OutreachStatus.SCHEDULED},include:{lead:true},orderBy:{scheduledAt:'asc'},take:100}),
@@ -63,15 +60,18 @@ export async function GET(req:NextRequest) {
       prisma.outreach.count({where:{channel:OutreachChannel.WHATSAPP,status:OutreachStatus.FAILED}}),
       prisma.outreach.count({where:{channel:OutreachChannel.WHATSAPP,status:OutreachStatus.FAILED,updatedAt:{gte:oneDayAgo}}}),
       prisma.outreach.findMany({where:{channel:OutreachChannel.WHATSAPP,status:OutreachStatus.FAILED},include:{lead:true},orderBy:{updatedAt:'desc'},take:20}),
+      prisma.outreach.count({where:{channel:OutreachChannel.WHATSAPP,status:OutreachStatus.APPROVAL_REQUIRED}}),
     ]);
     const drafts=draftsRaw.filter((x:any)=>leadEligibility(x.lead).ok);
-    const approvedValid=approved.filter((x:any)=>leadEligibility(x.lead).ok&&Boolean(x.lead.whatsapp));
+    const approvedValid=approved.filter((x:any)=>leadEligibility(x.lead).ok);
+    const scheduledValid=scheduled.filter((x:any)=>leadEligibility(x.lead).ok);
     const existing=new Set([...draftsRaw,...approved,...scheduled].map((x:any)=>x.leadId));
     const rejected=[...draftsRaw,...approved,...scheduled].filter((x:any)=>!leadEligibility(x.lead).ok).map((x:any)=>({id:x.id,businessName:x.lead.businessName,reason:leadEligibility(x.lead).reason}));
-    const notContactable=rawLeads.filter((x:any)=>leadEligibility(x).ok&&!x.whatsapp&&!existing.has(x.id)).slice(0,50).map((x:any)=>({id:x.id,businessName:x.businessName,reason:'NOT CONTACTABLE: WhatsApp number missing'}));
+    const notContactable=rawLeads.filter((x:any)=>leadEligibility({...x,whatsapp:null}).reason==='NOT CONTACTABLE: WhatsApp number missing'&&!existing.has(x.id)).slice(0,50).map((x:any)=>({id:x.id,businessName:x.businessName,reason:'NOT CONTACTABLE: WhatsApp number missing'}));
+    const whatsappHold=rawLeads.filter((x:any)=>leadEligibility(x).reason==='WHATSAPP HOLD: recipient opt-in is not recorded'&&!existing.has(x.id)).slice(0,50).map((x:any)=>({id:x.id,businessName:x.businessName,reason:'WHATSAPP HOLD: recipient opt-in is not recorded'}));
     const recentFailed=recentFailedRaw.map((x:any)=>({id:x.id,businessName:x.lead.businessName,reason:x.error??'Send failed',updatedAt:x.updatedAt.toISOString(),isRecent:x.updatedAt>=oneDayAgo}));
     const state=automationReady();
-    return NextResponse.json({success:true,provider:{...state.provider,automationReady:state.ready},stats:{drafts:drafts.length,approved:approvedValid.length,scheduled:scheduled.length,sent,failed,failedLast24h,replies:0,notContactable:notContactable.length,rejected:rejected.length},drafts,approved:approvedValid,scheduled,rejected,notContactable,recentFailed});
+    return NextResponse.json({success:true,provider:{...state.provider,automationReady:state.ready},batch:{size:20,waitingForApproval:waitingCount>0,waitingCount},stats:{drafts:drafts.length,approved:approvedValid.length,scheduled:scheduledValid.length,sent,failed,failedLast24h,replies:0,notContactable:notContactable.length,whatsappHold:whatsappHold.length,rejected:rejected.length},drafts,approved:approvedValid,scheduled:scheduledValid,rejected,notContactable,whatsappHold,recentFailed});
   } catch(error) { return jsonError(error instanceof Error?error.message:String(error),500); }
 }
 
@@ -80,17 +80,27 @@ export async function POST(req:NextRequest) {
   try {
     const body=await req.json(); const action=typeof body?.action==='string'?body.action:'';
     if (action==='run_due') {
-      const now=new Date(); const limit=Math.min(Math.max(Number(body.limit??process.env.OUTREACH_MAX_PER_RUN??2),1),20);
-      const candidates=await prisma.outreach.findMany({where:{channel:OutreachChannel.WHATSAPP,status:{in:[OutreachStatus.APPROVED,OutreachStatus.SCHEDULED]},scheduledAt:{lte:now}},orderBy:{scheduledAt:'asc'},take:Math.min(limit*5,100)});
-      const leadIds=[...new Set(candidates.map((x:any)=>x.leadId))]; const leads=await prisma.lead.findMany({where:{id:{in:leadIds},whatsapp:{not:null}},select:{id:true,businessName:true}}); const names=new Map(leads.map((x:any)=>[x.id,x.businessName]));
+      const now=new Date(); const limit=Math.min(Math.max(Number(body.limit??process.env.WHATSAPP_BATCH_SIZE??20),1),20); const delayMs=Math.max(Number(process.env.WHATSAPP_MIN_DELAY_MS??10000),10000);
+      const candidates=await prisma.outreach.findMany({where:{channel:OutreachChannel.WHATSAPP,status:OutreachStatus.APPROVED,scheduledAt:{lte:now}},orderBy:{scheduledAt:'asc'},take:limit});
       let sent=0,failed=0; const results:any[]=[];
-      for (const item of candidates.filter((x:any)=>names.has(x.leadId)).slice(0,limit)) { try { const result=await sendApprovedOutreach(item.id); if(!result.alreadySent) sent++; results.push({id:item.id,businessName:names.get(item.leadId)??'Unknown',success:true}); } catch(error) { failed++; results.push({id:item.id,businessName:names.get(item.leadId)??'Unknown',success:false,error:error instanceof Error?error.message:String(error)}); } }
-      return NextResponse.json({success:true,action,queued:candidates.length,sent,failed,results,ranAt:now.toISOString()});
+      for (const [index,item] of candidates.entries()) {
+        if (index>0) await new Promise((resolve)=>setTimeout(resolve,delayMs));
+        try { const result=await sendApprovedOutreach(item.id); if(!result.alreadySent) sent++; results.push({id:item.id,success:true}); }
+        catch(error) { failed++; results.push({id:item.id,success:false,error:error instanceof Error?error.message:String(error)}); }
+      }
+      if (candidates.length) {
+        const report=`WhatsApp batch report\n\nApproved batch size: ${candidates.length}\nSent: ${sent}\nFailed: ${failed}\nMinimum send gap: ${delayMs}ms\nFinished: ${new Date().toISOString()}\n\n${results.map((r:any)=>`${r.success?'SENT':'FAILED'} ${r.id}${r.error?` — ${r.error}`:''}`).join('\n')}`;
+        await sendReportEmail(`Nexor WhatsApp batch report — ${sent} sent, ${failed} failed`,report).catch((error)=>console.error('[WHATSAPP REPORT EMAIL]',error));
+      }
+      return NextResponse.json({success:true,action,queued:candidates.length,sent,failed,results,ranAt:now.toISOString(),delayMs});
     }
     if (action==='generate') {
-      const limit=Math.min(Math.max(Number(body.limit??10),1),25); const ids=Array.isArray(body.leadIds)?body.leadIds.filter((x:unknown):x is string=>typeof x==='string'):[];
+      const limit=Math.min(Math.max(Number(body.limit??20),1),20); const ids=Array.isArray(body.leadIds)?body.leadIds.filter((x:unknown):x is string=>typeof x==='string'):[];
+      const activeBatch=await prisma.outreach.count({where:{channel:OutreachChannel.WHATSAPP,status:{in:[OutreachStatus.APPROVAL_REQUIRED,OutreachStatus.APPROVED,OutreachStatus.SCHEDULED]}}});
+      if (activeBatch>0) return NextResponse.json({success:true,action,created:0,skipped:0,autoApproved:0,awaitingApproval:true,activeBatch,provider:automationReady().provider,automationReady:automationReady().ready,message:'Current WhatsApp batch is waiting for approval or sending. No new batch was generated.'});
       const leads=await prisma.lead.findMany({where:{...(ids.length?{id:{in:ids}}:{}),status:{in:['NEW','RESEARCHED','QUALIFIED','PITCH_READY']},whatsapp:{not:null}},orderBy:{updatedAt:'desc'},take:100});
-      const state=automationReady(); let created=0,skipped=0,autoApproved=0; const errors:string[]=[],rejected:string[]=[]; const generatedMessages=new Set<string>();
+      const state=automationReady(); let created=0,skipped=0; const errors:string[]=[],rejected:string[]=[],generatedMessages=new Set<string>(),createdIds:string[]=[];
+      if (!state.ready) return NextResponse.json({success:false,action,created:0,skipped:0,awaitingApproval:false,provider:state.provider,automationReady:false,error:state.provider.configured&&!state.provider.templateConfigured?'Meta WhatsApp first-contact sending is blocked until an approved template is configured.':'WhatsApp provider is not configured.'},{status:409});
       for (const lead of leads) {
         if(created>=limit) break; const eligibility=leadEligibility(lead); if(!eligibility.ok){rejected.push(`${lead.businessName}: ${eligibility.reason}`);continue;}
         const existing=await prisma.outreach.findFirst({where:{leadId:lead.id,channel:OutreachChannel.WHATSAPP,status:{in:[OutreachStatus.DRAFT,OutreachStatus.APPROVAL_REQUIRED,OutreachStatus.APPROVED,OutreachStatus.SCHEDULED]}}}); if(existing){skipped++;continue;}
@@ -98,15 +108,30 @@ export async function POST(req:NextRequest) {
         try {
           for(let attempt=0;attempt<2&&!message;attempt++) { try { const generated=await outreachService.generate({businessName:lead.businessName,ownerName:lead.ownerName,niche:lead.niche,country:lead.country,website:lead.website,whatsapp:lead.whatsapp,auditScore:lead.auditScore,notes:lead.notes,verifiedResearch:context.research,verifiedScore:context.score,leadMetadata:{leadType:eligibility.leadType,source:eligibility.source},internationalPricing:pricing,uniquenessInstruction:`Create a genuinely different WhatsApp message for ${lead.businessName}. Use one or two verified findings only. If a service is discussed, use only these standard ${pricing.currency} client-facing prices: website ${pricing.website}, Google Ads ${pricing.googleAds}/mo, Meta Ads ${pricing.metaAds}/mo, Google Business Profile setup ${pricing.googleBusinessProfile}, social media ${pricing.socialMedia}/mo. Ad spend is separate. Do not reveal INR or internal pricing.`}); const candidate=typeof generated?.whatsapp==='string'?generated.whatsapp.trim():''; if(candidate&&!generatedMessages.has(candidate.toLowerCase())) message=candidate; } catch(error) { if(attempt===1) errors.push(`${lead.businessName}: AI unavailable, used safe fallback`); } }
           if(!message) message=fallbackWhatsAppDraft(lead,context.research); generatedMessages.add(message.toLowerCase());
-          const status=state.ready?OutreachStatus.APPROVED:OutreachStatus.DRAFT; const scheduledAt=state.ready?new Date(Date.now()+5*60*1000):null;
-          await prisma.outreach.create({data:{leadId:lead.id,channel:OutreachChannel.WHATSAPP,status,message,approvedAt:state.ready?new Date():null,scheduledAt,error:null}}); created++; if(state.ready) autoApproved++;
+          await prisma.outreach.create({data:{leadId:lead.id,channel:OutreachChannel.WHATSAPP,status:OutreachStatus.APPROVAL_REQUIRED,message,approvedAt:null,scheduledAt:null,error:null}}); createdIds.push(lead.id); created++;
         } catch(error) { errors.push(`${lead.businessName}: ${error instanceof Error?error.message:String(error)}`); }
       }
-      const promoted=await promoteReadyDrafts(prisma); autoApproved+=promoted;
-      return NextResponse.json({success:true,action,considered:leads.length,created,skipped,autoApproved,promoted,provider:state.provider,automationReady:state.ready,rejected,errors});
+      let approvalEmailSent=false; let approvalUrl='';
+      if (createdIds.length) {
+        try {
+          const rows=await prisma.outreach.findMany({where:{leadId:{in:createdIds},channel:OutreachChannel.WHATSAPP,status:OutreachStatus.APPROVAL_REQUIRED},include:{lead:true},orderBy:{createdAt:'asc'},take:20});
+          const token=createWhatsAppApprovalToken(rows.map((row:any)=>row.id)); approvalUrl=`${getApprovalBaseUrl(req.url)}/api/whatsapp/approval/${token}`;
+          const emailBody=`A new Nexor WhatsApp batch is ready for approval.\n\nBatch size: ${rows.length}\nCountries: ${[...new Set(rows.map((row:any)=>row.lead.country))].join(', ')}\n\nLeads:\n${rows.map((row:any)=>`- ${row.lead.businessName} (${row.lead.country})`).join('\n')}\n\nApprove this batch here:\n${approvalUrl}\n\nAfter approval, messages are sent sequentially with a minimum 10-second gap. Nexor will stop again after this batch.\n\nOnly leads with recorded WhatsApp opt-in, valid international country, and approved template/provider configuration are eligible.`;
+          await sendReportEmail(`Nexor WhatsApp approval required — ${rows.length} messages`,emailBody); approvalEmailSent=true;
+        } catch(error) { errors.push(`Approval email: ${error instanceof Error?error.message:String(error)}`); }
+      }
+      return NextResponse.json({success:true,action,considered:leads.length,created,skipped,autoApproved:0,promoted:0,awaitingApproval:created>0,approvalEmailSent,approvalUrl,provider:state.provider,automationReady:state.ready,rejected,errors});
     }
     const ids=Array.isArray(body?.ids)?body.ids.filter((x:unknown):x is string=>typeof x==='string'):[]; if(!ids.length) return jsonError('ids are required');
-    if(action==='approve') { const state=automationReady(); if(!state.ready) return jsonError(state.provider.templateConfigured?'WhatsApp provider is not ready.':'Meta cold outreach needs an approved WhatsApp template; configure WHATSAPP_TEMPLATE_NAME/LANGUAGE or use a ready OpenWA session.',409); const scheduledAt=new Date(Date.now()+5*60*1000); const result=await prisma.outreach.updateMany({where:{id:{in:ids},channel:OutreachChannel.WHATSAPP,status:{in:[OutreachStatus.DRAFT,OutreachStatus.APPROVAL_REQUIRED]}},data:{status:OutreachStatus.APPROVED,approvedAt:new Date(),scheduledAt,error:null}}); return NextResponse.json({success:true,action,updated:result.count,autoSendAt:scheduledAt}); }
+    if(action==='approve') {
+      const state=automationReady(); if(!state.ready) return jsonError(state.provider.templateConfigured?'WhatsApp provider is not ready.':'Meta first-contact outreach needs an approved WhatsApp template; configure WHATSAPP_TEMPLATE_NAME/LANGUAGE after Meta approval.',409);
+      const rows=await prisma.outreach.findMany({where:{id:{in:ids},channel:OutreachChannel.WHATSAPP,status:{in:[OutreachStatus.DRAFT,OutreachStatus.APPROVAL_REQUIRED]}},include:{lead:true},orderBy:{createdAt:'asc'},take:20});
+      if(!rows.length) return NextResponse.json({success:true,action,updated:0,message:'No eligible WhatsApp items are waiting for approval.'});
+      const invalid=rows.find((row:any)=>!leadEligibility(row.lead).ok); if(invalid) return jsonError(`Cannot approve ${invalid.lead.businessName}: ${leadEligibility(invalid.lead).reason}`,409);
+      const delayMs=Math.max(Number(process.env.WHATSAPP_MIN_DELAY_MS??10000),10000); const firstAt=Date.now()+delayMs;
+      await prisma.$transaction(rows.map((row:any,index:number)=>prisma.outreach.updateMany({where:{id:row.id,channel:OutreachChannel.WHATSAPP,status:{in:[OutreachStatus.DRAFT,OutreachStatus.APPROVAL_REQUIRED]}},data:{status:OutreachStatus.APPROVED,approvedAt:new Date(),scheduledAt:new Date(firstAt+index*delayMs),error:null}})));
+      return NextResponse.json({success:true,action,updated:rows.length,autoSendAt:new Date(firstAt).toISOString(),delayMs});
+    }
     if(action==='cancel') { const result=await prisma.outreach.updateMany({where:{id:{in:ids},channel:OutreachChannel.WHATSAPP,status:{in:[OutreachStatus.DRAFT,OutreachStatus.APPROVAL_REQUIRED,OutreachStatus.APPROVED,OutreachStatus.SCHEDULED]}},data:{status:OutreachStatus.CANCELLED}}); return NextResponse.json({success:true,action,updated:result.count}); }
     return jsonError('Unknown action. Use generate, approve, run_due or cancel.');
   } catch(error) { return jsonError(error instanceof Error?error.message:String(error),500); }
