@@ -2,6 +2,7 @@ import { googleSearch } from '../providers/google.provider.js';
 import { serperSearch } from '../providers/serper.provider.js';
 import { freeWebSearch } from '../providers/free.provider.js';
 import { openStreetMapSearch } from '../providers/openstreetmap.provider.js';
+import { scraplingSearch } from '../providers/scrapling.provider.js';
 
 export interface LeadSearchResult {
   success: boolean;
@@ -29,8 +30,8 @@ export class LeadSearchService {
     const normalizedQuery = query.trim();
     if (!normalizedQuery) return { success: true, count: 0, leads: [], provider: 'none' };
     const errors: string[] = [];
-    // Auto mode tries every configured provider instead of stopping at one dead provider.
-    // Set SEARCH_PROVIDER to google, serper, or free to force a single provider.
+    // Auto mode tries every available provider instead of stopping at one dead provider.
+    // SEARCH_PROVIDER can force google, serper, free, or scrapling.
     const mode = (process.env.SEARCH_PROVIDER ?? 'auto').toLowerCase();
 
     if (mode === 'google' || mode === 'auto') {
@@ -51,6 +52,18 @@ export class LeadSearchService {
           errors.push('serper: zero usable results');
         } catch (error) { errors.push(`serper: ${error instanceof Error ? error.message : String(error)}`); }
       } else if (mode === 'serper') errors.push('serper: SERPER_API_KEY is not configured');
+    }
+
+    if (mode === 'scrapling' || mode === 'auto') {
+      if (process.env.SCRAPLING_WORKER_URL && process.env.SCRAPLING_WORKER_API_KEY) {
+        try {
+          const leads = await scraplingSearch(normalizedQuery);
+          if (leads.length) return { success: true, count: leads.length, leads, provider: 'scrapling', providerErrors: errors };
+          errors.push('scrapling: zero usable results');
+        } catch (error) { errors.push(`scrapling: ${error instanceof Error ? error.message : String(error)}`); }
+      } else if (mode === 'scrapling') {
+        errors.push('scrapling: SCRAPLING_WORKER_URL or SCRAPLING_WORKER_API_KEY is not configured');
+      }
     }
 
     if (mode === 'free' || mode === 'auto') {
