@@ -1,111 +1,75 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
-type Lead = { id: string; businessName: string; whatsapp: string | null; niche?: string };
+type Lead = { id: string; businessName: string; whatsapp: string | null };
 type Draft = { id: string; message: string; status: string; scheduledAt: string | null; lead: Lead };
-type Reply = { id: string; status: string; lastMessageAt: string | null; lead: Lead; messages: { direction: string; content: string; createdAt: string }[] };
-type Task = { id: string; title: string; description: string | null; priority: number; lead: Lead | null };
-type Notice = { id: string; businessName: string; reason: string };
 type FailedItem = { id: string; businessName: string; reason: string; updatedAt: string; isRecent: boolean };
-type Data = { provider?: { configured: boolean; mode: string; openwaConfigured: boolean; templateConfigured: boolean; templateLanguage: string }; stats: { drafts: number; approved: number; scheduled: number; sent: number; failed: number; failedLast24h: number; replies: number; notContactable: number; rejected: number }; drafts: Draft[]; approved: Draft[]; scheduled: Draft[]; rejected: Notice[]; notContactable: Notice[]; recentFailed: FailedItem[]; replies: Reply[]; tasks: Task[] };
+type Provider = { configured: boolean; mode: string; openwaConfigured: boolean; templateConfigured: boolean; templateLanguage: string; automationReady?: boolean };
+type Data = { provider: Provider; stats: { drafts:number; approved:number; scheduled:number; sent:number; failed:number; failedLast24h:number; replies:number; notContactable:number; rejected:number }; drafts:Draft[]; approved:Draft[]; scheduled:Draft[]; notContactable:Array<{id:string;businessName:string;reason:string}>; recentFailed:FailedItem[] };
+
+const statLabels: Record<string,string> = { sent:'Sent', approved:'Queued', scheduled:'Scheduled', drafts:'Drafts', failed:'Failed', failedLast24h:'Failed 24h', replies:'Replies', notContactable:'No WhatsApp' };
 
 export default function WhatsAppAutomationPage() {
-  const [data, setData] = useState<Data | null>(null);
-  const [selectedDrafts, setSelectedDrafts] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('');
-  const [limit, setLimit] = useState(10);
+  const [data,setData]=useState<Data|null>(null);
+  const [loading,setLoading]=useState(true);
+  const [running,setRunning]=useState(false);
+  const [message,setMessage]=useState('');
 
-  async function load(clearSelection = true) {
-    const response = await fetch('/api/whatsapp/automation', { cache: 'no-store' });
-    const json = await response.json();
-    if (!response.ok || !json.success) throw new Error(json.error ?? 'Unable to load WhatsApp automation');
-    setData(json);
-    if (clearSelection) setSelectedDrafts(new Set());
-  }
-
-  useEffect(() => { void load().catch((error) => setMessage(error instanceof Error ? error.message : String(error))); }, []);
-
-  async function run(action: string, ids: string[], extra: Record<string, unknown> = {}) {
-    if (action !== 'generate' && action !== 'run_due' && ids.length === 0) return;
-    setLoading(true); setMessage('');
+  const load=useCallback(async()=>{
     try {
-      const response = await fetch('/api/whatsapp/automation', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, ids, ...extra }) });
-      const json = await response.json();
-      if (!response.ok || !json.success) throw new Error(json.error ?? 'Action failed');
-      if (action === 'generate') {
-        const parts = [`AI prepared ${json.created ?? 0} personalized drafts.`];
-        if (json.notContactable?.length) parts.push(`${json.notContactable.length} NOT CONTACTABLE.`);
-        if (json.rejected?.length) parts.push(`${json.rejected.length} blocked.`);
-        setMessage(parts.join(' '));
-      } else if (action === 'approve') setMessage(`${json.updated ?? 0} approved. Automatic send queued for ${json.autoSendAt ? new Date(json.autoSendAt).toLocaleTimeString() : 'the next worker run'}.`);
-      else if (action === 'run_due') {
-        const failed = (json.results ?? []).filter((item: { success: boolean }) => !item.success);
-        setMessage(`Automation run finished: ${json.sent ?? 0} sent, ${json.failed ?? 0} failed.${failed.length ? ` ${failed.map((item: { businessName: string; error?: string }) => `${item.businessName}: ${item.error ?? 'send failed'}`).join(' | ')}` : ''}`);
-      } else setMessage(`${json.updated ?? 0} item(s) updated.`);
-      await load();
-    } catch (error) { setMessage(error instanceof Error ? error.message : String(error)); }
+      const response=await fetch('/api/whatsapp/automation',{cache:'no-store'}); const json=await response.json();
+      if(!response.ok||!json.success) throw new Error(json.error??'Unable to load automation');
+      setData(json); setMessage('');
+    } catch(error) { setMessage(error instanceof Error?error.message:String(error)); }
     finally { setLoading(false); }
+  },[]);
+
+  useEffect(()=>{ void load(); const timer=window.setInterval(()=>void load(),20000); return ()=>window.clearInterval(timer); },[load]);
+
+  async function run(action:string) {
+    setRunning(true); setMessage('');
+    try {
+      const response=await fetch('/api/whatsapp/automation',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action,limit:10})});
+      const json=await response.json(); if(!response.ok||!json.success) throw new Error(json.error??'Automation action failed');
+      setMessage(action==='generate'?`Automation checked leads: ${json.created??0} new, ${json.autoApproved??0} queued automatically.`:`Automation sent ${json.sent??0}; ${json.failed??0} failed.`);
+      await load();
+    } catch(error) { setMessage(error instanceof Error?error.message:String(error)); }
+    finally { setRunning(false); }
   }
 
-  const drafts = data?.drafts ?? [];
-  const approved = data?.approved ?? [];
-  const allDraftsSelected = drafts.length > 0 && drafts.every((item) => selectedDrafts.has(item.id));
+  const provider=data?.provider;
+  const ready=Boolean(provider?.automationReady);
+  const templateReady=Boolean(provider?.templateConfigured);
+  const openwa=Boolean(provider?.openwaConfigured);
+  const blocker=!ready && !openwa ? 'Meta first-contact outreach is blocked until an approved WhatsApp message template is configured.' : '';
 
-  function toggleDraft(id: string) { setSelectedDrafts((current) => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; }); }
-  function selectAllDrafts() { setSelectedDrafts(allDraftsSelected ? new Set() : new Set(drafts.map((item) => item.id))); }
+  return <main className="mx-auto w-full max-w-5xl space-y-4 px-3 py-3 sm:space-y-5 sm:px-5 sm:py-5">
+    <section className="nexor-panel overflow-hidden p-4 sm:p-6">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0"><div className="font-mono text-[7px] tracking-[0.16em] text-[var(--accent)]">WHATSAPP AUTOPILOT</div><h1 className="mt-1 text-lg font-semibold leading-tight sm:text-xl">Hands-free outreach</h1><p className="mt-2 text-[9px] leading-5 text-[var(--text-muted)]">Nexor discovers → researches → drafts → queues → sends → follows up automatically. No approval click required.</p></div>
+        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[7px] font-bold ${ready?'bg-emerald-500/15 text-emerald-400':'bg-amber-500/15 text-amber-400'}`}>{ready?'AUTOPILOT ON':'WAITING'}</span>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div className={`rounded-xl border p-3 ${provider?.configured?'border-emerald-500/25 bg-emerald-500/5':'border-red-500/25 bg-red-500/5'}`}><div className="text-[8px] font-semibold">PROVIDER</div><div className="mt-1 text-[9px]">{openwa?'OpenWA':'Meta Cloud API'} {provider?.configured?'connected':'not configured'}</div></div>
+        <div className={`rounded-xl border p-3 ${ready?'border-emerald-500/25 bg-emerald-500/5':'border-amber-500/25 bg-amber-500/5'}`}><div className="text-[8px] font-semibold">FIRST CONTACT</div><div className="mt-1 text-[9px]">{openwa?'OpenWA session ready':templateReady?`Approved template · ${provider?.templateLanguage??'en_US'}`:'Template required for Meta cold outreach'}</div></div>
+      </div>
+      {blocker&&<div className="mt-3 rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 text-[8px] leading-4 text-amber-200">{blocker} Nexor will keep researching and preparing eligible leads, but it will not falsely mark a message as sent.</div>}
+    </section>
 
-  const Check = ({ checked, onToggle, label }: { checked: boolean; onToggle: () => void; label: string }) => (
-    <button type="button" role="checkbox" aria-checked={checked} aria-label={label} onClick={(event) => { event.preventDefault(); event.stopPropagation(); onToggle(); }} disabled={loading} className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border text-[11px] font-bold transition ${checked ? 'border-[var(--accent)] bg-[var(--accent)] text-black' : 'border-[var(--border)] bg-transparent text-transparent hover:border-[var(--accent)]'} disabled:cursor-not-allowed disabled:opacity-50`}>✓</button>
-  );
+    <section className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
+      {Object.entries(data?.stats??{}).filter(([key])=>key!=='rejected').map(([key,value])=><div key={key} className="nexor-panel min-w-0 p-3"><div className="truncate text-[7px] uppercase tracking-[0.1em] text-[var(--text-muted)]">{statLabels[key]??key}</div><div className="mt-1 text-xl font-semibold">{value}</div></div>)}
+    </section>
 
-  const providerReady = Boolean(data?.provider?.configured);
-  const openwaActive = Boolean(data?.provider?.openwaConfigured);
-  const templateReady = Boolean(data?.provider?.templateConfigured);
-  const providerLabel = openwaActive ? 'OPENWA' : providerReady ? 'META CLOUD API' : 'WHATSAPP PROVIDER';
-  const providerDetail = openwaActive
-    ? 'OpenWA ACTIVE — session-based sending is in use for outreach.'
-    : providerReady
-      ? 'META CLOUD API ACTIVE — access token + phone number ID detected.'
-      : 'NOT CONFIGURED — add OpenWA (OPENWA_BASE_URL, OPENWA_API_KEY, OPENWA_SESSION_ID) or Meta Cloud API credentials in Vercel Production before sending can work.';
+    <section className="nexor-panel p-4 sm:p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><div className="text-[10px] font-semibold">Automation status</div><div className="mt-1 text-[8px] leading-4 text-[var(--text-muted)]">GitHub worker checks this pipeline every 5 minutes. The page refreshes every 20 seconds.</div></div><button type="button" disabled={running||loading} onClick={()=>void run('generate')} className="w-full rounded-lg bg-[var(--accent)] px-4 py-3 text-[8px] font-bold text-black disabled:opacity-50 sm:w-auto">RUN AUTOPILOT NOW</button></div>
+      {message&&<div className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3 text-[8px] leading-4">{message}</div>}
+    </section>
 
-  return (
-    <main className="space-y-5">
-      <section className="nexor-panel p-6">
-        <div className="font-mono text-[7px] tracking-[0.16em] text-[var(--accent)]">WHATSAPP AUTOMATION</div>
-        <h1 className="mt-2 text-xl font-semibold">Prospect → Validate → Draft → Approve → Send → Reply</h1>
-        <p className="mt-2 max-w-3xl text-[9px] leading-5 text-[var(--text-muted)]">Approve a draft once. Nexor then sends only approved, due messages through the active WhatsApp provider. Background execution is handled by the GitHub Actions worker; “Run Due Sends Now” is the immediate execution button.</p>
-        <div className="mt-5 grid gap-3 md:grid-cols-2">
-          <div className={`rounded-xl border p-4 ${providerReady ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-red-500/30 bg-red-500/5'}`}>
-            <div className="text-[8px] font-semibold">{providerLabel}</div>
-            <div className="mt-2 text-[9px]">{providerDetail}</div>
-          </div>
-          <div className={`rounded-xl border p-4 ${openwaActive ? 'border-[var(--border)] bg-[var(--surface-2)]' : templateReady ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/5'}`}>
-            <div className="text-[8px] font-semibold">FIRST-CONTACT TEMPLATE</div>
-            <div className="mt-2 text-[9px]">{openwaActive ? 'Not required while OpenWA is the active provider.' : templateReady ? `APPROVED TEMPLATE ENABLED — ${data?.provider?.templateLanguage ?? 'en_US'}.` : 'NOT CONFIGURED — Meta cold/business-initiated outreach needs an approved template.'}</div>
-          </div>
-        </div>
-        <div className="mt-5 grid gap-3 sm:grid-cols-4 lg:grid-cols-8">{Object.entries(data?.stats ?? { drafts: 0, approved: 0, scheduled: 0, sent: 0, failed: 0, failedLast24h: 0, replies: 0, notContactable: 0, rejected: 0 }).map(([key, value]) => <div key={key} className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-3"><div className="text-[7px] uppercase tracking-[0.12em] text-[var(--text-muted)]">{key}</div><div className="mt-2 text-xl font-semibold">{value}</div></div>)}</div>
-      </section>
+    <section className="nexor-panel overflow-hidden"><div className="border-b border-[var(--border)] p-4"><div className="text-[10px] font-semibold">Send queue</div><div className="mt-1 text-[8px] text-[var(--text-muted)]">Only approved, due messages are sent. The worker handles this automatically.</div></div><div className="divide-y divide-[var(--border)]">{(data?.approved??[]).map(item=><article key={item.id} className="p-4"><div className="flex min-w-0 gap-3"><span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-[10px] text-emerald-400">✓</span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><strong className="text-[9px]">{item.lead.businessName}</strong><span className="max-w-full break-all rounded bg-[var(--surface-2)] px-2 py-1 font-mono text-[7px]">{item.lead.whatsapp}</span></div><div className="mt-2 whitespace-pre-wrap break-words text-[8px] leading-5 text-[var(--text-secondary)]">{item.message}</div><div className="mt-2 text-[7px] text-[var(--text-muted)]">Due {item.scheduledAt?new Date(item.scheduledAt).toLocaleString():'now'}</div></div></div></article>)}{!data?.approved?.length&&<div className="p-8 text-center text-[8px] text-[var(--text-muted)]">Queue is clear. Nexor will add and send eligible leads automatically.</div>}</div></section>
 
-      <section className="nexor-panel p-5"><div className="flex flex-wrap items-end justify-between gap-3"><div><div className="text-[10px] font-semibold">1. Generate personalized drafts</div><div className="mt-1 text-[8px] text-[var(--text-muted)]">Only contactable operational businesses are eligible. Existing active outreach is skipped.</div></div><div className="flex gap-2"><input value={limit} onChange={(e) => setLimit(Math.min(25, Math.max(1, Number(e.target.value) || 10)))} type="number" min={1} max={25} className="w-20 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-[9px]" /><button type="button" disabled={loading} onClick={() => void run('generate', [], { limit })} className="rounded-lg bg-[var(--accent)] px-4 py-2 text-[8px] font-bold text-black disabled:opacity-50">GENERATE</button></div></div></section>
+    <section className="nexor-panel overflow-hidden"><div className="flex items-center justify-between gap-3 border-b border-[var(--border)] p-4"><div><div className="text-[10px] font-semibold">Recent failures</div><div className="mt-1 text-[8px] text-[var(--text-muted)]">{data?.stats?.failedLast24h??0} in the last 24 hours</div></div></div><div className="divide-y divide-[var(--border)]">{(data?.recentFailed??[]).slice(0,10).map(item=><div key={item.id} className="p-4"><div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between"><strong className="text-[9px]">{item.businessName}</strong><span className="text-[7px] text-red-400">{item.isRecent?'RECENT':'HISTORICAL'}</span></div><div className="mt-1 break-words text-[8px] leading-4 text-[var(--text-muted)]">{item.reason}</div></div>)}{!data?.recentFailed?.length&&<div className="p-8 text-center text-[8px] text-[var(--text-muted)]">No failed sends.</div>}</div></section>
 
-      <section className="nexor-panel overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] p-5"><div><div className="text-[10px] font-semibold">2. Approval queue — YOUR ONLY MANUAL STEP</div><div className="mt-1 text-[8px] text-[var(--text-muted)]">Select drafts and approve them. Approval creates a five-minute send time.</div></div><div className="flex flex-wrap gap-2"><button type="button" disabled={!drafts.length || loading} onClick={selectAllDrafts} className="rounded-lg border border-[var(--border)] px-3 py-2 text-[8px] disabled:opacity-40">{allDraftsSelected ? 'CLEAR ALL' : 'SELECT ALL'}</button><button type="button" disabled={!selectedDrafts.size || loading} onClick={() => void run('approve', [...selectedDrafts])} className="rounded-lg border border-emerald-500/30 px-3 py-2 text-[8px] disabled:opacity-40">APPROVE</button><button type="button" disabled={!selectedDrafts.size || loading} onClick={() => void run('cancel', [...selectedDrafts])} className="rounded-lg border border-red-500/30 px-3 py-2 text-[8px] disabled:opacity-40">CANCEL</button></div></div>
-        <div className="divide-y divide-[var(--border)]">{drafts.map((draft) => <article key={draft.id} className="p-5"><div className="flex gap-3"><Check checked={selectedDrafts.has(draft.id)} onToggle={() => toggleDraft(draft.id)} label={`Select ${draft.lead.businessName}`} /><button type="button" disabled={loading} onClick={() => toggleDraft(draft.id)} className="min-w-0 flex-1 cursor-pointer text-left disabled:cursor-not-allowed"><span className="flex flex-wrap items-center gap-2"><strong className="text-[10px]">{draft.lead.businessName}</strong><span className="rounded bg-[var(--surface-2)] px-2 py-1 font-mono text-[7px]">{draft.lead.whatsapp || 'NOT CONTACTABLE'}</span><span className="text-[7px] text-[var(--text-muted)]">{draft.status}</span></span><span className="mt-3 block whitespace-pre-wrap text-[9px] leading-5 text-[var(--text-secondary)]">{draft.message}</span></button></div></article>)}{!drafts.length && <div className="p-10 text-center text-[9px] text-[var(--text-muted)]">No WhatsApp drafts waiting for approval.</div>}</div>
-      </section>
-
-      <section className="nexor-panel overflow-hidden"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] p-5"><div><div className="text-[10px] font-semibold">3. Approved — SEND QUEUE</div><div className="mt-1 text-[8px] text-[var(--text-muted)]">The worker sends due approvals automatically. Use the button to execute them immediately.</div></div><button type="button" disabled={!approved.length || loading} onClick={() => void run('run_due', [], { limit: 20 })} className="rounded-lg bg-[var(--accent)] px-4 py-2 text-[8px] font-bold text-black disabled:opacity-40">RUN DUE SENDS NOW</button></div><div className="divide-y divide-[var(--border)]">{approved.map((item) => <article key={item.id} className="p-5"><div className="flex gap-3"><span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border border-emerald-500/40 bg-emerald-500/10 text-[11px] font-bold text-emerald-400">✓</span><div className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><strong className="text-[10px]">{item.lead.businessName}</strong><span className="rounded bg-[var(--surface-2)] px-2 py-1 font-mono text-[7px]">{item.lead.whatsapp}</span><span className="text-[7px] text-emerald-400">APPROVED • READY</span></span><span className="mt-2 block text-[7px] text-[var(--text-muted)]">Due: {item.scheduledAt ? new Date(item.scheduledAt).toLocaleString() : 'now'}</span><span className="mt-3 block whitespace-pre-wrap text-[9px] leading-5 text-[var(--text-secondary)]">{item.message}</span></div></div></article>)}{!approved.length && <div className="p-10 text-center text-[9px] text-[var(--text-muted)]">Nothing awaiting automatic send.</div>}</div></section>
-
-      <section className="nexor-panel p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3"><div className="text-[10px] font-semibold">Failed sends</div><div className="text-[7px] text-[var(--text-muted)]">{data?.stats?.failedLast24h ?? 0} in last 24h · {data?.stats?.failed ?? 0} total historical</div></div>
-        <div className="mt-3 space-y-2">{(data?.recentFailed ?? []).map((item) => <div key={item.id} className="rounded-xl border border-red-500/20 bg-red-500/5 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-[9px] font-semibold">{item.businessName}</span><span className={`text-[7px] ${item.isRecent ? 'text-red-400' : 'text-[var(--text-muted)]'}`}>{item.isRecent ? 'RECENT' : 'HISTORICAL'} · {new Date(item.updatedAt).toLocaleString()}</span></div><div className="mt-1 text-[8px] text-[var(--text-muted)]">{item.reason}</div></div>)}{!data?.recentFailed?.length && <div className="text-[8px] text-[var(--text-muted)]">No failed sends.</div>}</div>
-      </section>
-
-      <section className="grid gap-5 lg:grid-cols-3"><div className="nexor-panel p-5"><div className="text-[10px] font-semibold">4. Scheduled / sent</div><div className="mt-3 space-y-2">{(data?.scheduled ?? []).map((item) => <div key={item.id} className="rounded-xl border border-[var(--border)] p-3"><div className="text-[9px] font-semibold">{item.lead.businessName}</div><div className="mt-1 text-[8px] text-[var(--text-muted)]">{item.scheduledAt ? new Date(item.scheduledAt).toLocaleString() : 'Pending'}</div></div>)}{!data?.scheduled?.length && <div className="text-[8px] text-[var(--text-muted)]">Nothing currently scheduled.</div>}</div></div><div className="nexor-panel p-5"><div className="text-[10px] font-semibold">5. Contactability / blocked</div><div className="mt-3 space-y-2">{[...(data?.notContactable ?? []), ...(data?.rejected ?? [])].slice(0, 30).map((item) => <div key={item.id} className="rounded-xl border border-[var(--border)] p-3"><div className="text-[9px] font-semibold">{item.businessName}</div><div className="mt-1 text-[8px] text-[var(--text-muted)]">{item.reason}</div></div>)}{!(data?.notContactable?.length || data?.rejected?.length) && <div className="text-[8px] text-[var(--text-muted)]">Nothing blocked.</div>}</div></div><div className="nexor-panel p-5"><div className="text-[10px] font-semibold">6. Reply intelligence</div><div className="mt-3 space-y-2">{(data?.replies ?? []).map((reply) => <div key={reply.id} className="rounded-xl border border-[var(--border)] p-3"><div className="flex justify-between gap-3"><span className="text-[9px] font-semibold">{reply.lead.businessName}</span><span className="text-[7px] text-[var(--accent)]">{reply.status}</span></div><div className="mt-2 text-[8px] text-[var(--text-muted)]">{reply.messages[0]?.content ?? 'No message preview'}</div></div>)}{!data?.replies?.length && <div className="text-[8px] text-[var(--text-muted)]">No classified replies yet.</div>}</div></div></section>
-
-      <section className="nexor-panel p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><div className="text-[10px] font-semibold">7. Automation status</div><div className="mt-1 text-[8px] text-[var(--text-muted)]">GitHub Actions worker runs every 5 minutes. It processes discovery, scheduler, follow-ups, outreach and social publishing independently. No Vercel cron is required.</div></div><button type="button" disabled={loading} onClick={() => void load(false)} className="rounded-lg border border-[var(--border)] px-4 py-2 text-[8px]">REFRESH</button></div>{message && <div className="mt-4 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3 text-[8px] text-[var(--text-secondary)]">{message}</div>}</section>
-    </main>
-  );
+    <section className="nexor-panel p-4"><div className="text-[10px] font-semibold">Contactability</div><div className="mt-1 text-[8px] text-[var(--text-muted)]">{data?.stats?.notContactable??0} eligible businesses currently have no WhatsApp number. Nexor will not invent or guess one.</div></section>
+  </main>;
 }
