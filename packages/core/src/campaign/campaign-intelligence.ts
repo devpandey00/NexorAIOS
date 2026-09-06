@@ -24,10 +24,6 @@ export function assessLead(research: ResearchSnapshot): LeadIntelligence {
   const social = research.social ?? {};
   const findings: string[] = [];
   const strengths: string[] = [];
-
-  // Start from a healthy operational baseline. The previous implementation
-  // started at 50 and only deducted points, making 60+ qualification
-  // mathematically impossible and therefore preventing outreach drafts.
   let score = 70;
 
   if (website.title) strengths.push('The website has a page title.');
@@ -35,23 +31,23 @@ export function assessLead(research: ResearchSnapshot): LeadIntelligence {
     findings.push('The website is missing a clear page title.');
     score -= 8;
   }
-
   if (website.description) strengths.push('The website has a meta description.');
   else {
     findings.push('The website is missing a meta description, which can weaken search presentation.');
     score -= 8;
   }
-
   if (website.h1?.length) strengths.push('The homepage has a visible H1 heading.');
   else {
     findings.push('The homepage does not expose a clear H1 heading.');
     score -= 7;
   }
-
   if (technologies.length) strengths.push(`Detected technology: ${technologies.slice(0, 4).join(', ')}.`);
-  if (Object.values(social).some((value) => typeof value === 'string' && value)) {
-    strengths.push('Social profiles were detected from the website.');
-  } else {
+
+  const socialPlatforms = Object.entries(social)
+    .filter(([, value]) => typeof value === 'string' && value)
+    .map(([platform]) => platform.toUpperCase());
+  if (socialPlatforms.length) strengths.push(`Social presence detected on ${socialPlatforms.length} platform${socialPlatforms.length === 1 ? '' : 's'}: ${socialPlatforms.slice(0, 5).join(', ')}.`);
+  else {
     findings.push('No social profile links were detected from the website.');
     score -= 5;
   }
@@ -63,15 +59,19 @@ export function assessLead(research: ResearchSnapshot): LeadIntelligence {
   if (!website.title || !website.description || !website.h1?.length) {
     requirement = 'A stronger website foundation and conversion structure';
     service = 'Website Development';
+    findings.unshift('The current website foundation has clear gaps that can affect trust and conversion.');
   } else if (!tech.includes('google analytics') && !tech.includes('google tag manager')) {
     requirement = 'Better measurement and paid acquisition readiness';
     service = 'Google Ads';
-  } else if (!Object.values(social).some((value) => typeof value === 'string' && value)) {
+    findings.unshift('The site does not expose Google Analytics or Google Tag Manager, so paid acquisition measurement should be strengthened.');
+  } else if (!socialPlatforms.length) {
     requirement = 'Stronger social presence and content-led acquisition';
     service = 'Social Media Marketing';
+    findings.unshift('The website does not expose active social profiles, indicating a weak visible social presence.');
   } else if (website.description && website.h1?.length) {
     requirement = 'More qualified traffic and stronger organic visibility';
     service = 'SEO';
+    findings.unshift('The website has a usable foundation, so the next opportunity is qualified organic traffic and visibility.');
   }
 
   return {
@@ -79,7 +79,7 @@ export function assessLead(research: ResearchSnapshot): LeadIntelligence {
     requirement,
     service,
     strengths,
-    findings,
+    findings: findings.slice(0, 6),
   };
 }
 
@@ -90,10 +90,9 @@ export function buildPersonalizedPitch(input: {
   findings: string[];
   email?: boolean;
 }): string {
-  const observation = input.findings[0] ?? 'a few conversion opportunities';
+  const observation = input.findings[0] ?? input.requirement;
   const channelIntro = input.email ? `Subject: A quick observation about ${input.businessName}\n\n` : '';
-
-  return `${channelIntro}Hi ${input.businessName},\n\nI reviewed your website and noticed ${observation.toLowerCase()} ${input.requirement.toLowerCase()} may be worth looking at.\n\nBased on what I found, ${input.service} looks like the most relevant area to improve rather than taking a generic marketing approach.\n\nI put together a few specific observations for your business. Want me to send them over?\n\nBest,\nDev\nFounder • Nexor Media`;
+  return `${channelIntro}Hi ${input.businessName},\n\nI reviewed your online presence and noticed ${observation.toLowerCase()}\n\nThat points to ${input.requirement.toLowerCase()}. Based on the research, ${input.service} looks like the most relevant area for your business right now rather than a generic marketing package.\n\nI put together a few specific observations for ${input.businessName}. Want me to send them over?\n\nBest,\nDev\nFounder • Nexor Media`;
 }
 
 export interface SalesBrief {
@@ -125,7 +124,7 @@ export function buildSalesBrief(input: {
   const socialFindings = Object.entries(input.research.social ?? {}).filter(([, value]) => typeof value === 'string' && value).map(([platform]) => `${platform} profile detected.`);
   const technology = input.research.technology?.technologies ?? [];
   const opportunities = [...input.intelligence.findings, ...seoFindings].filter((item, index, arr) => item && arr.indexOf(item) === index).slice(0, 8);
-  const summary = `${input.businessName} is a ${input.niche} business in ${input.country} with a publicly reachable website and evidence captured during automated research.`;
+  const summary = `${input.businessName} is a ${input.niche} business in ${input.country} with research evidence captured during automated online analysis.`;
   const opening = input.intelligence.findings[0] ? `I reviewed ${input.businessName} and noticed ${input.intelligence.findings[0].toLowerCase()}` : `I reviewed ${input.businessName}'s online presence and found a few measurable growth opportunities.`;
   const contact: SalesBrief['contact'] = {
     ...(input.email ? { email: input.email } : {}),
