@@ -63,10 +63,20 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required'; exit 1; }
-          body_file="$(mktemp)"
-          http_code="$(curl --silent --show-error --max-time 480 -o "$body_file" -w '%{http_code}' -H "Authorization: Bearer $CRON_SECRET" -H "Content-Type: application/json" -X POST "$NEXOR_BASE_URL/api/whatsapp/automation" --data '{"action":"run_due","limit":20}')"
-          cat "$body_file"; echo; rm -f "$body_file"
-          if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then echo "WhatsApp batch sender returned HTTP $http_code; continuing."; exit 1; fi
+          test -n "$CRON_SECRET" || exit 1
+          for i in $(seq 1 20); do
+            body_file="$(mktemp)"
+            http_code="$(curl --silent --show-error --max-time 30 -o "$body_file" -w '%{http_code}' -H "Authorization: Bearer $CRON_SECRET" -H "Content-Type: application/json" -X POST "$NEXOR_BASE_URL/api/whatsapp/automation" --data '{"action":"run_due","limit":1}')"
+            body="$(cat "$body_file")"
+            cat "$body_file"; echo
+            rm -f "$body_file"
+            if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then echo "WhatsApp sender returned HTTP $http_code; stopping batch."; break; fi
+            if ! printf '%s' "$body" | grep -Eq '"queued"[[:space:]]*:[[:space:]]*[1-9][0-9]*'; then
+              echo 'No due WhatsApp message remains; batch loop finished.'
+              break
+            fi
+            if [[ "$i" -lt 20 ]]; then sleep 10; fi
+          done
 
       - name: Run due follow-ups
         continue-on-error: true
