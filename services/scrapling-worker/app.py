@@ -4,7 +4,7 @@ import re
 import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, quote_plus, urljoin, urlparse
+from urllib.parse import quote_plus, urljoin, urlparse
 
 from scrapling.fetchers import Fetcher, StealthyFetcher
 
@@ -20,7 +20,7 @@ BLOCKED_DOMAINS = {
     "wikipedia.org", "reddit.com", "pinterest.com", "indeed.com", "glassdoor.com",
 }
 BLOCKED_PATHS = re.compile(r"/(jobs?|careers?|vacancies|blog|article|news|directory|listing|forum|search)(/|$)", re.I)
-BAD_TITLES = re.compile(r"\b(best|top|list|directory|guide|roundup|article|companies|jobs?|careers?|vacanc(?:y|ies)|hiring|recruitment|how to|strategy)\b", re.I)
+BAD_TITLES = re.compile(r"\b(best|top|list|directory|guide|roundup|article|jobs?|careers?|vacanc(?:y|ies)|hiring|recruitment|how to|strategy)\b", re.I)
 BUSINESS_EMAIL_BLOCKLIST = {"gmail.com", "googlemail.com", "yahoo.com", "hotmail.com", "outlook.com", "icloud.com", "proton.me", "protonmail.com"}
 EMAIL_RE = re.compile(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", re.I)
 PHONE_RE = re.compile(r"(?<!\d)(?:\+?\d[\d .()\-]{7,}\d)(?!\d)")
@@ -43,7 +43,8 @@ def normalize_url(url, base=None):
 
 def domain(url):
     try:
-        return urlparse(url).hostname.replace("www.", "").lower()
+        host = urlparse(url).hostname or ""
+        return host.replace("www.", "").lower()
     except Exception:
         return ""
 
@@ -69,17 +70,23 @@ def fetch_page(url, stealth=False):
 
 def extract_search_results(page):
     results = []
-    for selector in (
+    selectors = (
         "li.b_algo h2 a",
+        "li.b_algo a",
         "a.result__a",
         "a.result-link",
         "h3 a",
-    ):
+    )
+    for selector in selectors:
         try:
             for anchor in page.css(selector):
                 href = normalize_url(anchor.attrib.get("href", ""))
                 title = clean_text(anchor.text)
-                if href and title and not is_blocked_url(href) and not BAD_TITLES.search(title):
+                if href and title and not is_blocked_url(href):
+                    # Only reject clearly non-business result titles. Do not reject
+                    # ordinary company names merely because they contain a keyword.
+                    if BAD_TITLES.search(title) and len(title.split()) > 8:
+                        continue
                     results.append({"url": href, "title": title})
         except Exception:
             continue
@@ -101,13 +108,27 @@ def search_web(query):
         f"https://www.google.com/search?q={encoded}&num=30",
     ]
     for url in engines:
-        page = fetch_page(url)
-        if not page:
-            continue
-        results = extract_search_results(page)
-        if results:
-            return results
+        for attempt in range(2):
+            page = fetch_page(url)
+            if not page:
+                page = fetch_page(url, stealth=True)
+            if page:
+                results = extract_search_results(page)
+                if results:
+                    return results
+            if attempt == 0:
+                time.sleep(0.5)
     return []
+
+
+def query_variants(query):
+    base = clean_text(query)
+    variants = [base]
+    # Progressive fallbacks: if a service-heavy query is too restrictive, retry
+    # with the business/location intent that search engines handle more reliably.
+    variants.append(re.sub(r"\s+(Google Ads|Meta Ads|SEO|social media marketing|website development|lead generation|conversion optimization)\b", "", base, flags=re.I).strip())
+    variants.append(re.sub(r"\s+\b(official website|contact|phone|local business|agency)\b", "", base, flags=re.I).strip())
+    return list(dict.fromkeys(v for v in variants if v))
 
 
 def discover_contact_links(page, base_url):
@@ -116,10 +137,9 @@ def discover_contact_links(page, base_url):
         for anchor in page.css("a"):
             href = normalize_url(anchor.attrib.get("href", ""), base_url)
             text = clean_text(anchor.text).lower()
-            if not href:
-                raw = anchor.attrib.get("href", "")
-                if raw.lower().startswith("mailto:") or raw.lower().startswith("tel:"):
-                    href = raw
+            raw = anchor.attrib.get("href", "")
+            if not href and raw.lower().startswith(("mailto:", "tel:")):
+                href = raw
             if href and ("contact" in text or "about" in text or "/contact" in href.lower() or "/about" in href.lower()):
                 links.append(href)
     except Exception:
@@ -147,9 +167,7 @@ def extract_lead(result, requested_location):
     if not name or BAD_TITLES.search(name):
         return None
 
-    emails = set()
-    phones = set()
-    social = {}
+    emails, phones, social = set(), set(), {}
     whatsapp = None
     try:
         body = clean_text(page.text)
@@ -189,10 +207,11 @@ def extract_lead(result, requested_location):
                 continue
 
     business_emails = []
+    site_domain = domain(url)
     for email in emails:
         normalized = email.strip().lower().rstrip(".,;:)")
         host = normalized.split("@")[-1]
-        if normalized and "@" in normalized and host not in BUSINESS_EMAIL_BLOCKLIST and domain(url).endswith(host):
+        if normalized and "@" in normalized and host not in BUSINESS_EMAIL_BLOCKLIST and site_domain.endswith(host):
             business_emails.append(normalized)
     business_emails = list(dict.fromkeys(business_emails))[:3]
 
@@ -225,20 +244,23 @@ def discover(payload):
     queries = payload.get("queries") or []
     if isinstance(queries, str):
         queries = [queries]
-    queries = [clean_text(q) for q in queries if clean_text(q)][:8]
+    raw_queries = [clean_text(q) for q in queries if clean_text(q)]
+    queries = []
+    for query in raw_queries:
+        queries.extend(query_variants(query))
+    queries = list(dict.fromkeys(queries))[:24]
     location = clean_text(payload.get("location"))
     limit = min(max(int(payload.get("limit", 20)), 1), MAX_RESULTS)
-    candidates = []
-    seen = set()
+    candidates, seen = [], set()
     for query in queries:
         for result in search_web(query):
             key = domain(result["url"])
             if key and key not in seen:
                 seen.add(key)
                 candidates.append(result)
-            if len(candidates) >= limit * 2:
+            if len(candidates) >= limit * 3:
                 break
-        if len(candidates) >= limit * 2:
+        if len(candidates) >= limit * 3:
             break
 
     leads = []
