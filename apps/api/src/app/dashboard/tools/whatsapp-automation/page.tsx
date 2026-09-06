@@ -7,7 +7,8 @@ type Draft = { id: string; message: string; status: string; scheduledAt: string 
 type Reply = { id: string; status: string; lastMessageAt: string | null; lead: Lead; messages: { direction: string; content: string; createdAt: string }[] };
 type Task = { id: string; title: string; description: string | null; priority: number; lead: Lead | null };
 type Notice = { id: string; businessName: string; reason: string };
-type Data = { provider?: { configured: boolean; mode: string; templateConfigured: boolean; templateLanguage: string }; stats: { drafts: number; approved: number; scheduled: number; sent: number; failed: number; replies: number; notContactable: number; rejected: number }; drafts: Draft[]; approved: Draft[]; scheduled: Draft[]; rejected: Notice[]; notContactable: Notice[]; replies: Reply[]; tasks: Task[] };
+type FailedItem = { id: string; businessName: string; reason: string; updatedAt: string; isRecent: boolean };
+type Data = { provider?: { configured: boolean; mode: string; openwaConfigured: boolean; templateConfigured: boolean; templateLanguage: string }; stats: { drafts: number; approved: number; scheduled: number; sent: number; failed: number; failedLast24h: number; replies: number; notContactable: number; rejected: number }; drafts: Draft[]; approved: Draft[]; scheduled: Draft[]; rejected: Notice[]; notContactable: Notice[]; recentFailed: FailedItem[]; replies: Reply[]; tasks: Task[] };
 
 export default function WhatsAppAutomationPage() {
   const [data, setData] = useState<Data | null>(null);
@@ -60,25 +61,32 @@ export default function WhatsAppAutomationPage() {
   );
 
   const providerReady = Boolean(data?.provider?.configured);
+  const openwaActive = Boolean(data?.provider?.openwaConfigured);
   const templateReady = Boolean(data?.provider?.templateConfigured);
+  const providerLabel = openwaActive ? 'OPENWA' : providerReady ? 'META CLOUD API' : 'WHATSAPP PROVIDER';
+  const providerDetail = openwaActive
+    ? 'OpenWA ACTIVE — session-based sending is in use for outreach.'
+    : providerReady
+      ? 'META CLOUD API ACTIVE — access token + phone number ID detected.'
+      : 'NOT CONFIGURED — add OpenWA (OPENWA_BASE_URL, OPENWA_API_KEY, OPENWA_SESSION_ID) or Meta Cloud API credentials in Vercel Production before sending can work.';
 
   return (
     <main className="space-y-5">
       <section className="nexor-panel p-6">
         <div className="font-mono text-[7px] tracking-[0.16em] text-[var(--accent)]">WHATSAPP AUTOMATION</div>
         <h1 className="mt-2 text-xl font-semibold">Prospect → Validate → Draft → Approve → Send → Reply</h1>
-        <p className="mt-2 max-w-3xl text-[9px] leading-5 text-[var(--text-muted)]">Approve a draft once. Nexor then sends only approved, due messages through the official WhatsApp Cloud API. Background execution is handled by the GitHub Actions worker; “Run Due Sends Now” is the immediate execution button.</p>
+        <p className="mt-2 max-w-3xl text-[9px] leading-5 text-[var(--text-muted)]">Approve a draft once. Nexor then sends only approved, due messages through the active WhatsApp provider. Background execution is handled by the GitHub Actions worker; “Run Due Sends Now” is the immediate execution button.</p>
         <div className="mt-5 grid gap-3 md:grid-cols-2">
           <div className={`rounded-xl border p-4 ${providerReady ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-red-500/30 bg-red-500/5'}`}>
-            <div className="text-[8px] font-semibold">WHATSAPP CLOUD API</div>
-            <div className="mt-2 text-[9px]">{providerReady ? 'CONNECTED — access token + phone number ID detected.' : 'NOT CONFIGURED — sending cannot work until the Meta credentials are added to Vercel Production.'}</div>
+            <div className="text-[8px] font-semibold">{providerLabel}</div>
+            <div className="mt-2 text-[9px]">{providerDetail}</div>
           </div>
-          <div className={`rounded-xl border p-4 ${templateReady ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/5'}`}>
+          <div className={`rounded-xl border p-4 ${openwaActive ? 'border-[var(--border)] bg-[var(--surface-2)]' : templateReady ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/5'}`}>
             <div className="text-[8px] font-semibold">FIRST-CONTACT TEMPLATE</div>
-            <div className="mt-2 text-[9px]">{templateReady ? `APPROVED TEMPLATE ENABLED — ${data?.provider?.templateLanguage ?? 'en_US'}.` : 'NOT CONFIGURED — cold/business-initiated outreach needs a Meta-approved template.'}</div>
+            <div className="mt-2 text-[9px]">{openwaActive ? 'Not required while OpenWA is the active provider.' : templateReady ? `APPROVED TEMPLATE ENABLED — ${data?.provider?.templateLanguage ?? 'en_US'}.` : 'NOT CONFIGURED — Meta cold/business-initiated outreach needs an approved template.'}</div>
           </div>
         </div>
-        <div className="mt-5 grid gap-3 sm:grid-cols-4 lg:grid-cols-8">{Object.entries(data?.stats ?? { drafts: 0, approved: 0, scheduled: 0, sent: 0, failed: 0, replies: 0, notContactable: 0, rejected: 0 }).map(([key, value]) => <div key={key} className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-3"><div className="text-[7px] uppercase tracking-[0.12em] text-[var(--text-muted)]">{key}</div><div className="mt-2 text-xl font-semibold">{value}</div></div>)}</div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-4 lg:grid-cols-8">{Object.entries(data?.stats ?? { drafts: 0, approved: 0, scheduled: 0, sent: 0, failed: 0, failedLast24h: 0, replies: 0, notContactable: 0, rejected: 0 }).map(([key, value]) => <div key={key} className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-3"><div className="text-[7px] uppercase tracking-[0.12em] text-[var(--text-muted)]">{key}</div><div className="mt-2 text-xl font-semibold">{value}</div></div>)}</div>
       </section>
 
       <section className="nexor-panel p-5"><div className="flex flex-wrap items-end justify-between gap-3"><div><div className="text-[10px] font-semibold">1. Generate personalized drafts</div><div className="mt-1 text-[8px] text-[var(--text-muted)]">Only contactable operational businesses are eligible. Existing active outreach is skipped.</div></div><div className="flex gap-2"><input value={limit} onChange={(e) => setLimit(Math.min(25, Math.max(1, Number(e.target.value) || 10)))} type="number" min={1} max={25} className="w-20 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-[9px]" /><button type="button" disabled={loading} onClick={() => void run('generate', [], { limit })} className="rounded-lg bg-[var(--accent)] px-4 py-2 text-[8px] font-bold text-black disabled:opacity-50">GENERATE</button></div></div></section>
@@ -89,6 +97,11 @@ export default function WhatsAppAutomationPage() {
       </section>
 
       <section className="nexor-panel overflow-hidden"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] p-5"><div><div className="text-[10px] font-semibold">3. Approved — SEND QUEUE</div><div className="mt-1 text-[8px] text-[var(--text-muted)]">The worker sends due approvals automatically. Use the button to execute them immediately.</div></div><button type="button" disabled={!approved.length || loading} onClick={() => void run('run_due', [], { limit: 20 })} className="rounded-lg bg-[var(--accent)] px-4 py-2 text-[8px] font-bold text-black disabled:opacity-40">RUN DUE SENDS NOW</button></div><div className="divide-y divide-[var(--border)]">{approved.map((item) => <article key={item.id} className="p-5"><div className="flex gap-3"><span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border border-emerald-500/40 bg-emerald-500/10 text-[11px] font-bold text-emerald-400">✓</span><div className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><strong className="text-[10px]">{item.lead.businessName}</strong><span className="rounded bg-[var(--surface-2)] px-2 py-1 font-mono text-[7px]">{item.lead.whatsapp}</span><span className="text-[7px] text-emerald-400">APPROVED • READY</span></span><span className="mt-2 block text-[7px] text-[var(--text-muted)]">Due: {item.scheduledAt ? new Date(item.scheduledAt).toLocaleString() : 'now'}</span><span className="mt-3 block whitespace-pre-wrap text-[9px] leading-5 text-[var(--text-secondary)]">{item.message}</span></div></div></article>)}{!approved.length && <div className="p-10 text-center text-[9px] text-[var(--text-muted)]">Nothing awaiting automatic send.</div>}</div></section>
+
+      <section className="nexor-panel p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3"><div className="text-[10px] font-semibold">Failed sends</div><div className="text-[7px] text-[var(--text-muted)]">{data?.stats?.failedLast24h ?? 0} in last 24h · {data?.stats?.failed ?? 0} total historical</div></div>
+        <div className="mt-3 space-y-2">{(data?.recentFailed ?? []).map((item) => <div key={item.id} className="rounded-xl border border-red-500/20 bg-red-500/5 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-[9px] font-semibold">{item.businessName}</span><span className={`text-[7px] ${item.isRecent ? 'text-red-400' : 'text-[var(--text-muted)]'}`}>{item.isRecent ? 'RECENT' : 'HISTORICAL'} · {new Date(item.updatedAt).toLocaleString()}</span></div><div className="mt-1 text-[8px] text-[var(--text-muted)]">{item.reason}</div></div>)}{!data?.recentFailed?.length && <div className="text-[8px] text-[var(--text-muted)]">No failed sends.</div>}</div>
+      </section>
 
       <section className="grid gap-5 lg:grid-cols-3"><div className="nexor-panel p-5"><div className="text-[10px] font-semibold">4. Scheduled / sent</div><div className="mt-3 space-y-2">{(data?.scheduled ?? []).map((item) => <div key={item.id} className="rounded-xl border border-[var(--border)] p-3"><div className="text-[9px] font-semibold">{item.lead.businessName}</div><div className="mt-1 text-[8px] text-[var(--text-muted)]">{item.scheduledAt ? new Date(item.scheduledAt).toLocaleString() : 'Pending'}</div></div>)}{!data?.scheduled?.length && <div className="text-[8px] text-[var(--text-muted)]">Nothing currently scheduled.</div>}</div></div><div className="nexor-panel p-5"><div className="text-[10px] font-semibold">5. Contactability / blocked</div><div className="mt-3 space-y-2">{[...(data?.notContactable ?? []), ...(data?.rejected ?? [])].slice(0, 30).map((item) => <div key={item.id} className="rounded-xl border border-[var(--border)] p-3"><div className="text-[9px] font-semibold">{item.businessName}</div><div className="mt-1 text-[8px] text-[var(--text-muted)]">{item.reason}</div></div>)}{!(data?.notContactable?.length || data?.rejected?.length) && <div className="text-[8px] text-[var(--text-muted)]">Nothing blocked.</div>}</div></div><div className="nexor-panel p-5"><div className="text-[10px] font-semibold">6. Reply intelligence</div><div className="mt-3 space-y-2">{(data?.replies ?? []).map((reply) => <div key={reply.id} className="rounded-xl border border-[var(--border)] p-3"><div className="flex justify-between gap-3"><span className="text-[9px] font-semibold">{reply.lead.businessName}</span><span className="text-[7px] text-[var(--accent)]">{reply.status}</span></div><div className="mt-2 text-[8px] text-[var(--text-muted)]">{reply.messages[0]?.content ?? 'No message preview'}</div></div>)}{!data?.replies?.length && <div className="text-[8px] text-[var(--text-muted)]">No classified replies yet.</div>}</div></div></section>
 
