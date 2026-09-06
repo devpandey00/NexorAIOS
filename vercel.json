@@ -4,11 +4,6 @@
   "installCommand": "pnpm install --frozen-lockfile",
   "buildCommand": "pnpm --filter @nexor/database db:generate && pnpm --filter @nexor/search build && pnpm --filter @nexor/api... build",
   "outputDirectory": "apps/api/.next",
-  "functions": {
-    "apps/api/src/app/api/whatsapp/automation/route.ts": {
-      "maxDuration": 240
-    }
-  },
   "git": {
     "deploymentEnabled": true
   }
