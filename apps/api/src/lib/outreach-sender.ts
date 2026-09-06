@@ -94,7 +94,7 @@ export async function sendApprovedOutreach(id:string){
   if(claimed.count!==1){const current=await prisma.outreach.findUnique({where:{id}});if(current?.status===OutreachStatus.SENT)return {outreach:current,recipient:outreach.channel===OutreachChannel.WHATSAPP?outreach.lead.whatsapp:outreach.lead.email,alreadySent:true};throw new Error('Outreach was claimed by another sender');}
   let providerMessageId:string|undefined; let channel:ConversationChannel; let recipient:string;
   try{
-    if(outreach.channel===OutreachChannel.WHATSAPP){recipient=outreach.lead.whatsapp??'';channel=ConversationChannel.WHATSAPP;const templateParameter=outreach.lead.ownerName?.trim()||outreach.lead.businessName;providerMessageId=await sendWhatsApp(recipient,outreach.message,templateParameter);}
+    if(outreach.channel===OutreachChannel.WHATSAPP){recipient=outreach.lead.whatsapp??'';channel=ConversationChannel.WHATSAPP;providerMessageId=await sendWhatsApp(recipient,outreach.message,outreach.message);}
     else if(outreach.channel===OutreachChannel.EMAIL){recipient=outreach.lead.email??'';channel=ConversationChannel.EMAIL;if(!recipient) throw new Error('Lead has no email address');providerMessageId=await sendEmail(recipient,outreach.message);}
     else throw new Error(`Unsupported automated outreach channel: ${outreach.channel}`);
     const now=new Date();
