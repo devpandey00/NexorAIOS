@@ -26,10 +26,11 @@ function dedupe(leads: Lead[]): Lead[] {
 }
 
 function queryVariants(query: string): string[] {
-  const original = query.trim();
+  const original = query.replace(/["']/g, ' ').replace(/\s+/g, ' ').trim();
   const cleaned = original.replace(/\b(?:google|meta|facebook|instagram|linkedin|tiktok|youtube|ads?|marketing|seo|website|websites?|social media|digital marketing|services?|lead generation|conversion optimization|needs?|need|more|qualified|high[- ]intent|generate|generating|official|contact|company|business|businesses|looking for|with weak online presence|agency prospects|phone|companies)\b/gi, ' ').replace(/\s+/g, ' ').trim();
   const variants = [original, cleaned, cleaned.replace(/\s+in\s+/gi, ' ')];
   if (/\bdentists?\b/i.test(original) && /\bdubai\b/i.test(original)) variants.push('dentists Dubai', 'dentist Dubai', 'dental clinic Dubai', 'dental clinics Dubai');
+  if (/\binterior\s+designer/i.test(original) && /\bdubai\b/i.test(original)) variants.push('interior designer Dubai', 'interior design company Dubai', 'interior design studio Dubai');
   return [...new Set(variants.filter(Boolean))];
 }
 
@@ -44,6 +45,7 @@ function categoryFilters(query: string): string[] {
   if (/lawyer|law firm|legal/.test(q)) return ['["office"="lawyer"]'];
   if (/accountant|accounting/.test(q)) return ['["office"="accountant"]'];
   if (/real estate|realtor|property/.test(q)) return ['["office"="estate_agent"]'];
+  if (/interior\s+designer|interior\s+design/.test(q)) return ['["office"="architect"]', '["craft"="interior_decorator"]', '["shop"="interior_decoration"]'];
   return ['["office"]', '["shop"]', '["amenity"]', '["craft"]'];
 }
 
@@ -64,7 +66,7 @@ async function nominatimSearch(variant: string): Promise<Lead[]> {
 
 function locationCandidates(query: string): string[] {
   const candidates: string[] = [];
-  const q = query.replace(/\s+/g, ' ').trim();
+  const q = query.replace(/["']/g, ' ').replace(/\s+/g, ' ').trim();
   const inMatch = q.match(/\bin\s+(.+?)(?=\s+(?:google|meta|facebook|instagram|linkedin|tiktok|youtube|ads?|marketing|seo|website|social media|needs?|need|more|qualified|official|contact|looking for|with weak|agency prospects)\b|$)/i);
   if (inMatch?.[1]) candidates.push(inMatch[1].trim());
   for (const city of Object.keys(KNOWN_LOCATIONS)) if (new RegExp(`\\b${city.replace(' ', '\\s+')}\\b`, 'i').test(q)) candidates.push(city);
@@ -93,8 +95,10 @@ async function overpassSearch(query: string): Promise<Lead[]> {
 
 export async function openStreetMapSearch(query: string): Promise<Lead[]> {
   const normalized = query.trim(); if (!normalized) return [];
-  const category = categoryFilters(normalized)[0];
-  if (category !== '["office"]') {
+  const filters = categoryFilters(normalized);
+  const hasKnownLocation = locationCandidates(normalized).length > 0;
+  const shouldUseOverpass = hasKnownLocation && filters.length > 0;
+  if (shouldUseOverpass) {
     const [overpass, ...nominatim] = await Promise.all([overpassSearch(normalized), ...queryVariants(normalized).slice(0, 5).map(nominatimSearch)]);
     const merged = dedupe([...overpass, ...nominatim.flat()]);
     if (merged.length) return merged.slice(0, 150);
