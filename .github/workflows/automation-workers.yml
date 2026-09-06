@@ -51,7 +51,7 @@ jobs:
           set -euo pipefail
           test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required'; exit 1; }
           body_file="$(mktemp)"
-          http_code="$(curl --silent --show-error --max-time 120 -o "$body_file" -w '%{http_code}' -H "Authorization: Bearer $CRON_SECRET" -H "Content-Type: application/json" -X POST "$NEXOR_BASE_URL/api/whatsapp/automation" --data '{"action":"generate","limit":20}')"
+          http_code="$(curl --silent --show-error --max-time 120 -o "$body_file" -w '%{http_code}' -H "Authorization: Bearer $CRON_SECRET" -H "Content-Type: application/json" -X POST "$NEXOR_BASE_URL/api/whatsapp/automation" --data '{"action":"generate","limit":10}')"
           cat "$body_file"; echo; rm -f "$body_file"
           if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then echo "WhatsApp batch generation returned HTTP $http_code; continuing."; exit 1; fi
 
@@ -64,7 +64,7 @@ jobs:
           set -euo pipefail
           test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required'; exit 1; }
           body_file="$(mktemp)"
-          http_code="$(curl --silent --show-error --max-time 240 -o "$body_file" -w '%{http_code}' -H "Authorization: Bearer $CRON_SECRET" -H "Content-Type: application/json" -X POST "$NEXOR_BASE_URL/api/whatsapp/automation" --data '{"action":"run_due","limit":20}')"
+          http_code="$(curl --silent --show-error --max-time 180 -o "$body_file" -w '%{http_code}' -H "Authorization: Bearer $CRON_SECRET" -H "Content-Type: application/json" -X POST "$NEXOR_BASE_URL/api/whatsapp/automation" --data '{"action":"run_due","limit":10}')"
           cat "$body_file"; echo; rm -f "$body_file"
           if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then echo "WhatsApp batch sender returned HTTP $http_code; continuing."; exit 1; fi
 
