@@ -17,18 +17,27 @@ const VALID_LEAD_TYPES = new Set(['BUSINESS', 'COMPANY', 'LOCAL_BUSINESS', 'AGEN
 const MANUAL_SOCIAL_CHANNELS: Set<OutreachChannel> = new Set([OutreachChannel.INSTAGRAM, OutreachChannel.FACEBOOK, OutreachChannel.LINKEDIN]);
 const MANUAL_PENDING = 'MANUAL_PENDING' as OutreachStatus;
 
+function parseLeadMetadata(notes: string | null) {
+  try {
+    const parsed = notes ? JSON.parse(notes) : {};
+    return parsed?.metadata ?? parsed ?? {};
+  } catch {
+    return {};
+  }
+}
+
 function leadIsSendable(lead: { businessName: string; whatsapp: string | null; notes: string | null }) {
   if (!lead.whatsapp) return { ok: false, reason: 'NOT CONTACTABLE: WhatsApp number missing' };
+  const metadata = parseLeadMetadata(lead.notes);
+  const optIn = metadata?.whatsappOptIn === true || metadata?.whatsappOptIn === 'true' || metadata?.whatsapp_opt_in === true || metadata?.whatsapp_opt_in === 'true';
+  if (!optIn) return { ok: false, reason: 'WHATSAPP HOLD: recipient opt-in is not recorded' };
   if (BLOCKED_NAME_PATTERNS.some((pattern) => pattern.test(lead.businessName))) return { ok: false, reason: 'Blocked non-business/job/content lead' };
-  try {
-    const parsed = lead.notes ? JSON.parse(lead.notes) : {};
-    const metadata = parsed?.metadata ?? parsed;
-    const source = typeof metadata?.source === 'string' ? metadata.source.toUpperCase() : '';
-    const leadType = typeof metadata?.leadType === 'string' ? metadata.leadType.toUpperCase() : '';
-    if (BLOCKED_SOURCES.has(source)) return { ok: false, reason: `Blocked source: ${source}` };
-    if (leadType && !VALID_LEAD_TYPES.has(leadType)) return { ok: false, reason: `Blocked lead type: ${leadType}` };
-  } catch { /* legacy notes */ }
-  return { ok: true, reason: 'Contactable operational business lead' };
+  const source = typeof metadata?.source === 'string' ? metadata.source.toUpperCase() : '';
+  const leadType = typeof metadata?.leadType === 'string' ? metadata.leadType.toUpperCase() : '';
+  if (BLOCKED_SOURCES.has(source)) return { ok: false, reason: `Blocked source: ${source}` };
+  if (leadType && !VALID_LEAD_TYPES.has(leadType)) return { ok: false, reason: `Blocked lead type: ${leadType}` };
+  if (!lead.country?.trim() || /^(india|in|ind)$/i.test(lead.country.trim())) return { ok: false, reason: 'WHATSAPP HOLD: India or unknown country is excluded' };
+  return { ok: true, reason: 'Contactable international business lead with recorded WhatsApp opt-in' };
 }
 
 function whatsappConfig() {
@@ -44,10 +53,11 @@ export function getWhatsAppProviderStatus() {
   const config = whatsappConfig();
   return {
     configured: openwa.configured || config.configured,
-    mode: openwa.configured ? 'openwa' : (config.templateName ? 'template' : 'session_text'),
+    mode: openwa.configured ? 'openwa' : (config.templateName ? 'template' : 'template_required'),
     openwaConfigured: openwa.configured,
     templateConfigured: Boolean(config.templateName),
     templateLanguage: config.templateLanguage,
+    optInRequired: true,
   };
 }
 
@@ -58,21 +68,28 @@ async function sendWhatsApp(to: string, message: string) {
   const { token, phoneNumberId, templateName, templateLanguage } = whatsappConfig();
   const version = process.env.WHATSAPP_API_VERSION ?? 'v23.0';
   if (!token || !phoneNumberId) {
-    throw new Error('WhatsApp provider is not configured: add OpenWA (OPENWA_BASE_URL, OPENWA_API_KEY, OPENWA_SESSION_ID) or Meta Cloud API credentials in Vercel Production.');
+    throw new Error('WhatsApp provider is not configured: add Meta Cloud API credentials in Vercel Production.');
+  }
+  if (!templateName) {
+    throw new Error('WhatsApp first-contact sending is paused: an approved Meta message template is required. Set WHATSAPP_TEMPLATE_NAME and WHATSAPP_TEMPLATE_LANGUAGE after Meta approves the template.');
   }
 
   const recipient = to.replace(/\D/g, '');
   if (!recipient || recipient.length < 8) throw new Error('Lead WhatsApp number is invalid after normalization.');
 
-  const payload = templateName
-    ? {
-        messaging_product: 'whatsapp', recipient_type: 'individual', to: recipient, type: 'template',
-        template: { name: templateName, language: { code: templateLanguage }, components: [{ type: 'body', parameters: [{ type: 'text', text: message }] }] },
-      }
-    : {
-        messaging_product: 'whatsapp', recipient_type: 'individual', to: recipient, type: 'text',
-        text: { preview_url: false, body: message },
-      };
+  // Keep the dynamic value a single line so it is valid as a template body parameter.
+  const parameterText = message.replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+  const payload = {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to: recipient,
+    type: 'template',
+    template: {
+      name: templateName,
+      language: { code: templateLanguage },
+      components: [{ type: 'body', parameters: [{ type: 'text', text: parameterText }] }],
+    },
+  };
 
   const response = await fetch(`https://graph.facebook.com/${version}/${phoneNumberId}/messages`, {
     method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -84,10 +101,7 @@ async function sendWhatsApp(to: string, message: string) {
     const providerCode = Number(data?.error?.code ?? 0);
     const code = providerCode ? ` [Meta ${providerCode}]` : '';
     if (providerCode === 190) {
-      throw new Error('Meta WhatsApp authentication failed (Meta 190): the WHATSAPP_ACCESS_TOKEN is invalid, expired, or no longer authorized. Update the Production WHATSAPP_ACCESS_TOKEN in Vercel, then run the send again.');
-    }
-    if (!templateName && (providerCode === 131047 || /24.?hour|template/i.test(providerMessage))) {
-      throw new Error('Meta rejected this first-contact message because it is outside the WhatsApp customer-service window. Configure an approved WHATSAPP_TEMPLATE_NAME and WHATSAPP_TEMPLATE_LANGUAGE for cold outreach.');
+      throw new Error('Meta WhatsApp authentication failed (Meta 190): the Production WHATSAPP_ACCESS_TOKEN is invalid, expired, or no longer authorized.');
     }
     throw new Error(`${providerMessage}${code}`);
   }
@@ -96,7 +110,7 @@ async function sendWhatsApp(to: string, message: string) {
 
 export async function sendEmail(to: string, message: string) {
   const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.OUTREACH_FROM_EMAIL;
+  const from = process.env.OUTREACH_FROM_EMAIL || process.env.REPORT_FROM_EMAIL;
   if (!apiKey || !from) throw new Error('Email credentials are not configured');
   const lines = message.split('\n');
   const subject = lines[0]?.startsWith('Subject:') ? lines[0].replace(/^Subject:\s*/i, '').trim() : 'A quick observation about your business';
@@ -105,6 +119,12 @@ export async function sendEmail(to: string, message: string) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data?.message ?? `Email send failed (${response.status})`);
   return data?.id as string | undefined;
+}
+
+export async function sendReportEmail(subject: string, text: string) {
+  const to = process.env.REPORT_EMAIL_TO?.trim();
+  if (!to) throw new Error('REPORT_EMAIL_TO is not configured');
+  return sendEmail(to, `Subject: ${subject}\n\n${text}`);
 }
 
 export async function sendApprovedOutreach(id: string) {
