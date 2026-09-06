@@ -22,17 +22,21 @@ function fallbackWhatsAppDraft(lead: { businessName: string; ownerName: string |
 export async function GET(req: NextRequest) {
   if (!(await authorized(req))) return jsonError('Unauthorized', 401); const prisma = getPrisma();
   try {
-    const [rawDrafts, rawApproved, scheduled, rawLeads, sent, failed, replies, tasks] = await Promise.all([
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const [rawDrafts, rawApproved, scheduled, rawLeads, sent, failed, failedLast24h, recentFailedRaw, replies, tasks] = await Promise.all([
       prisma.outreach.findMany({ where: { channel: OutreachChannel.WHATSAPP, status: { in: [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED] } }, include: { lead: true }, orderBy: { createdAt: 'desc' }, take: 100 }),
       prisma.outreach.findMany({ where: { channel: OutreachChannel.WHATSAPP, status: OutreachStatus.APPROVED }, include: { lead: true }, orderBy: { approvedAt: 'asc' }, take: 100 }),
       prisma.outreach.findMany({ where: { channel: OutreachChannel.WHATSAPP, status: OutreachStatus.SCHEDULED }, include: { lead: true }, orderBy: { scheduledAt: 'asc' }, take: 100 }),
       prisma.lead.findMany({ where: { status: { in: ['NEW', 'RESEARCHED', 'QUALIFIED', 'PITCH_READY'] } }, orderBy: { updatedAt: 'desc' }, take: 100 }),
       prisma.outreach.count({ where: { channel: OutreachChannel.WHATSAPP, status: OutreachStatus.SENT } }), prisma.outreach.count({ where: { channel: OutreachChannel.WHATSAPP, status: OutreachStatus.FAILED } }),
+      prisma.outreach.count({ where: { channel: OutreachChannel.WHATSAPP, status: OutreachStatus.FAILED, updatedAt: { gte: oneDayAgo } } }),
+      prisma.outreach.findMany({ where: { channel: OutreachChannel.WHATSAPP, status: OutreachStatus.FAILED }, include: { lead: true }, orderBy: { updatedAt: 'desc' }, take: 20 }),
       prisma.conversation.findMany({ where: { channel: 'WHATSAPP', status: { in: ['INTERESTED', 'MEETING_REQUEST', 'NEEDS_REPLY', 'REPLIED'] } }, include: { lead: true, messages: { orderBy: { createdAt: 'desc' }, take: 3 } }, orderBy: { lastMessageAt: 'desc' }, take: 50 }),
       prisma.task.findMany({ where: { status: TaskStatus.TODO, leadId: { not: null } }, include: { lead: true }, orderBy: [{ priority: 'asc' }, { createdAt: 'desc' }], take: 50 }),
     ]);
     const drafts = rawDrafts.filter((item) => leadEligibility(item.lead).ok); const approved = rawApproved.filter((item) => leadEligibility(item.lead).ok && Boolean(item.lead.whatsapp)); const existingOutreachLeadIds = new Set([...rawDrafts, ...rawApproved, ...scheduled].map((item) => item.leadId)); const rejected = [...rawDrafts, ...rawApproved, ...scheduled].filter((item) => !leadEligibility(item.lead).ok).map((item) => ({ id: item.id, businessName: item.lead.businessName, reason: leadEligibility(item.lead).reason })); const notContactable = rawLeads.filter((lead) => leadEligibility(lead).ok && !lead.whatsapp && !existingOutreachLeadIds.has(lead.id)).slice(0, 50).map((lead) => ({ id: lead.id, businessName: lead.businessName, reason: 'NOT CONTACTABLE: WhatsApp number missing' }));
-    return NextResponse.json({ success: true, provider: getWhatsAppProviderStatus(), stats: { drafts: drafts.length, approved: approved.length, scheduled: scheduled.length, sent, failed, replies: replies.length, notContactable: notContactable.length, rejected: rejected.length }, drafts, approved, scheduled, rejected, notContactable, replies, tasks });
+    const recentFailed = recentFailedRaw.map((item) => ({ id: item.id, businessName: item.lead.businessName, reason: item.error ?? 'Send failed (no error recorded)', updatedAt: item.updatedAt.toISOString(), isRecent: item.updatedAt >= oneDayAgo }));
+    return NextResponse.json({ success: true, provider: getWhatsAppProviderStatus(), stats: { drafts: drafts.length, approved: approved.length, scheduled: scheduled.length, sent, failed, failedLast24h, replies: replies.length, notContactable: notContactable.length, rejected: rejected.length }, drafts, approved, scheduled, rejected, notContactable, recentFailed, replies, tasks });
   } catch (error) { return jsonError(error instanceof Error ? error.message : String(error), 500); }
 }
 
