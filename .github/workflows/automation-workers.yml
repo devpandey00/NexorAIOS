@@ -25,11 +25,8 @@ jobs:
           set -euo pipefail
           test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required'; exit 1; }
           body_file="$(mktemp)"
-          echo "Running /api/campaigns/auto/run"
           http_code="$(curl --silent --show-error --max-time 300 -o "$body_file" -w '%{http_code}' -H "Authorization: Bearer $CRON_SECRET" "$NEXOR_BASE_URL/api/campaigns/auto/run")"
-          cat "$body_file"
-          echo
-          rm -f "$body_file"
+          cat "$body_file"; echo; rm -f "$body_file"
           if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then echo "Campaign discovery returned HTTP $http_code; continuing."; exit 1; fi
 
       - name: Run durable Nexor automation scheduler
@@ -41,14 +38,11 @@ jobs:
           set -euo pipefail
           test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required'; exit 1; }
           body_file="$(mktemp)"
-          echo "Running /api/automations/run"
           http_code="$(curl --silent --show-error --max-time 120 -o "$body_file" -w '%{http_code}' -H "Authorization: Bearer $CRON_SECRET" -H "Content-Type: application/json" -X POST "$NEXOR_BASE_URL/api/automations/run")"
-          cat "$body_file"
-          echo
-          rm -f "$body_file"
+          cat "$body_file"; echo; rm -f "$body_file"
           if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then echo "Automation scheduler returned HTTP $http_code; continuing."; exit 1; fi
 
-      - name: Generate and queue WhatsApp outreach automatically
+      - name: Generate WhatsApp approval batch
         continue-on-error: true
         env:
           NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
@@ -57,12 +51,22 @@ jobs:
           set -euo pipefail
           test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required'; exit 1; }
           body_file="$(mktemp)"
-          echo "Running automatic WhatsApp draft generation/approval"
-          http_code="$(curl --silent --show-error --max-time 120 -o "$body_file" -w '%{http_code}' -H "Authorization: Bearer $CRON_SECRET" -H "Content-Type: application/json" -X POST "$NEXOR_BASE_URL/api/whatsapp/automation" --data '{"action":"generate","limit":10}')"
-          cat "$body_file"
-          echo
-          rm -f "$body_file"
-          if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then echo "WhatsApp automation returned HTTP $http_code; continuing."; exit 1; fi
+          http_code="$(curl --silent --show-error --max-time 120 -o "$body_file" -w '%{http_code}' -H "Authorization: Bearer $CRON_SECRET" -H "Content-Type: application/json" -X POST "$NEXOR_BASE_URL/api/whatsapp/automation" --data '{"action":"generate","limit":20}')"
+          cat "$body_file"; echo; rm -f "$body_file"
+          if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then echo "WhatsApp batch generation returned HTTP $http_code; continuing."; exit 1; fi
+
+      - name: Send approved WhatsApp batch with safe pacing
+        continue-on-error: true
+        env:
+          NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required'; exit 1; }
+          body_file="$(mktemp)"
+          http_code="$(curl --silent --show-error --max-time 480 -o "$body_file" -w '%{http_code}' -H "Authorization: Bearer $CRON_SECRET" -H "Content-Type: application/json" -X POST "$NEXOR_BASE_URL/api/whatsapp/automation" --data '{"action":"run_due","limit":20}')"
+          cat "$body_file"; echo; rm -f "$body_file"
+          if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then echo "WhatsApp batch sender returned HTTP $http_code; continuing."; exit 1; fi
 
       - name: Run due follow-ups
         continue-on-error: true
@@ -73,11 +77,8 @@ jobs:
           set -euo pipefail
           test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required'; exit 1; }
           body_file="$(mktemp)"
-          echo "Running /api/cron/followups"
           http_code="$(curl --silent --show-error --max-time 120 -o "$body_file" -w '%{http_code}' -H "Authorization: Bearer $CRON_SECRET" "$NEXOR_BASE_URL/api/cron/followups")"
-          cat "$body_file"
-          echo
-          rm -f "$body_file"
+          cat "$body_file"; echo; rm -f "$body_file"
           if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then echo "Follow-up worker returned HTTP $http_code; continuing."; exit 1; fi
 
       - name: Run due outreach
@@ -89,11 +90,8 @@ jobs:
           set -euo pipefail
           test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required'; exit 1; }
           body_file="$(mktemp)"
-          echo "Running /api/cron/outreach"
           http_code="$(curl --silent --show-error --max-time 120 -o "$body_file" -w '%{http_code}' -H "Authorization: Bearer $CRON_SECRET" "$NEXOR_BASE_URL/api/cron/outreach")"
-          cat "$body_file"
-          echo
-          rm -f "$body_file"
+          cat "$body_file"; echo; rm -f "$body_file"
           if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then echo "Outreach worker returned HTTP $http_code; continuing."; exit 1; fi
 
       - name: Run due social publishing
@@ -105,9 +103,6 @@ jobs:
           set -euo pipefail
           test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required'; exit 1; }
           body_file="$(mktemp)"
-          echo "Running /api/cron/social-publish"
           http_code="$(curl --silent --show-error --max-time 120 -o "$body_file" -w '%{http_code}' -H "Authorization: Bearer $CRON_SECRET" "$NEXOR_BASE_URL/api/cron/social-publish")"
-          cat "$body_file"
-          echo
-          rm -f "$body_file"
+          cat "$body_file"; echo; rm -f "$body_file"
           if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then echo "Social publishing worker returned HTTP $http_code; continuing."; exit 1; fi
