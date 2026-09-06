@@ -8,11 +8,11 @@ function normalizeWebsite(url: string): string { try { const parsed = new URL(ur
 function normalizePhone(phone: string): string { return phone.replace(/\D/g,''); }
 function cleanLeadName(name: string): string { return name.replace(/\s+/g,' ').replace(/\s*[|·–—-]\s*$/g,'').trim(); }
 function looksLikeNonBusinessName(name: string): boolean { return [/\bbest\b/i,/\btop\b/i,/\blist\b/i,/\bdirectory\b/i,/\bguide\b/i,/\broundup\b/i,/\barticles?\b/i,/\bhow to\b/i,/\bstrategy\b/i,/\bpatients?\b/i,/\bget \d+x\b/i,/\bcompanies\b/i].some((pattern) => pattern.test(name)); }
-function inferNiche(query: string): string { return query.split(/\s+(?:in|at|for|with|needs|looking|seeking|want|requires)\s+/i)[0]?.trim() || query.trim(); }
-function inferCountry(query: string): string { const match = query.match(/\bin\s+([A-Z][A-Za-z]*(?:\s+[A-Z][A-Za-z]*)?)(?=\s+(?:Google|Meta|Facebook|Instagram|TikTok|LinkedIn|needs|looking|seeking|want|requires|for)\b|$)/i); return match?.[1]?.trim() || 'Unknown'; }
+function inferNiche(query: string): string { const cleaned = query.replace(/["']/g, ' ').replace(/\s+/g, ' ').trim(); return cleaned.split(/\s+(?:in|at|for|with|needs|looking|seeking|want|requires)\s+/i)[0]?.trim() || cleaned; }
+function inferCountry(query: string): string { const cleaned = query.replace(/["']/g, ' ').replace(/\s+/g, ' ').trim(); const match = cleaned.match(/\bin\s+([A-Z][A-Za-z]*(?:\s+[A-Z][A-Za-z]*)?)(?=\s+(?:Google|Meta|Facebook|Instagram|TikTok|LinkedIn|needs|looking|seeking|want|requires|official|contact)\b|$)/i); return match?.[1]?.trim() || 'Unknown'; }
 
 function buildDiscoveryQueries(query: string): string[] {
-  const normalized = query.replace(/\s+/g, ' ').trim();
+  const normalized = query.replace(/["']/g, ' ').replace(/\s+/g, ' ').trim();
   const servicePattern = /\b(?:Google Ads|Meta Ads|SEO|social media marketing|website development|lead generation|conversion optimization)\b/i;
   const intentPattern = /\b(?:needs more leads|needs a better website|improve Google visibility|improve social media|grow online|local business marketing|official website|poor website|Google visibility|digital marketing|book a consultation)\b/i;
   const withoutIntent = normalized.replace(intentPattern, '').replace(/\s+/g, ' ').trim();
@@ -28,8 +28,8 @@ function buildDiscoveryQueries(query: string): string[] {
     `${industry} ${location} official website`,
     `${industry} ${location} contact`,
     `${industry} ${location} ${service}`.trim(),
-    `${industry} ${location} clinic website`,
     `${industry} ${location} business website`,
+    `${industry} ${location} company`,
   ].map((item) => item.replace(/\s+/g, ' ').trim()).filter(Boolean))];
 }
 
@@ -50,7 +50,7 @@ export async function runCampaign(campaignId: string) {
     const discoveryQueries = buildDiscoveryQueries(campaign.query);
     console.info('[LEAD DISCOVERY] queries', discoveryQueries);
     const searchResult = await leadSearchService.searchMany(discoveryQueries);
-    if (!searchResult.success || searchResult.count === 0) throw new Error(`Lead discovery failed: ${(searchResult.providerErrors ?? []).join(' | ') || 'no usable results'}`);
+    if (!searchResult.success || searchResult.count === 0) throw new Error(`Lead discovery failed: ${(searchResult.providerErrors ?? []).slice(-12).join(' | ') || 'no usable results'}`);
     let processed = 0, successful = 0, failed = 0, qualified = 0; const niche = inferNiche(campaign.query); const country = inferCountry(campaign.query);
     for (const result of searchResult.leads) {
       try {
@@ -63,11 +63,6 @@ export async function runCampaign(campaignId: string) {
         if (!result.website) {
           const fallbackScore = normalizedPhone ? 65 : 55;
           await prisma.lead.update({ where: { id: lead.id }, data: { auditScore: fallbackScore, status: fallbackScore >= 60 ? LeadStatus.QUALIFIED : LeadStatus.RESEARCHED, notes: JSON.stringify({ source: 'campaign-discovery', discoveryQueries, qualification: normalizedPhone ? 'contactable_business_without_website' : 'business_without_website' }) } });
-          if (normalizedPhone) {
-            qualified++;
-            const existingDraft = await prisma.outreach.findFirst({ where: { leadId: lead.id, channel: OutreachChannel.WHATSAPP, status: { in: [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED, OutreachStatus.APPROVED, OutreachStatus.SCHEDULED, OutreachStatus.SENT] } }, orderBy: { createdAt: 'desc' } });
-            if (!existingDraft) await prisma.outreach.create({ data: { leadId: lead.id, campaignId, channel: OutreachChannel.WHATSAPP, status: OutreachStatus.APPROVAL_REQUIRED, message: `Hi ${businessName}, I came across your business in ${country} and noticed an opportunity to improve your online lead generation. I can share a few specific ideas for your business. Want me to send them over?\n\nBest,\nDev\nFounder • Nexor Media` } });
-          }
           processed++; successful++; continue;
         }
 
@@ -76,11 +71,6 @@ export async function runCampaign(campaignId: string) {
         if (!research.success) {
           const fallbackScore = normalizedPhone ? 65 : 60;
           await prisma.lead.update({ where: { id: lead.id }, data: { auditScore: fallbackScore, status: LeadStatus.QUALIFIED, notes: JSON.stringify({ source: 'campaign-discovery', discoveryQueries, qualification: 'website_research_unavailable' }) } });
-          if (normalizedPhone) {
-            qualified++;
-            const existingDraft = await prisma.outreach.findFirst({ where: { leadId: lead.id, channel: OutreachChannel.WHATSAPP, status: { in: [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED, OutreachStatus.APPROVED, OutreachStatus.SCHEDULED, OutreachStatus.SENT] } }, orderBy: { createdAt: 'desc' } });
-            if (!existingDraft) await prisma.outreach.create({ data: { leadId: lead.id, campaignId, channel: OutreachChannel.WHATSAPP, status: OutreachStatus.APPROVAL_REQUIRED, message: `Hi ${businessName}, I reviewed your online presence and found a few opportunities that could help generate more enquiries. Want me to send the specific observations?\n\nBest,\nDev\nFounder • Nexor Media` } });
-          }
           processed++; successful++; continue;
         }
 
