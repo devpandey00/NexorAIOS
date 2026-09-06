@@ -29,15 +29,17 @@ const DEFAULT_INTENTS = [
 
 type QueryTemplate = (industry: string, location: string, service: string) => string;
 
+// Keep discovery queries search-engine friendly. Exact quoted combinations are often
+// too restrictive and can produce zero results on free search endpoints.
 const QUERY_TEMPLATES: QueryTemplate[] = [
-  (industry, location, service) => `"${industry}" "${location}" "${service}"`,
-  (industry, location) => `"${industry}" "${location}" official website`,
-  (industry, location) => `"${industry}" "${location}" contact`,
-  (industry, location, service) => `"${industry}" "${location}" ${service} agency`,
-  (industry, location) => `${industry} ${location} phone`,
+  (industry, location) => `${industry} ${location}`,
   (industry, location) => `${industry} in ${location}`,
-  (industry, location, service) => `${industry} in ${location} ${service}`,
-  (industry, location) => `"${industry}" "${location}" local business`,
+  (industry, location) => `${industry} ${location} contact`,
+  (industry, location) => `${industry} ${location} phone`,
+  (industry, location) => `${industry} ${location} official website`,
+  (industry, location, service) => `${industry} ${location} ${service}`,
+  (industry, location, service) => `${industry} in ${location} ${service} agency`,
+  (industry, location) => `${industry} ${location} local business`,
 ];
 
 function clean(values: string[] | undefined, fallback: string[]): string[] {
@@ -52,7 +54,7 @@ function getQueryTemplate(index: number): QueryTemplate {
 export class DiscoveryStrategyService {
   createQueries(input: Partial<DiscoveryStrategy>, limit = 20): DiscoveryQuery[] {
     const industries = clean(input.industries, DEFAULT_INDUSTRIES);
-    const locations = clean(input.locations, ['Lucknow', 'Delhi', 'Dubai', 'London', 'New York']);
+    const locations = clean(input.locations, ['Dubai', 'London', 'New York', 'Toronto', 'Sydney']);
     const services = clean(input.services, DEFAULT_SERVICES);
     const intents = clean(input.intents, DEFAULT_INTENTS);
     const queries: DiscoveryQuery[] = [];
