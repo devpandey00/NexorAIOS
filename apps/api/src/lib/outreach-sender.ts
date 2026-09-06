@@ -64,40 +64,29 @@ async function sendWhatsApp(to: string, message: string) {
   const recipient = to.replace(/\D/g, '');
   if (!recipient || recipient.length < 8) throw new Error('Lead WhatsApp number is invalid after normalization.');
 
-  // Cold/business-initiated WhatsApp outreach must use a Meta-approved template.
-  // Set WHATSAPP_TEMPLATE_NAME + WHATSAPP_TEMPLATE_LANGUAGE for automated first contact.
-  // The template should contain one body variable ({{1}}) used for the personalized message.
   const payload = templateName
     ? {
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: recipient,
-        type: 'template',
-        template: {
-          name: templateName,
-          language: { code: templateLanguage },
-          components: [{ type: 'body', parameters: [{ type: 'text', text: message }] }],
-        },
+        messaging_product: 'whatsapp', recipient_type: 'individual', to: recipient, type: 'template',
+        template: { name: templateName, language: { code: templateLanguage }, components: [{ type: 'body', parameters: [{ type: 'text', text: message }] }] },
       }
     : {
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: recipient,
-        type: 'text',
+        messaging_product: 'whatsapp', recipient_type: 'individual', to: recipient, type: 'text',
         text: { preview_url: false, body: message },
       };
 
   const response = await fetch(`https://graph.facebook.com/${version}/${phoneNumberId}/messages`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-    cache: 'no-store',
+    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload), cache: 'no-store',
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     const providerMessage = data?.error?.message ?? `WhatsApp send failed (${response.status})`;
-    const code = data?.error?.code ? ` [Meta ${data.error.code}]` : '';
-    if (!templateName && (data?.error?.code === 131047 || /24.?hour|template/i.test(providerMessage))) {
+    const providerCode = Number(data?.error?.code ?? 0);
+    const code = providerCode ? ` [Meta ${providerCode}]` : '';
+    if (providerCode === 190) {
+      throw new Error('Meta WhatsApp authentication failed (Meta 190): the WHATSAPP_ACCESS_TOKEN is invalid, expired, or no longer authorized. Update the Production WHATSAPP_ACCESS_TOKEN in Vercel, then run the send again.');
+    }
+    if (!templateName && (providerCode === 131047 || /24.?hour|template/i.test(providerMessage))) {
       throw new Error('Meta rejected this first-contact message because it is outside the WhatsApp customer-service window. Configure an approved WHATSAPP_TEMPLATE_NAME and WHATSAPP_TEMPLATE_LANGUAGE for cold outreach.');
     }
     throw new Error(`${providerMessage}${code}`);
@@ -112,10 +101,7 @@ export async function sendEmail(to: string, message: string) {
   const lines = message.split('\n');
   const subject = lines[0]?.startsWith('Subject:') ? lines[0].replace(/^Subject:\s*/i, '').trim() : 'A quick observation about your business';
   const text = lines[0]?.startsWith('Subject:') ? lines.slice(2).join('\n') : message;
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from, to: [to], subject, text }), cache: 'no-store',
-  });
+  const response = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ from, to: [to], subject, text }), cache: 'no-store' });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data?.message ?? `Email send failed (${response.status})`);
   return data?.id as string | undefined;
