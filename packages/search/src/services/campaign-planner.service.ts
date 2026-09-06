@@ -8,65 +8,29 @@ export interface SearchRotation {
 }
 
 const INDUSTRIES = [
-  'interior design',
-  'construction company',
-  'real estate agency',
-  'dental clinic',
-  'law firm',
-  'accounting firm',
-  'fitness studio',
-  'restaurant',
-  'hotel',
-  'wedding planner',
-  'architecture firm',
-  'landscaping company',
-  'roofing company',
-  'home remodeling company',
-  'medical clinic',
-  'photography studio',
-  'car dealership',
-  'education consultancy',
-  'immigration consultancy',
-  'ecommerce brand',
+  'interior design', 'construction company', 'real estate agency', 'dental clinic',
+  'law firm', 'accounting firm', 'fitness studio', 'restaurant', 'hotel',
+  'wedding planner', 'architecture firm', 'landscaping company', 'roofing company',
+  'home remodeling company', 'medical clinic', 'photography studio', 'car dealership',
+  'education consultancy', 'immigration consultancy', 'ecommerce brand',
 ];
 
 const SERVICES = [
-  'website design',
-  'SEO',
-  'Google Ads',
-  'Meta Ads',
-  'lead generation',
-  'conversion optimization',
-  'social media marketing',
+  'website design', 'SEO', 'Google Ads', 'Meta Ads', 'lead generation',
+  'conversion optimization', 'social media marketing',
 ];
 
+// International acquisition only: USA, Canada, UK, Australia and UAE.
 const LOCATIONS = [
-  'New York',
-  'Los Angeles',
-  'Miami',
-  'Chicago',
-  'Houston',
-  'Dallas',
-  'Toronto',
-  'London',
-  'Dubai',
-  'Singapore',
-  'Sydney',
-  'Mumbai',
-  'Delhi',
-  'Bangalore',
-  'Lucknow',
+  'New York', 'Los Angeles', 'Miami', 'Chicago', 'Houston', 'Dallas', 'San Francisco',
+  'Austin', 'Seattle', 'Boston', 'Toronto', 'Vancouver', 'Montreal', 'Calgary',
+  'London', 'Manchester', 'Birmingham', 'Leeds', 'Sydney', 'Melbourne', 'Brisbane',
+  'Perth', 'Dubai', 'Abu Dhabi', 'Sharjah',
 ];
 
 const INTENTS = [
-  'official website',
-  'needs more leads',
-  'poor website',
-  'Google visibility',
-  'Google Ads',
-  'Meta Ads',
-  'digital marketing',
-  'book a consultation',
+  'official website', 'needs more leads', 'poor website', 'Google visibility',
+  'Google Ads', 'Meta Ads', 'digital marketing', 'book a consultation',
 ];
 
 function pick<T>(items: readonly T[], index: number): T {
@@ -80,16 +44,10 @@ export class CampaignPlannerService {
     const location = pick(LOCATIONS, Math.floor(rotationIndex / (INDUSTRIES.length * SERVICES.length)));
     const intent = pick(INTENTS, Math.floor(rotationIndex / (INDUSTRIES.length * SERVICES.length * LOCATIONS.length)));
 
-    const query = `${industry} ${service} ${location} ${intent}`;
+    // Keep service/intent as campaign metadata; the actual discovery query stays business/location focused.
+    const query = `${industry} in ${location}`;
 
-    return {
-      industry,
-      service,
-      location,
-      intent,
-      query,
-      rotationIndex,
-    };
+    return { industry, service, location, intent, query, rotationIndex };
   }
 
   planBatch(startIndex: number, count: number): SearchRotation[] {
