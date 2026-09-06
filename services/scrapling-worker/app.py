@@ -264,7 +264,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def auth_ok(self):
         if not API_KEY:
-            return True
+            return False
         return self.headers.get("X-API-Key", "") == API_KEY
 
     def do_GET(self):
@@ -273,6 +273,8 @@ class Handler(BaseHTTPRequestHandler):
         return self.send_json(404, {"error": "not_found"})
 
     def do_POST(self):
+        if not API_KEY:
+            return self.send_json(503, {"error": "worker_not_configured", "message": "SCRAPLING_WORKER_API_KEY is not set on this worker; refusing all requests."})
         if not self.auth_ok():
             return self.send_json(401, {"error": "unauthorized"})
         if self.path != "/v1/discover":
