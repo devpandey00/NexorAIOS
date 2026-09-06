@@ -22,6 +22,7 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
+    "db:migrate:deploy:recover": "prisma migrate resolve --rolled-back 20260830090000_add_sales_pipeline || true; prisma migrate deploy",
     "db:migrate:reset": "prisma migrate reset --force",
     "db:seed": "tsx src/seed/index.ts",
     "db:studio": "prisma studio",
