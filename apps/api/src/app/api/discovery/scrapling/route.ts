@@ -1,6 +1,7 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { discoveryStrategyService } from '@nexor/core';
 import { getDatabaseClients, LeadStatus, SocialPlatform } from '@nexor/database';
+import { getSessionUser } from '@/lib/auth';
 
 const DEFAULT_INDUSTRIES = [
   'digital marketing agencies',
@@ -41,14 +42,34 @@ function cleanStrings(value: unknown, fallback: string[]) {
   return value.filter((item): item is string => typeof item === 'string').map((item) => item.trim()).filter(Boolean);
 }
 
+function normalizeWebsite(value: string): string {
+  try {
+    const url = new URL(value.trim());
+    const host = url.hostname.replace(/^www\./i, '').toLowerCase();
+    const path = url.pathname.replace(/\/+$/, '');
+    return `https://${host}${path}`;
+  } catch {
+    return value.trim();
+  }
+}
+
 function workerConfig() {
   const baseUrl = process.env.SCRAPLING_WORKER_URL?.trim().replace(/\/$/, '');
   const apiKey = process.env.SCRAPLING_WORKER_API_KEY?.trim();
   return { baseUrl, apiKey };
 }
 
-export async function POST(request: Request) {
+async function authorized(req: NextRequest) {
+  const secret = process.env.OUTREACH_API_SECRET?.trim();
+  if (secret && req.headers.get('authorization') === `Bearer ${secret}`) return true;
+  return Boolean(await getSessionUser(req));
+}
+
+export async function POST(request: NextRequest) {
   try {
+    if (!(await authorized(request))) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
     const body = await request.json().catch(() => ({}));
     const { baseUrl, apiKey } = workerConfig();
     if (!baseUrl) {
@@ -91,8 +112,9 @@ export async function POST(request: Request) {
 
     for (const item of leads) {
       const businessName = typeof item?.name === 'string' ? item.name.trim() : '';
-      const website = typeof item?.website === 'string' ? item.website.trim() : '';
-      if (!businessName || !website) continue;
+      const rawWebsite = typeof item?.website === 'string' ? item.website.trim() : '';
+      if (!businessName || !rawWebsite) continue;
+      const website = normalizeWebsite(rawWebsite);
       const location = typeof item?.location === 'string' ? item.location : locations[0] ?? '';
       const country = countryForLocation(location);
       if (INDIA_PATTERN.test(`${location} ${country}`)) continue;
@@ -101,6 +123,7 @@ export async function POST(request: Request) {
         where: {
           OR: [
             { website },
+            { website: rawWebsite },
             ...(typeof item?.email === 'string' && item.email.includes('@') ? [{ email: item.email }] : []),
             { businessName },
           ],
