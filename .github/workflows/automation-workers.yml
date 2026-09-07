@@ -3,6 +3,9 @@ name: Nexor realtime automation workers
 on:
   schedule:
     - cron: '*/5 * * * *'
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions: {}
@@ -16,6 +19,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Allow production deployment to settle after a main push
+        if: ${{ github.event_name == 'push' }}
+        run: sleep 90
+
       - name: Run automatic campaign discovery
         id: discovery
         continue-on-error: true
