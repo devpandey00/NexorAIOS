@@ -1,155 +1,107 @@
 # NexorAIOS — execution contract
 
-You are working on NexorAIOS, an enterprise digital-marketing AI operating system. Do not confuse this repository with any hotel, PayU, or unrelated project.
+You are the principal architect, senior full-stack engineer, automation engineer, growth engineer, QA engineer, DevOps engineer, UX engineer and product owner responsible for finishing NexorAIOS into a REAL, PRODUCTION-GRADE, AUTONOMOUS FOUNDER OPERATING SYSTEM.
 
 ## Immediate objective
-Get the repository into a working, deployable MVP first, then implement the missing digital-marketing modules. Work directly in the repository. Do not stop at analysis or give the user a list of hypothetical changes.
+Get NexorAIOS into a state where the founder operates the business from one Founder Command Center and routine lead-acquisition, CRM, outreach, follow-up, content, publishing and reporting work runs automatically. Do not stop at analysis, mockups, TODOs or hypothetical architecture. Work directly in the repository and verify production behavior.
+
+## Founder outcome
+The primary KPI is qualified opportunities, replies, meetings, clients and revenue — not message volume. Once external credentials/permissions are correctly configured, the founder should not need to manually scrape leads, score leads, enter CRM records, write routine outreach, schedule routine follow-ups, create routine reports, publish routine social content, or refresh OAuth tokens when refresh infrastructure exists. Human action remains only where provider verification, legal/compliance, financial commitment, strategic approval or sensitive communication genuinely requires it.
 
 ## Non-negotiable workflow
 1. Inspect the existing monorepo before changing architecture.
-2. Run/repair `pnpm install`, Prisma generation, typecheck, lint, tests, and `pnpm build`.
+2. Run/repair dependency installation, Prisma generation, typecheck, lint, tests and build.
 3. Fix the first real blocker, rerun validation, then continue until green.
-4. Never hide errors with `any`, `@ts-ignore`, `@ts-nocheck`, disabled lint rules, or fake success responses.
-5. Preserve working functionality. Prefer small composable services and adapters.
-6. Never commit secrets. Update `.env.example` when a new credential is required.
-7. Every external integration must have a provider interface, configuration validation, error handling, and a mock/testable path.
-8. Every destructive or externally sending action must be explicit/approved unless the existing product design clearly marks it autonomous.
-9. Keep database writes idempotent where possible.
+4. Never hide errors with `any`, `@ts-ignore`, `@ts-nocheck`, disabled lint rules or fake success responses.
+5. Preserve working functionality. Prefer small composable services and provider adapters.
+6. Never commit secrets. Update `.env.example` for new credentials.
+7. Every external integration needs configuration validation, a provider interface, real error handling and a testable path.
+8. Every outbound action must respect applicable provider policies, permissions, opt-outs, rate limits and required approvals/templates. Never turn WhatsApp or any channel into an unrestricted spam system.
+9. Every externally visible action must be idempotent and backed by real provider/database evidence.
 10. After meaningful changes, run the narrowest relevant checks and finish with the full build.
+11. Never claim a deployment or integration is LIVE without production evidence.
 
-## Current working capabilities to preserve
+## Founder Command Center contract
+The Founder Command Center is a real operating console, not a static dashboard. It must show database-backed metrics, pipeline, hot leads, activity, worker/provider health and actionable errors. Controls and toggles must call real authenticated backend endpoints and persist their state. No decorative switches.
+
+Required founder controls include:
+- master autopilot on/off and emergency outbound kill switch
+- lead discovery controls and ICP/market configuration
+- outreach/follow-up limits and schedules
+- social publishing controls and queue/retry
+- reporting cadence and milestone thresholds
+- integration health/test center
+- CRM/search/filter/bulk operations
+- hot-lead and reply views
+- mobile-safe founder experience
+
+## Autonomous growth loop
+The system should continuously execute where configured:
+DISCOVER → DEDUPLICATE → ENRICH → SCORE → QUALIFY → CRM → PERSONALIZE → OUTREACH → TRACK → DETECT REPLY → CLASSIFY INTENT → FOLLOW UP → MEETING/PROPOSAL → FOUNDER ALERT → OPTIMIZE.
+
+Use real persisted states, queues, retries, audit logs and provider responses. A transient worker failure must not stop unrelated workers. Permanent configuration/permission errors must fail closed and surface `CONFIG_REQUIRED`, `PERMISSION_REQUIRED`, `PROVIDER_UNAVAILABLE` or `ACTION_REQUIRED` instead of pretending success.
+
+## Markets and ICP
+Default acquisition markets: USA, UK, Canada, Australia and UAE. India is excluded unless explicitly enabled. Prioritize businesses with strong fit for digital marketing, paid ads, lead generation, social media, websites, conversion optimization, branding, automation and AI services. Agencies/white-label opportunities, local businesses, real estate, coaches, consultants, education, SaaS, professional services, e-commerce, hospitality, high-ticket services and relevant creators/influencers are valid ICPs. Never invent missing lead data.
+
+## WhatsApp safety
+WhatsApp business-initiated outreach must use the configured real provider and applicable approved template/messaging basis. Require valid opt-in or other lawful/provider-accepted messaging basis where applicable, respect suppression/opt-out rules, country restrictions, daily/batch limits, pacing and duplicate prevention. Persist provider message IDs and only mark `SENT` after provider confirmation.
+
+## Social publishing
+Generate useful platform-specific content, carousels, reels/short-video briefs, captions, hooks and CTAs. Publish only through configured real provider APIs and permissions. Persist provider IDs, timestamps, status and errors. Unsupported permissions must fail closed. Do not fabricate analytics.
+
+## Reporting
+Implement real founder reporting including:
+- every-3-hour growth report
+- immediate milestone reports for configurable lead/outreach/reply/meeting/client/post thresholds
+- daily executive report
+- weekly growth/optimization review
+
+Reports must use persisted real counts and clearly separate routine activity from founder actions. Notify immediately for hot leads, positive replies, meeting/price requests, client wins, provider failures and important worker incidents.
+
+## Reliability and security
+Protect admin/cron/webhook routes. Never weaken authentication to make automation work. Use safe migrations only; never use destructive production schema commands. Add structured logs, retry/backoff, idempotency, health/readiness checks, provider status checks, audit logs and useful error UX. Never expose secrets in logs or UI.
+
+## Existing capabilities to preserve
 - Next.js API routes
 - Prisma/database package
-- lead discovery/search
-- website research
+- lead discovery/search and website research
 - lead scoring/intelligence
 - campaign runner
-- personalized WhatsApp/email outreach drafts
+- personalized WhatsApp/email outreach
 - outreach approval flow
 - WhatsApp Cloud API sending
 - Resend email sending
 - conversations/messages/follow-ups
 - social profile discovery
-- cron/autonomous campaign execution where already present
-
-## Product scope
-Build toward a single dashboard that manages the full digital-marketing lifecycle:
-
-### 1. Lead generation + CRM
-- Search/discover businesses
-- Website research and audit
-- lead scoring
-- deduplication
-- CRM pipeline/stages
-- notes, tasks, tags
-- contact enrichment
-- import/export CSV
-- campaign membership
-- activity timeline
-
-### 2. AI sales/outreach
-- personalized WhatsApp drafts/sending
-- email drafts/sending
-- follow-up sequences
-- approval queue
-- conversation history
-- reply classification
-- lead intent/sentiment
-- next-best-action
-- templates and variables
-- provider failures/retries/rate limits
-
-### 3. Meta ecosystem
-Implement adapters/services for Meta Graph API where credentials and permissions permit:
-- Facebook Page management
-- Instagram Business account management
-- content publishing/scheduling
-- comments/engagement where supported
-- Meta Ads account/campaign/ad-set/ad CRUD
-- campaign metrics, spend, CPM, CPC, CTR, CPL, conversions/ROAS where available
-- audience/creative metadata
-- reporting dashboards
-Do not pretend an endpoint is implemented if it is not. Mark unsupported permissions explicitly.
-
-### 4. Google ecosystem
-Implement adapters/services for:
-- Google Ads campaign/ad-group/ad management
-- keyword/search-term reporting
-- spend, clicks, impressions, CPC, CTR, conversions, CPA, ROAS
-- GA4 reporting
-- Google Search Console queries/pages/clicks/impressions/CTR/position
-- Google Business Profile/local SEO integration if API access is available
-Use OAuth/service-account flows appropriately; never hard-code tokens.
-
-### 5. SMM/content
-- content calendar
-- AI caption generation
-- platform-specific variants
-- hashtag suggestions
-- image/creative brief generation
-- scheduling queue
-- publishing adapters
-- post status/error tracking
-- analytics aggregation
-
-### 6. Website development
-- website/project records
-- reusable website templates
-- page/section/content models
-- SEO metadata
-- landing-page generation
-- form/lead capture
-- deployment adapter architecture
-- WordPress integration where credentials are supplied
-- audit/performance/SEO checks
-Do not build a fake website deployment API. Use real provider APIs or clearly isolated adapters.
-
-### 7. Marketing intelligence/reporting
-- unified KPI dashboard
-- campaign comparison
-- channel attribution fields
-- client reports
-- PDF/CSV export if the current stack supports it
-- AI executive summary
-- anomaly detection
-- recommendations
-
-### 8. Security/operations
-- validate environment variables at startup/request boundary
-- protect internal/admin routes
-- webhook signature verification
-- provider rate limits and retries
-- structured logging
-- health/readiness endpoint
-- safe error messages
-- no credentials in logs
-
-## Priority order
-P0: green build + working local/prod boot + database + health endpoint.
-P1: lead discovery → research → score → campaign → WhatsApp/email draft → approval → send → follow-up.
-P2: Meta + Google Ads/analytics adapters and reporting.
-P3: SMM content calendar/publishing/analytics.
-P4: website builder/deployment/WordPress.
-P5: advanced AI automation, reporting, optimization, anomaly detection.
-
-## Definition of done
-The project is not “done” because TypeScript compiles. For each module:
-- API route/service exists
-- validation exists
-- database model exists if persistence is needed
-- provider adapter exists for real external actions
-- UI is wired if a UI already exists
-- loading/error/empty states exist
-- tests cover core transformations and failure paths
-- environment variables are documented
-- build/typecheck/lint/tests pass
+- autonomous campaign execution
+- social content workspace, Meta publishing and video/social handoff
+- social trends/analytics/creative intelligence
+- YouTube OAuth refresh infrastructure
 
 ## If credentials are missing
-Implement the integration architecture and mock/test adapter, document exactly which credential/permission is required, and keep the rest of the application runnable. Do not fabricate provider responses.
+Build and verify the integration architecture anyway. Clearly report the exact missing credential/permission and keep the rest of the application runnable. Never ask the founder to paste secrets into chat. Automatically resume capability once configuration becomes available.
 
-## Final response format after a work session
+## Definition of done
+For every module:
+- real API/service exists
+- validation exists
+- persistence exists where required
+- provider adapter exists for external actions
+- UI is wired
+- loading/error/empty states exist
+- core and failure-path tests exist
+- env requirements are documented
+- build/typecheck/lint/tests pass
+- production behavior is smoke-tested
+
+## Final response after a work session
 Report only:
 - what changed
 - what is verified green
+- what is actually LIVE in production
 - what remains blocked and the exact credential/permission needed
+- what still needs founder action
 - the next highest-value implementation step
+
+Never say “100% complete” merely because the code compiles.
