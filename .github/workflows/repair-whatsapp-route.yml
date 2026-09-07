@@ -16,16 +16,23 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Restore known-good WhatsApp route
+      - name: Fix WhatsApp route syntax
         run: |
           set -e
-          git checkout 5608eb4f9b7e00fde159c0a7eb3063aa3a42ec59 -- apps/api/src/app/api/whatsapp/automation/route.ts
-          if git diff --quiet -- apps/api/src/app/api/whatsapp/automation/route.ts; then
-            echo 'WhatsApp route already matches known-good parent; nothing to commit.'
-            exit 0
-          fi
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('apps/api/src/app/api/whatsapp/automation/route.ts')
+          s = p.read_text()
+          old = 'error:null}}));return NextResponse.json'
+          new = 'error:null}})));return NextResponse.json'
+          if old not in s:
+              raise SystemExit('Expected broken transaction pattern not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
+          git diff --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add apps/api/src/app/api/whatsapp/automation/route.ts
-          git commit -m 'fix(automation): restore WhatsApp route build'
+          git commit -m 'fix(automation): repair WhatsApp transaction syntax'
           git push origin HEAD:main
