@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabaseClients } from '@nexor/database';
 import { getSessionUser } from '@/lib/auth';
+import { getAutomationSettings } from '@/lib/automation-settings';
 
 export const runtime = 'nodejs';
 
@@ -8,23 +9,18 @@ function configured(name: string) {
   return Boolean(process.env[name]?.trim());
 }
 
-async function authorized(request: NextRequest) {
-  const user = await getSessionUser(request);
-  return Boolean(user);
-}
-
 function int(value: unknown) {
   return Number(value ?? 0);
 }
 
 export async function GET(request: NextRequest) {
-  if (!(await authorized(request))) {
+  if (!(await getSessionUser(request))) {
     return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   }
 
   try {
     const db = getDatabaseClients().read;
-    const [summaryRows, stageRows, hotLeads, activityRows] = await Promise.all([
+    const [summaryRows, stageRows, hotLeads, activityRows, automationSettings] = await Promise.all([
       db.$queryRawUnsafe<Array<Record<string, unknown>>>(`
         SELECT
           (SELECT COUNT(*) FROM public.leads)::int AS total_leads,
@@ -35,11 +31,10 @@ export async function GET(request: NextRequest) {
           (SELECT COUNT(*) FROM public.leads WHERE status = 'PROPOSAL_SENT')::int AS proposal_leads,
           (SELECT COUNT(*) FROM public.leads WHERE status = 'WON')::int AS won_leads,
           (SELECT COALESCE(SUM(value),0) FROM public.opportunities WHERE stage = 'WON')::numeric AS won_revenue,
-          (SELECT COUNT(*) FROM public.outreach WHERE status = 'SENT' AND created_at >= CURRENT_DATE)::int AS sent_today,
-          (SELECT COUNT(*) FROM public.outreach WHERE channel = 'EMAIL' AND status = 'SENT' AND created_at >= CURRENT_DATE)::int AS email_sent_today,
-          (SELECT COUNT(*) FROM public.outreach WHERE channel = 'WHATSAPP' AND status = 'SENT' AND created_at >= CURRENT_DATE)::int AS whatsapp_sent_today,
+          (SELECT COUNT(*) FROM public.outreach WHERE status = 'SENT' AND sent_at >= CURRENT_DATE)::int AS sent_today,
+          (SELECT COUNT(*) FROM public.outreach WHERE channel = 'EMAIL' AND status = 'SENT' AND sent_at >= CURRENT_DATE)::int AS email_sent_today,
+          (SELECT COUNT(*) FROM public.outreach WHERE channel = 'WHATSAPP' AND status = 'SENT' AND sent_at >= CURRENT_DATE)::int AS whatsapp_sent_today,
           (SELECT COUNT(*) FROM public.follow_ups WHERE status = 'COMPLETED' AND updated_at >= CURRENT_DATE)::int AS followups_today,
-          (SELECT COUNT(*) FROM public.messages WHERE direction = 'INBOUND' AND created_at >= CURRENT_DATE)::int AS inbound_today,
           (SELECT COUNT(*) FROM public.messages WHERE direction = 'INBOUND' AND created_at >= CURRENT_DATE)::int AS replies_today,
           (SELECT COUNT(*) FROM public.jobs WHERE status IN ('FAILED','RETRYING') AND created_at >= CURRENT_DATE)::int AS problem_jobs_today,
           (SELECT COUNT(*) FROM public.campaigns WHERE status = 'RUNNING')::int AS running_campaigns
@@ -62,6 +57,7 @@ export async function GET(request: NextRequest) {
         ORDER BY created_at DESC
         LIMIT 8
       `),
+      getAutomationSettings(),
     ]);
 
     const summary = summaryRows[0] ?? {};
@@ -77,9 +73,11 @@ export async function GET(request: NextRequest) {
       linkedin: configured('LINKEDIN_ACCESS_TOKEN') ? 'CONFIGURED' : 'CONFIG_REQUIRED',
       youtube: configured('YOUTUBE_ACCESS_TOKEN') || configured('YOUTUBE_REFRESH_TOKEN') ? 'CONFIGURED' : 'CONFIG_REQUIRED',
       x: configured('X_ACCESS_TOKEN') ? 'CONFIGURED' : 'CONFIG_REQUIRED',
-      leadDiscovery: configured('SCRAPLING_BASE_URL') || configured('SCRAPLING_API_KEY') ? 'CONFIGURED' : 'CONFIG_REQUIRED',
+      leadDiscovery: configured('SERPER_API_KEY') || configured('GOOGLE_PLACES_API_KEY') || configured('SEARCH_PROVIDER') ? 'CONFIGURED' : 'CONFIG_REQUIRED',
       cron: configured('CRON_SECRET') ? 'CONFIGURED' : 'CONFIG_REQUIRED',
     };
+
+    const enabledMap = Object.fromEntries(automationSettings.map((setting) => [setting.key, setting.enabled]));
 
     return NextResponse.json({
       success: true,
@@ -110,9 +108,8 @@ export async function GET(request: NextRequest) {
       hotLeads,
       activity: activityRows,
       integrations,
-      autopilot: {
-        enabled: process.env.NEXOR_AUTOPILOT_ENABLED !== 'false',
-      },
+      automation: automationSettings,
+      autopilot: { enabled: enabledMap.autopilot ?? true },
     });
   } catch (error) {
     console.error('[FOUNDER OVERVIEW ERROR]', error);
