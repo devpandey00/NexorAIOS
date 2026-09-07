@@ -1,0 +1,31 @@
+name: Repair WhatsApp automation route
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Restore known-good WhatsApp route
+        run: |
+          set -e
+          git checkout 5608eb4f9b7e00fde159c0a7eb3063aa3a42ec59 -- apps/api/src/app/api/whatsapp/automation/route.ts
+          if git diff --quiet -- apps/api/src/app/api/whatsapp/automation/route.ts; then
+            echo 'WhatsApp route already matches known-good parent; nothing to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/api/src/app/api/whatsapp/automation/route.ts
+          git commit -m 'fix(automation): restore WhatsApp route build'
+          git push origin HEAD:main
