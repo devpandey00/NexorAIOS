@@ -3,7 +3,6 @@ import DashboardLayout from '@/components/dashboard/DashboardLayout';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
-
 function status(value: string | undefined) { return Boolean(value?.trim()); }
 
 export default function SettingsPage() {
@@ -12,6 +11,9 @@ export default function SettingsPage() {
     { key: 'WhatsApp Phone Number ID', ok: status(process.env.WHATSAPP_PHONE_NUMBER_ID), env: 'WHATSAPP_PHONE_NUMBER_ID' },
     { key: 'WhatsApp first-contact template', ok: status(process.env.WHATSAPP_TEMPLATE_NAME), env: 'WHATSAPP_TEMPLATE_NAME' },
     { key: 'Automation worker secret', ok: status(process.env.CRON_SECRET), env: 'CRON_SECRET' },
+    { key: 'Resend email API', ok: status(process.env.RESEND_API_KEY), env: 'RESEND_API_KEY' },
+    { key: 'Daily report sender', ok: status(process.env.REPORT_FROM_EMAIL), env: 'REPORT_FROM_EMAIL' },
+    { key: 'Daily report recipient', ok: status(process.env.REPORT_EMAIL_TO), env: 'REPORT_EMAIL_TO' },
   ];
 
   return <DashboardLayout><main className="space-y-5">
@@ -20,10 +22,11 @@ export default function SettingsPage() {
       <div className="mt-5 font-mono text-[7px] tracking-[0.18em] text-[var(--accent)]">SYSTEM CONFIGURATION</div>
       <h1 className="mt-2 text-3xl font-semibold tracking-[-0.04em]">Settings</h1>
       <p className="mt-3 max-w-3xl text-[10px] leading-5 text-[var(--text-secondary)]">One place to see which external providers are actually configured. Secrets are never displayed; only configuration status is shown.</p>
+      <Link href="/dashboard/settings/automation" className="mt-5 inline-flex rounded-xl border border-[var(--accent)]/25 bg-[var(--accent-soft)] px-4 py-2 font-mono text-[8px] font-semibold tracking-[0.12em] text-[var(--accent)]">OPEN AUTOMATION CONTROL CENTER →</Link>
     </section>
     <section className="nexor-panel p-6">
       <div className="text-[11px] font-semibold">Production readiness</div>
-      <div className="mt-4 grid gap-3 md:grid-cols-2">{checks.map((check) => <div key={check.env} className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-4"><div className="flex items-center justify-between gap-3"><span className="text-[9px] font-semibold">{check.key}</span><span className={`rounded-full px-2 py-1 font-mono text-[7px] ${check.ok ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>{check.ok ? 'CONFIGURED' : 'MISSING'}</span></div><div className="mt-2 font-mono text-[7px] text-[var(--text-muted)]">{check.env}</div></div>)}</div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3">{checks.map((check) => <div key={check.env} className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-4"><div className="flex items-center justify-between gap-3"><span className="text-[9px] font-semibold">{check.key}</span><span className={`rounded-full px-2 py-1 font-mono text-[7px] ${check.ok ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>{check.ok ? 'CONFIGURED' : 'MISSING'}</span></div><div className="mt-2 font-mono text-[7px] text-[var(--text-muted)]">{check.env}</div></div>)}</div>
     </section>
     <section className="nexor-panel p-6">
       <div className="text-[11px] font-semibold">WhatsApp setup</div>
