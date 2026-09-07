@@ -5,7 +5,8 @@ export type AutomationKey = (typeof AUTOMATION_KEYS)[number];
 export const AUTOMATION_LABELS: Record<AutomationKey,string> = { campaign_discovery:'Automatic lead discovery', scheduler:'Durable automation scheduler', job_autopilot:'AI job autopilot', autopilot:'Daily business autopilot', whatsapp_generation:'WhatsApp draft generation', whatsapp_sending:'Approved WhatsApp sending', followups:'Automatic follow-ups', outreach:'Automatic outreach queue', social_publishing:'Automatic social publishing', daily_reports:'Daily email reports', growth_reports:'3-hour growth + milestone reports' };
 
 async function ensureTable(db: ReturnType<typeof getDatabaseClients>['write']) {
-  await db.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS public.automation_settings (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), key varchar(100) NOT NULL UNIQUE, enabled boolean NOT NULL DEFAULT true, config jsonb, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()); CREATE INDEX IF NOT EXISTS idx_automation_settings_enabled ON public.automation_settings(enabled);`);
+  await db.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS public.automation_settings (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), key varchar(100) NOT NULL UNIQUE, enabled boolean NOT NULL DEFAULT true, config jsonb, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`);
+  await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_automation_settings_enabled ON public.automation_settings(enabled)`);
 }
 
 export async function isAutomationEnabled(key: AutomationKey): Promise<boolean> {
