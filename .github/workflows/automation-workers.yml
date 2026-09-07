@@ -17,92 +17,97 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Run automatic campaign discovery
-        continue-on-error: true
         env:
           NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           set -euo pipefail
-          test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required'; exit 1; }
+          test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required in GitHub Actions secrets'; exit 1; }
           body_file="$(mktemp)"
           http_code="$(curl --silent --show-error --retry 2 --retry-delay 2 --retry-all-errors --max-time 300 -o "$body_file" -w '%{http_code}' -H "Authorization: Bearer $CRON_SECRET" "$NEXOR_BASE_URL/api/campaigns/auto/run")"
           cat "$body_file"; echo; rm -f "$body_file"
-          if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then echo "Campaign discovery returned HTTP $http_code; continuing."; exit 1; fi
+          [[ "$http_code" =~ ^2[0-9][0-9]$ ]] || { echo "Campaign discovery returned HTTP $http_code"; exit 1; }
 
       - name: Run durable Nexor automation scheduler
-        continue-on-error: true
         env:
           NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           set -euo pipefail
-          test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required'; exit 1; }
+          test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required in GitHub Actions secrets'; exit 1; }
           body_file="$(mktemp)"
           http_code="$(curl --silent --show-error --retry 2 --retry-delay 2 --retry-all-errors --max-time 120 -o "$body_file" -w '%{http_code}' -H "Authorization: Bearer $CRON_SECRET" -H "Content-Type: application/json" -X POST "$NEXOR_BASE_URL/api/automations/run")"
           cat "$body_file"; echo; rm -f "$body_file"
-          if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then echo "Automation scheduler returned HTTP $http_code; continuing."; exit 1; fi
+          [[ "$http_code" =~ ^2[0-9][0-9]$ ]] || { echo "Automation scheduler returned HTTP $http_code"; exit 1; }
 
-      - name: Generate WhatsApp approval batch
-        continue-on-error: true
+      - name: Generate WhatsApp batch
         env:
           NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           set -euo pipefail
-          test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required'; exit 1; }
+          test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required in GitHub Actions secrets'; exit 1; }
           body_file="$(mktemp)"
           http_code="$(curl --silent --show-error --retry 2 --retry-delay 2 --retry-all-errors --max-time 120 -o "$body_file" -w '%{http_code}' -H "Authorization: Bearer $CRON_SECRET" -H "Content-Type: application/json" -X POST "$NEXOR_BASE_URL/api/whatsapp/automation" --data '{"action":"generate","limit":20}')"
           cat "$body_file"; echo; rm -f "$body_file"
-          if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then echo "WhatsApp batch generation returned HTTP $http_code; continuing."; exit 1; fi
+          [[ "$http_code" =~ ^2[0-9][0-9]$ ]] || { echo "WhatsApp batch generation returned HTTP $http_code"; exit 1; }
 
-      - name: Send approved WhatsApp batch with safe pacing
-        continue-on-error: true
+      - name: Auto-approve eligible WhatsApp batch
         env:
           NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           set -euo pipefail
-          test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required'; exit 1; }
+          test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required in GitHub Actions secrets'; exit 1; }
+          body_file="$(mktemp)"
+          http_code="$(curl --silent --show-error --retry 2 --retry-delay 2 --retry-all-errors --max-time 120 -o "$body_file" -w '%{http_code}' -H "Authorization: Bearer $CRON_SECRET" -H "Content-Type: application/json" -X POST "$NEXOR_BASE_URL/api/whatsapp/automation/auto-approve")"
+          cat "$body_file"; echo; rm -f "$body_file"
+          [[ "$http_code" =~ ^2[0-9][0-9]$ ]] || { echo "WhatsApp auto-approval returned HTTP $http_code"; exit 1; }
+
+      - name: Send approved WhatsApp batch with safe pacing
+        env:
+          NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required in GitHub Actions secrets'; exit 1; }
           body_file="$(mktemp)"
           http_code="$(curl --silent --show-error --retry 2 --retry-delay 2 --retry-all-errors --max-time 240 -o "$body_file" -w '%{http_code}' -H "Authorization: Bearer $CRON_SECRET" -H "Content-Type: application/json" -X POST "$NEXOR_BASE_URL/api/whatsapp/automation" --data '{"action":"run_due","limit":20}')"
           cat "$body_file"; echo; rm -f "$body_file"
-          if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then echo "WhatsApp batch sender returned HTTP $http_code; continuing."; exit 1; fi
+          [[ "$http_code" =~ ^2[0-9][0-9]$ ]] || { echo "WhatsApp batch sender returned HTTP $http_code"; exit 1; }
 
       - name: Run due follow-ups
-        continue-on-error: true
         env:
           NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           set -euo pipefail
-          test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required'; exit 1; }
+          test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required in GitHub Actions secrets'; exit 1; }
           body_file="$(mktemp)"
           http_code="$(curl --silent --show-error --retry 2 --retry-delay 2 --retry-all-errors --max-time 120 -o "$body_file" -w '%{http_code}' -H "Authorization: Bearer $CRON_SECRET" "$NEXOR_BASE_URL/api/cron/followups")"
           cat "$body_file"; echo; rm -f "$body_file"
-          if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then echo "Follow-up worker returned HTTP $http_code; continuing."; exit 1; fi
+          [[ "$http_code" =~ ^2[0-9][0-9]$ ]] || { echo "Follow-up worker returned HTTP $http_code"; exit 1; }
 
       - name: Run due outreach
-        continue-on-error: true
         env:
           NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           set -euo pipefail
-          test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required'; exit 1; }
+          test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required in GitHub Actions secrets'; exit 1; }
           body_file="$(mktemp)"
           http_code="$(curl --silent --show-error --retry 2 --retry-delay 2 --retry-all-errors --max-time 120 -o "$body_file" -w '%{http_code}' -H "Authorization: Bearer $CRON_SECRET" "$NEXOR_BASE_URL/api/cron/outreach")"
           cat "$body_file"; echo; rm -f "$body_file"
-          if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then echo "Outreach worker returned HTTP $http_code; continuing."; exit 1; fi
+          [[ "$http_code" =~ ^2[0-9][0-9]$ ]] || { echo "Outreach worker returned HTTP $http_code"; exit 1; }
 
       - name: Run due social publishing
-        continue-on-error: true
         env:
           NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           set -euo pipefail
-          test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required'; exit 1; }
+          test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required in GitHub Actions secrets'; exit 1; }
           body_file="$(mktemp)"
           http_code="$(curl --silent --show-error --retry 2 --retry-delay 2 --retry-all-errors --max-time 120 -o "$body_file" -w '%{http_code}' -H "Authorization: Bearer $CRON_SECRET" "$NEXOR_BASE_URL/api/cron/social-publish")"
           cat "$body_file"; echo; rm -f "$body_file"
-          if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then echo "Social publishing worker returned HTTP $http_code; continuing."; exit 1; fi
+          [[ "$http_code" =~ ^2[0-9][0-9]$ ]] || { echo "Social publishing worker returned HTTP $http_code"; exit 1; }
