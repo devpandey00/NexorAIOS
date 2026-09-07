@@ -10,9 +10,9 @@ type Engine = 'ddg' | 'ddg-lite' | 'bing' | 'google' | 'searx';
 interface SearchResult { title: string; url: string; }
 
 const BLOCKED_DOMAINS = [
-  'duckduckgo.com', 'bing.com', 'google.com', 'facebook.com', 'instagram.com', 'linkedin.com',
-  'youtube.com', 'yelp.com', 'yellowpages.com', 'mapquest.com', 'tripadvisor.com', 'wikipedia.org',
-  'reddit.com', 'pinterest.com', 'indeed.com', 'naukri.com', 'glassdoor.com', 'ziprecruiter.com',
+  'duckduckgo.com', 'bing.com', 'google.com', 'facebook.com', 'instagram.com', 'linkedin.com', 'youtube.com',
+  'yelp.com', 'yellowpages.com', 'mapquest.com', 'tripadvisor.com', 'wikipedia.org', 'reddit.com', 'pinterest.com',
+  'indeed.com', 'naukri.com', 'glassdoor.com', 'ziprecruiter.com',
 ];
 const NON_BUSINESS_TITLE_PATTERNS = [
   /\bbest\b/i, /\btop\b/i, /\blist\b/i, /\bdirectory\b/i, /\bguide\b/i, /\broundup\b/i,
@@ -22,8 +22,7 @@ const NON_BUSINESS_TITLE_PATTERNS = [
 const NON_BUSINESS_PATH_PATTERNS = [/\/(jobs?|careers?|vacancies|blog|article|news|category|tag|search|directory|listing|forum|forums)(\/|$)/i];
 
 function decodeHtml(value: string): string {
-  return value
-    .replace(/&amp;/gi, '&').replace(/&quot;/gi, '"').replace(/&#x27;/gi, "'")
+  return value.replace(/&amp;/gi, '&').replace(/&quot;/gi, '"').replace(/&#x27;/gi, "'")
     .replace(/&#39;/gi, "'").replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
     .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)));
 }
@@ -33,23 +32,14 @@ function titleCaseDomain(domain: string): string { return (domain.split('.')[0] 
 
 function extractResults(html: string, engine: Engine): SearchResult[] {
   const patterns: RegExp[] = engine === 'ddg'
-    ? [
-        /<a\b[^>]*class=["'][^"']*result__a[^"']*["'][^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi,
-        /<a\b[^>]*href=["']([^"']+)["'][^>]*class=["'][^"']*result__a[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi,
-      ]
+    ? [/<a\b[^>]*class=["'][^"']*result__a[^"']*["'][^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, /<a\b[^>]*href=["']([^"']+)["'][^>]*class=["'][^"']*result__a[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi]
     : engine === 'ddg-lite'
-      ? [
-          /<a\b[^>]*class=["'][^"']*result-link[^"']*["'][^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi,
-          /<a\b[^>]*href=["']([^"']+)["'][^>]*class=["'][^"']*result-link[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi,
-        ]
+      ? [/<a\b[^>]*class=["'][^"']*result-link[^"']*["'][^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, /<a\b[^>]*href=["']([^"']+)["'][^>]*class=["'][^"']*result-link[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi]
       : engine === 'bing'
         ? [/<li[^>]+class=["'][^"']*b_algo[^"']*["'][\s\S]*?<h2[^>]*>\s*<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi]
         : engine === 'google'
           ? [/<a[^>]+href=["'](?:\/url\?q=|)(https?:\/\/[^"'&]+)[^"']*["'][^>]*>[\s\S]*?<h3[^>]*>([\s\S]*?)<\/h3>/gi]
-          : [
-              /<a\b[^>]*class=["'][^"']*result_header[^"']*["'][^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi,
-              /<a\b[^>]*href=["']([^"']+)["'][^>]*class=["'][^"']*result_header[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi,
-            ];
+          : [/<a\b[^>]*class=["'][^"']*result_header[^"']*["'][^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, /<a\b[^>]*href=["']([^"']+)["'][^>]*class=["'][^"']*result_header[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi];
 
   const results: SearchResult[] = [];
   const seen = new Set<string>();
@@ -61,9 +51,7 @@ function extractResults(html: string, engine: Engine): SearchResult[] {
       try {
         if (url.startsWith('//')) url = `https:${url}`;
         const parsed = new URL(url, 'https://example.com');
-        if ((engine === 'ddg' || engine === 'ddg-lite') && parsed.hostname.includes('duckduckgo.com') && parsed.searchParams.has('uddg')) {
-          url = decodeURIComponent(parsed.searchParams.get('uddg')!);
-        }
+        if ((engine === 'ddg' || engine === 'ddg-lite') && parsed.hostname.includes('duckduckgo.com') && parsed.searchParams.has('uddg')) url = decodeURIComponent(parsed.searchParams.get('uddg')!);
       } catch { continue; }
       if (!/^https?:\/\//i.test(url) || !title) continue;
       const key = url.split('#')[0];
@@ -88,10 +76,7 @@ async function fetchText(url: string, accept = 'text/html,application/xhtml+xml'
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
     try {
-      const response = await fetch(url, {
-        headers: { 'user-agent': 'Mozilla/5.0 NexorAIOS/1.0', accept },
-        redirect: 'follow', cache: 'no-store', signal: controller.signal,
-      });
+      const response = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0 NexorAIOS/1.0', accept }, redirect: 'follow', cache: 'no-store', signal: controller.signal });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return await response.text();
     } catch {
@@ -102,11 +87,7 @@ async function fetchText(url: string, accept = 'text/html,application/xhtml+xml'
 }
 
 async function queryEngine(query: string, engine: Engine): Promise<SearchResult[]> {
-  const base = engine === 'ddg' ? 'https://html.duckduckgo.com/html/'
-    : engine === 'ddg-lite' ? 'https://lite.duckduckgo.com/lite/'
-      : engine === 'bing' ? 'https://www.bing.com/search'
-        : engine === 'google' ? 'https://www.google.com/search'
-          : process.env.SEARXNG_URL;
+  const base = engine === 'ddg' ? 'https://html.duckduckgo.com/html/' : engine === 'ddg-lite' ? 'https://lite.duckduckgo.com/lite/' : engine === 'bing' ? 'https://www.bing.com/search' : engine === 'google' ? 'https://www.google.com/search' : process.env.SEARXNG_URL;
   if (!base) return [];
   const url = new URL(base);
   url.searchParams.set('q', query);
@@ -120,11 +101,7 @@ async function queryEngine(query: string, engine: Engine): Promise<SearchResult[
 async function resolveName(result: SearchResult): Promise<string> {
   const html = await fetchText(result.url);
   if (html) {
-    const patterns = [
-      /<meta[^>]+property=["']og:site_name["'][^>]+content=["']([^"']+)["']/i,
-      /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:site_name["']/i,
-      /<title[^>]*>([\s\S]*?)<\/title>/i,
-    ];
+    const patterns = [/<meta[^>]+property=["']og:site_name["'][^>]+content=["']([^"']+)["']/i, /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:site_name["']/i, /<title[^>]*>([\s\S]*?)<\/title>/i];
     for (const pattern of patterns) {
       const match = html.match(pattern);
       const value = match?.[1] ? stripHtml(match[1]).replace(/\s*[|·–—-]\s*(home|homepage|official website)$/i, '').trim() : '';
@@ -137,28 +114,34 @@ async function resolveName(result: SearchResult): Promise<string> {
 async function mapLimit<T, R>(items: T[], limit: number, worker: (item: T) => Promise<R>): Promise<R[]> {
   const output: R[] = [];
   let cursor = 0;
-  async function consume() {
-    while (true) {
-      const index = cursor++;
-      if (index >= items.length) return;
-      output[index] = await worker(items[index]);
-    }
-  }
+  async function consume() { while (true) { const index = cursor++; if (index >= items.length) return; output[index] = await worker(items[index]); } }
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, consume));
   return output;
 }
 
-export async function freeWebSearch(query: string): Promise<{ leads: Lead[]; provider: string; errors: string[] }> {
-  const normalized = query.trim();
-  if (!normalized) return { leads: [], provider: 'free-auto', errors: [] };
+function normalizeDiscoveryQuery(query: string): { base: string; service: string } {
+  const cleaned = query.replace(/["']/g, ' ').replace(/\s+/g, ' ').trim();
+  const serviceMatch = cleaned.match(/\b(Google Ads|Meta Ads|SEO|social media marketing|website development|lead generation|conversion optimization)\b/i);
+  const service = serviceMatch?.[1] ?? '';
+  const base = cleaned.replace(/\b(?:Google Ads|Meta Ads|SEO|social media marketing|website development|lead generation|conversion optimization)\b/gi, '').replace(/\s+/g, ' ').trim();
+  return { base, service };
+}
 
+export async function freeWebSearch(query: string): Promise<{ leads: Lead[]; provider: string; errors: string[] }> {
+  const { base, service } = normalizeDiscoveryQuery(query);
+  if (!base) return { leads: [], provider: 'free-auto', errors: ['Empty discovery query after normalization'] };
+
+  // Never send the service as an exact-match requirement. Discovery is for finding
+  // real businesses first; service matching happens later in research/intelligence.
   const queries = [
-    normalized,
-    `${normalized} official website`,
-    `${normalized} contact`,
-    `${normalized} services`,
-    `${normalized} company -jobs -careers -vacancy -directory`,
-  ];
+    base,
+    `${base} official website`,
+    `${base} contact`,
+    `${base} business`,
+    `${base} company`,
+    service ? `${base} ${service}` : '',
+  ].filter(Boolean);
+
   const errors: string[] = [];
   const engines: Engine[] = ['ddg', 'ddg-lite', 'bing', 'google', 'searx'];
   const all: SearchResult[] = [];
@@ -169,15 +152,9 @@ export async function freeWebSearch(query: string): Promise<{ leads: Lead[]; pro
       if (engine === 'searx' && !process.env.SEARXNG_URL) continue;
       try {
         const results = (await queryEngine(searchQuery, engine)).filter(useful);
-        if (results.length) {
-          all.push(...results);
-          found = true;
-          break;
-        }
+        if (results.length) { all.push(...results); found = true; break; }
         errors.push(`${engine}: zero usable results`);
-      } catch (error) {
-        errors.push(`${engine}: ${error instanceof Error ? error.message : String(error)}`);
-      }
+      } catch (error) { errors.push(`${engine}: ${error instanceof Error ? error.message : String(error)}`); }
     }
     if (!found) errors.push(`No usable free-search result for query: ${searchQuery}`);
     if (all.length >= MAX_FINAL_LEADS) break;
