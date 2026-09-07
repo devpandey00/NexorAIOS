@@ -60,9 +60,32 @@ async function publishLinkedIn(post: { caption: string; hashtags: string[] }) {
   return response.headers.get('x-restli-id') ?? response.headers.get('x-linkedin-id') ?? '';
 }
 
-function youtubeAccessToken() {
+async function youtubeAccessToken() {
+  const refreshToken = process.env.YOUTUBE_REFRESH_TOKEN?.trim();
+  const clientId = process.env.YOUTUBE_CLIENT_ID?.trim();
+  const clientSecret = process.env.YOUTUBE_CLIENT_SECRET?.trim();
+
+  if (refreshToken && clientId && clientSecret) {
+    const response = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        refresh_token: refreshToken,
+        grant_type: 'refresh_token',
+      }).toString(),
+      cache: 'no-store',
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || !body?.access_token) {
+      throw new Error(body?.error_description ?? body?.error ?? `YouTube token refresh failed (${response.status})`);
+    }
+    return String(body.access_token);
+  }
+
   const token = process.env.YOUTUBE_ACCESS_TOKEN?.trim();
-  if (!token) throw new Error('YOUTUBE_ACCESS_TOKEN is not configured');
+  if (!token) throw new Error('YouTube credentials are not configured. Set YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET and YOUTUBE_REFRESH_TOKEN.');
   return token;
 }
 
@@ -88,7 +111,7 @@ async function publishYouTube(post: { title: string; caption: string; mediaUrl: 
 
   const response = await fetch('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=multipart&part=snippet,status', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${youtubeAccessToken()}` },
+    headers: { Authorization: `Bearer ${await youtubeAccessToken()}` },
     body: form,
     cache: 'no-store',
   });
@@ -171,7 +194,10 @@ export function isProviderConfigured(platform: SocialContentPlatform) {
   if (platform === 'FACEBOOK') return Boolean(process.env.META_ACCESS_TOKEN && process.env.META_GRAPH_VERSION && process.env.META_PAGE_ID);
   if (platform === 'INSTAGRAM') return Boolean(process.env.META_ACCESS_TOKEN && process.env.META_GRAPH_VERSION && metaInstagramUserId());
   if (platform === 'LINKEDIN') return Boolean(process.env.LINKEDIN_ACCESS_TOKEN && process.env.LINKEDIN_AUTHOR_URN);
-  if (platform === 'YOUTUBE') return Boolean(process.env.YOUTUBE_ACCESS_TOKEN);
+  if (platform === 'YOUTUBE') return Boolean(
+    (process.env.YOUTUBE_CLIENT_ID && process.env.YOUTUBE_CLIENT_SECRET && process.env.YOUTUBE_REFRESH_TOKEN) ||
+    process.env.YOUTUBE_ACCESS_TOKEN,
+  );
   if (platform === 'X') return Boolean(process.env.X_ACCESS_TOKEN);
   return false;
 }
