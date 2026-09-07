@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { OutreachStatus } from '@nexor/database';
+import { isAutomationEnabled } from '@/lib/automation-settings';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -22,27 +23,19 @@ async function processScheduledOutreach() {
   for (const item of scheduled) {
     const claimed = await prisma.outreach.updateMany({ where: { id: item.id, status: OutreachStatus.SCHEDULED }, data: { status: OutreachStatus.APPROVED, error: null } });
     if (claimed.count !== 1) continue;
-    try {
-      await sendApprovedOutreach(item.id);
-      results.push({ id: item.id, success: true });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      await prisma.outreach.update({ where: { id: item.id }, data: { status: OutreachStatus.FAILED, error: message } }).catch(() => undefined);
-      results.push({ id: item.id, success: false, error: message });
-    }
+    try { await sendApprovedOutreach(item.id); results.push({ id: item.id, success: true }); }
+    catch (error) { const message = error instanceof Error ? error.message : String(error); await prisma.outreach.update({ where: { id: item.id }, data: { status: OutreachStatus.FAILED, error: message } }).catch(() => undefined); results.push({ id: item.id, success: false, error: message }); }
     if (minDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, minDelayMs));
   }
-
   return { queued: scheduled.length, sent: results.filter((item) => item.success).length, failed: results.filter((item) => !item.success).length, results };
 }
 
 export async function GET(req: NextRequest) {
   if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  if (!(await isAutomationEnabled('autopilot'))) return NextResponse.json({ success: true, skipped: true, reason: 'AUTOMATION_DISABLED', capability: 'autopilot' });
   try {
     const { runAutopilot } = await import('@/lib/autopilot-runner');
     const [autopilot, outreach] = await Promise.all([runAutopilot(), processScheduledOutreach()]);
     return NextResponse.json({ ...autopilot, scheduledOutreach: outreach });
-  } catch (error) {
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 });
-  }
+  } catch (error) { return NextResponse.json({ success: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 }); }
 }
