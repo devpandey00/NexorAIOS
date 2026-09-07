@@ -72,9 +72,12 @@ def extract_search_results(page):
     results = []
     selectors = (
         "li.b_algo h2 a",
-        "li.b_algo a",
+        "#b_results li.b_algo h2 a",
+        "#b_results li.b_algo a",
         "a.result__a",
         "a.result-link",
+        "a[data-testid='result-title-a']",
+        "main h3 a",
         "h3 a",
     )
     for selector in selectors:
@@ -83,8 +86,6 @@ def extract_search_results(page):
                 href = normalize_url(anchor.attrib.get("href", ""))
                 title = clean_text(anchor.text)
                 if href and title and not is_blocked_url(href):
-                    # Only reject clearly non-business result titles. Do not reject
-                    # ordinary company names merely because they contain a keyword.
                     if BAD_TITLES.search(title) and len(title.split()) > 8:
                         continue
                     results.append({"url": href, "title": title})
@@ -103,9 +104,10 @@ def extract_search_results(page):
 def search_web(query):
     encoded = quote_plus(query)
     engines = [
-        f"https://www.bing.com/search?q={encoded}&count=30",
-        f"https://html.duckduckgo.com/html/?q={encoded}",
-        f"https://www.google.com/search?q={encoded}&num=30",
+        f"https://www.bing.com/search?q={encoded}&count=30&setlang=en-US",
+        f"https://html.duckduckgo.com/html/?q={encoded}&kl=us-en",
+        f"https://search.brave.com/search?q={encoded}&source=web",
+        f"https://www.google.com/search?q={encoded}&num=30&filter=0",
     ]
     for url in engines:
         for attempt in range(2):
@@ -117,17 +119,19 @@ def search_web(query):
                 if results:
                     return results
             if attempt == 0:
-                time.sleep(0.5)
+                time.sleep(0.7)
     return []
 
 
 def query_variants(query):
     base = clean_text(query)
     variants = [base]
-    # Progressive fallbacks: if a service-heavy query is too restrictive, retry
-    # with the business/location intent that search engines handle more reliably.
-    variants.append(re.sub(r"\s+(Google Ads|Meta Ads|SEO|social media marketing|website development|lead generation|conversion optimization)\b", "", base, flags=re.I).strip())
-    variants.append(re.sub(r"\s+\b(official website|contact|phone|local business|agency)\b", "", base, flags=re.I).strip())
+    no_service = re.sub(r"\s+(Google Ads|Meta Ads|SEO|social media marketing|website development|lead generation|conversion optimization)\b", "", base, flags=re.I).strip()
+    variants.append(no_service)
+    variants.append(re.sub(r"\s+\b(official website|contact|phone|local business|agency)\b", "", no_service, flags=re.I).strip())
+    # Search engines often over-constrain quoted multi-term queries. Keep a natural-language fallback.
+    variants.append(re.sub(r"[\"']", "", no_service).strip())
+    variants.append(re.sub(r"[\"']", "", no_service).replace("  ", " ").strip() + " business")
     return list(dict.fromkeys(v for v in variants if v))
 
 
@@ -201,6 +205,8 @@ def extract_lead(result, requested_location):
                     low = href.lower()
                     if low.startswith("mailto:"):
                         emails.add(href.split(":", 1)[1].split("?", 1)[0])
+                    if low.startswith("tel:"):
+                        phones.add(href.split(":", 1)[1])
                     if "wa.me/" in low or "api.whatsapp.com" in low:
                         whatsapp = href
             except Exception:
@@ -211,7 +217,7 @@ def extract_lead(result, requested_location):
     for email in emails:
         normalized = email.strip().lower().rstrip(".,;:)")
         host = normalized.split("@")[-1]
-        if normalized and "@" in normalized and host not in BUSINESS_EMAIL_BLOCKLIST and site_domain.endswith(host):
+        if normalized and "@" in normalized and host not in BUSINESS_EMAIL_BLOCKLIST and (site_domain.endswith(host) or host.endswith(site_domain)):
             business_emails.append(normalized)
     business_emails = list(dict.fromkeys(business_emails))[:3]
 
@@ -248,7 +254,7 @@ def discover(payload):
     queries = []
     for query in raw_queries:
         queries.extend(query_variants(query))
-    queries = list(dict.fromkeys(queries))[:24]
+    queries = list(dict.fromkeys(queries))[:32]
     location = clean_text(payload.get("location"))
     limit = min(max(int(payload.get("limit", 20)), 1), MAX_RESULTS)
     candidates, seen = [], set()
@@ -258,9 +264,9 @@ def discover(payload):
             if key and key not in seen:
                 seen.add(key)
                 candidates.append(result)
-            if len(candidates) >= limit * 3:
+            if len(candidates) >= limit * 4:
                 break
-        if len(candidates) >= limit * 3:
+        if len(candidates) >= limit * 4:
             break
 
     leads = []
