@@ -17,6 +17,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Run automatic campaign discovery
+        id: discovery
+        continue-on-error: true
         env:
           NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
@@ -29,6 +31,8 @@ jobs:
           [[ "$http_code" =~ ^2[0-9][0-9]$ ]] || { echo "Campaign discovery returned HTTP $http_code"; exit 1; }
 
       - name: Run durable Nexor automation scheduler
+        id: scheduler
+        continue-on-error: true
         env:
           NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
@@ -41,6 +45,8 @@ jobs:
           [[ "$http_code" =~ ^2[0-9][0-9]$ ]] || { echo "Automation scheduler returned HTTP $http_code"; exit 1; }
 
       - name: Generate WhatsApp batch
+        id: whatsapp_generate
+        continue-on-error: true
         env:
           NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
@@ -53,6 +59,8 @@ jobs:
           [[ "$http_code" =~ ^2[0-9][0-9]$ ]] || { echo "WhatsApp batch generation returned HTTP $http_code"; exit 1; }
 
       - name: Auto-approve eligible WhatsApp batch
+        id: whatsapp_approve
+        continue-on-error: true
         env:
           NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
@@ -65,6 +73,8 @@ jobs:
           [[ "$http_code" =~ ^2[0-9][0-9]$ ]] || { echo "WhatsApp auto-approval returned HTTP $http_code"; exit 1; }
 
       - name: Send approved WhatsApp batch with safe pacing
+        id: whatsapp_send
+        continue-on-error: true
         env:
           NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
@@ -77,6 +87,8 @@ jobs:
           [[ "$http_code" =~ ^2[0-9][0-9]$ ]] || { echo "WhatsApp batch sender returned HTTP $http_code"; exit 1; }
 
       - name: Run due follow-ups
+        id: followups
+        continue-on-error: true
         env:
           NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
@@ -89,6 +101,8 @@ jobs:
           [[ "$http_code" =~ ^2[0-9][0-9]$ ]] || { echo "Follow-up worker returned HTTP $http_code"; exit 1; }
 
       - name: Run due outreach
+        id: outreach
+        continue-on-error: true
         env:
           NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
@@ -101,6 +115,8 @@ jobs:
           [[ "$http_code" =~ ^2[0-9][0-9]$ ]] || { echo "Outreach worker returned HTTP $http_code"; exit 1; }
 
       - name: Run due social publishing
+        id: social
+        continue-on-error: true
         env:
           NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
@@ -111,3 +127,19 @@ jobs:
           http_code="$(curl --silent --show-error --retry 2 --retry-delay 2 --retry-all-errors --max-time 120 -o "$body_file" -w '%{http_code}' -H "Authorization: Bearer $CRON_SECRET" "$NEXOR_BASE_URL/api/cron/social-publish")"
           cat "$body_file"; echo; rm -f "$body_file"
           [[ "$http_code" =~ ^2[0-9][0-9]$ ]] || { echo "Social publishing worker returned HTTP $http_code"; exit 1; }
+
+      - name: Automation health summary
+        if: ${{ always() }}
+        run: |
+          echo "discovery=${{ steps.discovery.outcome }}"
+          echo "scheduler=${{ steps.scheduler.outcome }}"
+          echo "whatsapp_generate=${{ steps.whatsapp_generate.outcome }}"
+          echo "whatsapp_approve=${{ steps.whatsapp_approve.outcome }}"
+          echo "whatsapp_send=${{ steps.whatsapp_send.outcome }}"
+          echo "followups=${{ steps.followups.outcome }}"
+          echo "outreach=${{ steps.outreach.outcome }}"
+          echo "social=${{ steps.social.outcome }}"
+          if [[ "${{ steps.discovery.outcome }}" != "success" || "${{ steps.scheduler.outcome }}" != "success" || "${{ steps.whatsapp_generate.outcome }}" != "success" || "${{ steps.whatsapp_approve.outcome }}" != "success" || "${{ steps.whatsapp_send.outcome }}" != "success" || "${{ steps.followups.outcome }}" != "success" || "${{ steps.outreach.outcome }}" != "success" || "${{ steps.social.outcome }}" != "success" ]]; then
+            echo "One or more Nexor automation workers failed. Inspect the individual step output above."
+            exit 1
+          fi
