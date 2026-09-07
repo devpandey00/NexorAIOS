@@ -11,7 +11,7 @@ const groups = [
   { title: 'CREATIVE', items: [['Content Studio', '/dashboard/tools/content-ideas', '✎'], ['Graphics', '/dashboard/tools/social-post-designer', '▧'], ['Ad Creatives', '/dashboard/tools/ad-creative-designer', '◇'], ['Creative Library', '/dashboard/tools/creative-library', '▤']] },
   { title: 'ADVERTISING', items: [['Meta Ads', '/dashboard/tools/meta-ads-overview', 'M'], ['Google Ads', '/dashboard/tools/google-ads-overview', 'G'], ['Optimization', '/dashboard/tools/google-optimization', '↗'], ['ROAS', '/dashboard/tools/meta-roas', '◒']] },
   { title: 'WEB + SEO', items: [['SEO', '/dashboard/tools/seo-audit', '⌕'], ['Analytics', '/dashboard/tools/ga4-analytics', '◒'], ['Websites', '/dashboard/tools/website-projects', '⌘'], ['Landing Pages', '/dashboard/tools/landing-page-builder', '▱'], ['WordPress', '/dashboard/tools/wordpress-manager', 'W']] },
-  { title: 'AI OPS', items: [['AI Agents', '/dashboard/tools/ai-agents', '✧'], ['Automations', '/dashboard/tools/automation-center', '⚙'], ['Approvals', '/dashboard/aios#approvals', '✓'], ['Clients', '/dashboard/aios#clients', '◉'], ['Finance', '/dashboard/aios#finance', '₹'], ['Reports', '/dashboard/tools/google-reporting', '▤'], ['Settings', '/dashboard/settings', '⚙']] },
+  { title: 'AI OPS', items: [['AI Agents', '/dashboard/tools/ai-agents', '✧'], ['Automations', '/dashboard/tools/automation-center', '⚙'], ['Automation Control', '/dashboard/settings/automation', '◉'], ['Approvals', '/dashboard/aios#approvals', '✓'], ['Clients', '/dashboard/aios#clients', '◉'], ['Finance', '/dashboard/aios#finance', '₹'], ['Reports', '/dashboard/tools/google-reporting', '▤'], ['Settings', '/dashboard/settings', '⚙']] },
 ];
 
 export default function Sidebar() {
