@@ -128,6 +128,20 @@ jobs:
           cat "$body_file"; echo; rm -f "$body_file"
           [[ "$http_code" =~ ^2[0-9][0-9]$ ]] || { echo "Social publishing worker returned HTTP $http_code"; exit 1; }
 
+      - name: Send 3-hour growth and milestone report when due
+        id: reporting
+        continue-on-error: true
+        env:
+          NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          test -n "$CRON_SECRET" || { echo 'CRON_SECRET is required in GitHub Actions secrets'; exit 1; }
+          body_file="$(mktemp)"
+          http_code="$(curl --silent --show-error --retry 2 --retry-delay 2 --retry-all-errors --max-time 120 -o "$body_file" -w '%{http_code}' -H "Authorization: Bearer $CRON_SECRET" "$NEXOR_BASE_URL/api/cron/reports/growth")"
+          cat "$body_file"; echo; rm -f "$body_file"
+          [[ "$http_code" =~ ^2[0-9][0-9]$ ]] || { echo "Growth reporting worker returned HTTP $http_code"; exit 1; }
+
       - name: Automation health summary
         if: ${{ always() }}
         run: |
@@ -139,7 +153,8 @@ jobs:
           echo "followups=${{ steps.followups.outcome }}"
           echo "outreach=${{ steps.outreach.outcome }}"
           echo "social=${{ steps.social.outcome }}"
-          if [[ "${{ steps.discovery.outcome }}" != "success" || "${{ steps.scheduler.outcome }}" != "success" || "${{ steps.whatsapp_generate.outcome }}" != "success" || "${{ steps.whatsapp_approve.outcome }}" != "success" || "${{ steps.whatsapp_send.outcome }}" != "success" || "${{ steps.followups.outcome }}" != "success" || "${{ steps.outreach.outcome }}" != "success" || "${{ steps.social.outcome }}" != "success" ]]; then
+          echo "reporting=${{ steps.reporting.outcome }}"
+          if [[ "${{ steps.discovery.outcome }}" != "success" || "${{ steps.scheduler.outcome }}" != "success" || "${{ steps.whatsapp_generate.outcome }}" != "success" || "${{ steps.whatsapp_approve.outcome }}" != "success" || "${{ steps.whatsapp_send.outcome }}" != "success" || "${{ steps.followups.outcome }}" != "success" || "${{ steps.outreach.outcome }}" != "success" || "${{ steps.social.outcome }}" != "success" || "${{ steps.reporting.outcome }}" != "success" ]]; then
             echo "One or more Nexor automation workers failed. Inspect the individual step output above."
             exit 1
           fi
