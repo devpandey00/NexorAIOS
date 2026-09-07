@@ -4,12 +4,12 @@ import { researchService } from '@nexor/research';
 import { assessLead, buildPersonalizedPitch, buildSalesBrief } from '@nexor/core';
 
 function getPrisma() { return getDatabaseClients().write; }
-function normalizeWebsite(url: string): string { try { const parsed = new URL(url); return `${parsed.protocol}//${parsed.hostname.replace(/^www\./,'').toLowerCase()}${parsed.pathname.replace(/\/$/,'')}`; } catch { return url.trim().toLowerCase().replace(/\/$/,''); } }
-function normalizePhone(phone: string): string { return phone.replace(/\D/g,''); }
-function cleanLeadName(name: string): string { return name.replace(/\s+/g,' ').replace(/\s*[|·–—-]\s*$/g,'').trim(); }
+function normalizeWebsite(url: string): string { try { const parsed = new URL(url); return `${parsed.protocol}//${parsed.hostname.replace(/^www\./,'').toLowerCase()}${parsed.pathname.replace(/\/$/,'')}`.slice(0, 500); } catch { return url.trim().toLowerCase().replace(/\/$/,'').slice(0, 500); } }
+function normalizePhone(phone: string): string { return phone.replace(/\D/g,'').slice(0, 30); }
+function cleanLeadName(name: string): string { return name.replace(/\s+/g,' ').replace(/\s*[|·–—-]\s*$/g,'').trim().slice(0, 255); }
 function looksLikeNonBusinessName(name: string): boolean { return [/\bbest\b/i,/\btop\b/i,/\blist\b/i,/\bdirectory\b/i,/\bguide\b/i,/\broundup\b/i,/\barticles?\b/i,/\bhow to\b/i,/\bstrategy\b/i,/\bpatients?\b/i,/\bget \d+x\b/i,/\bcompanies\b/i].some((pattern) => pattern.test(name)); }
-function inferNiche(query: string): string { const cleaned = query.replace(/["']/g, ' ').replace(/\s+/g, ' ').trim(); return cleaned.split(/\s+(?:in|at|for|with|needs|looking|seeking|want|requires)\s+/i)[0]?.trim() || cleaned; }
-function inferCountry(query: string): string { const cleaned = query.replace(/["']/g, ' ').replace(/\s+/g, ' ').trim(); const match = cleaned.match(/\bin\s+([A-Z][A-Za-z]*(?:\s+[A-Z][A-Za-z]*)?)(?=\s+(?:Google|Meta|Facebook|Instagram|TikTok|LinkedIn|needs|looking|seeking|want|requires|official|contact)\b|$)/i); return match?.[1]?.trim() || 'Unknown'; }
+function inferNiche(query: string): string { const cleaned = query.replace(/["']/g, ' ').replace(/\s+/g, ' ').trim(); return (cleaned.split(/\s+(?:in|at|for|with|needs|looking|seeking|want|requires)\s+/i)[0]?.trim() || cleaned).slice(0, 100); }
+function inferCountry(query: string): string { const cleaned = query.replace(/["']/g, ' ').replace(/\s+/g, ' ').trim(); const match = cleaned.match(/\bin\s+([A-Z][A-Za-z]*(?:\s+[A-Z][A-Za-z]*)?)(?=\s+(?:Google|Meta|Facebook|Instagram|TikTok|LinkedIn|needs|looking|seeking|want|requires|official|contact)\b|$)/i); return (match?.[1]?.trim() || 'Unknown').slice(0, 100); }
 
 function buildDiscoveryQueries(query: string): string[] {
   const normalized = query.replace(/["']/g, ' ').replace(/\s+/g, ' ').trim();
@@ -91,7 +91,10 @@ export async function runCampaign(campaignId: string) {
       } catch (error) { failed++; processed++; console.error(`[CAMPAIGN LEAD ERROR] ${result.name}`, error); }
       await prisma.campaign.update({ where: { id: campaignId }, data: { processedLeads: processed, successfulLeads: successful, failedLeads: failed } });
     }
-    await prisma.$transaction([prisma.job.update({ where: { id: job.id }, data: { status: JobStatus.COMPLETED, completedAt: new Date(), result: { discovered: searchResult.count, processed, successful, failed, qualified, provider: searchResult.provider, queries: discoveryQueries } }),prisma.campaign.update({ where: { id: campaignId }, data: { status: failed > 0 ? CampaignStatus.PARTIALLY_COMPLETED : CampaignStatus.COMPLETED, completedAt: new Date(), totalLeads: searchResult.count, processedLeads: processed, successfulLeads: successful, failedLeads: failed } })]);
+    await prisma.$transaction([
+      prisma.job.update({ where: { id: job.id }, data: { status: JobStatus.COMPLETED, completedAt: new Date(), result: { discovered: searchResult.count, processed, successful, failed, qualified, provider: searchResult.provider, queries: discoveryQueries } } }),
+      prisma.campaign.update({ where: { id: campaignId }, data: { status: failed > 0 ? CampaignStatus.PARTIALLY_COMPLETED : CampaignStatus.COMPLETED, completedAt: new Date(), totalLeads: searchResult.count, processedLeads: processed, successfulLeads: successful, failedLeads: failed } })
+    ]);
     return { success: true, campaignId, discovered: searchResult.count, processed, successful, failed, qualified, provider: searchResult.provider, queries: discoveryQueries };
   } catch (error) { await prisma.$transaction([prisma.job.update({ where: { id: job.id }, data: { status: JobStatus.FAILED, completedAt: new Date(), error: error instanceof Error ? error.message : String(error) } }),prisma.campaign.update({ where: { id: campaignId }, data: { status: CampaignStatus.FAILED, completedAt: new Date() } })]); throw error; }
 }
