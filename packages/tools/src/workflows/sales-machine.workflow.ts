@@ -6,6 +6,32 @@ import type { WorkflowResult } from '../runtime/workflow-runner.js';
 interface ProspectResult { lead: Record<string, unknown>; research: ToolOutput; score: ToolOutput; crm: ToolOutput; outreach?: ToolOutput; }
 function firstString(value: unknown): string | undefined { if (!Array.isArray(value)) return undefined; return value.find((item): item is string => typeof item === 'string' && item.trim().length > 0)?.trim(); }
 function researchPayload(output: ToolOutput): Record<string, unknown> { const data = (output.data ?? {}) as Record<string, unknown>; const result = (data.result ?? {}) as Record<string, unknown>; return (result.research ?? {}) as Record<string, unknown>; }
+function boundedNotes(input: { metadata: Record<string, unknown>; research: Record<string, unknown>; score: Record<string, unknown>; verifiedOpportunity: string; recommendedServices: string }): string {
+  const NOTES_MAX = 9500;
+  const full = JSON.stringify(input);
+  if (full.length <= NOTES_MAX) return full;
+  const reduced = JSON.stringify({
+    metadata: input.metadata,
+    research: { truncated: true, reason: 'omitted to satisfy lead notes size limit' },
+    score: input.score,
+    verifiedOpportunity: input.verifiedOpportunity,
+    recommendedServices: input.recommendedServices,
+  });
+  if (reduced.length <= NOTES_MAX) return reduced;
+  const minimal = JSON.stringify({
+    metadata: input.metadata,
+    score: input.score,
+    verifiedOpportunity: input.verifiedOpportunity,
+    recommendedServices: input.recommendedServices,
+  });
+  if (minimal.length <= NOTES_MAX) return minimal;
+  return JSON.stringify({
+    metadata: input.metadata,
+    score: { truncated: true },
+    verifiedOpportunity: input.verifiedOpportunity.slice(0, 2000),
+    recommendedServices: input.recommendedServices.slice(0, 1000),
+  });
+}
 
 const NON_BUSINESS_PATTERNS = [/\bjobs?\b/i, /\bvacanc(?:y|ies)\b/i, /\bcareers?\b/i, /\bhiring\b/i, /\bsalary\b/i, /\bapply now\b/i, /\bresume\b/i, /\bcv\b/i, /\binternship\b/i, /\btop\b/i, /\bbest\b/i, /\blist\b/i, /\bdirectory\b/i, /\bguide\b/i, /\barticle\b/i, /\bnews\b/i];
 const NON_BUSINESS_PATH = /\/(jobs?|careers?|vacancies|blog|article|news|category|tag|search|directory|listing|forum|forums)(\/|$)/i;
@@ -74,7 +100,7 @@ export async function runSalesMachineWorkflow(input: ToolInput): Promise<Workflo
         businessName,
         niche: typeof lead.niche === 'string' ? lead.niche : String(input.niche ?? 'digital marketing prospect'),
         country: targetMarket,
-        notes: JSON.stringify({
+        notes: boundedNotes({
           metadata: { source: 'sales-machine', leadType: 'BUSINESS', discoveredFrom: String(input.query ?? input.command ?? ''), targetMarket },
           research: researchData,
           score: scoreData,
