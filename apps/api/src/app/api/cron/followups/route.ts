@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { FollowUpStatus, getDatabaseClients, OutreachChannel, OutreachStatus } from '@nexor/database';
 import { isAutomationEnabled } from '@/lib/automation-settings';
+import { authorizeMachineRequest } from '@/lib/machine-auth';
 
 function getPrisma() { return getDatabaseClients().write; }
 function buildFollowUpMessage(lead: { businessName: string; notes: string | null }) {
@@ -8,10 +9,9 @@ function buildFollowUpMessage(lead: { businessName: string; notes: string | null
   if (lead.notes) { try { const parsed = JSON.parse(lead.notes) as { intelligence?: { requirement?: unknown; findings?: unknown } }; if (typeof parsed.intelligence?.requirement === 'string' && parsed.intelligence.requirement.trim()) requirement = parsed.intelligence.requirement.trim(); if (Array.isArray(parsed.intelligence?.findings)) { const first = parsed.intelligence.findings.find((item) => typeof item === 'string' && item.trim()); if (typeof first === 'string') finding = first.trim(); } } catch { /* safe fallback */ } }
   return [`Hi ${lead.businessName}, just following up on my earlier note.`,`I was looking specifically at ${requirement}.`,finding ? `One thing that stood out was ${finding}.` : 'I had a couple of specific observations from the review.','Happy to send the details over if useful.'].join(' ');
 }
-function authorized(req: Request) { const secret = process.env.CRON_SECRET; if (!secret) return process.env.NODE_ENV !== 'production'; return req.headers.get('authorization') === `Bearer ${secret}`; }
 
 export async function GET(req: Request) {
-  if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  if (!(await authorizeMachineRequest(req))) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   if (!(await isAutomationEnabled('followups'))) return NextResponse.json({ success: true, skipped: true, reason: 'AUTOMATION_DISABLED', capability: 'followups' });
   try {
     const prisma = getPrisma();
