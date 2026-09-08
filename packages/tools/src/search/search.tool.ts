@@ -1,13 +1,18 @@
 import type { Tool, ToolInput, ToolOutput } from '../types/tool.js';
-
-type ApiData = { error?: string; message?: string } & Record<string, unknown>;
+import { leadSearchService } from '@nexor/search';
 
 export const searchTool: Tool = {
-  id: 'search', name: 'Web Search', description: 'Search the configured Nexor discovery API.', category: 'research',
+  id: 'search', name: 'Web Search', description: 'Search the configured Nexor discovery providers directly.', category: 'research',
   async execute(input: ToolInput): Promise<ToolOutput> {
-    const base = String(process.env.NEXOR_API_URL ?? 'http://localhost:3000').replace(/\/$/, '');
-    const response = await fetch(`${base}/api/discovery/queries`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input) });
-    const data = (await response.json().catch(() => ({}))) as ApiData;
-    return response.ok ? { success: true, data } : { success: false, error: data.error ?? data.message ?? `Search failed (${response.status})` };
+    const query = typeof input.query === 'string' ? input.query.trim() : String(input.command ?? '').trim();
+    if (!query) return { success: false, error: 'query is required' };
+    try {
+      const result = await leadSearchService.search(query);
+      return result.success
+        ? { success: true, data: result }
+        : { success: false, data: result, error: result.providerErrors?.slice(-5).join(' | ') ?? 'Search unavailable' };
+    } catch (error) {
+      return { success: false, error: `Search execution failed: ${error instanceof Error ? error.message : String(error)}` };
+    }
   },
 };
