@@ -2,17 +2,12 @@ import { NextResponse } from 'next/server';
 import { OutreachStatus } from '@nexor/database';
 import { sendApprovedOutreach } from '@/lib/outreach-sender';
 import { isAutomationEnabled, isOutboundEnabled } from '@/lib/automation-settings';
+import { authorizeMachineRequest } from '@/lib/machine-auth';
 
 export const runtime = 'nodejs';
 
-function authorized(req: Request) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return process.env.NODE_ENV !== 'production';
-  return req.headers.get('authorization') === `Bearer ${secret}`;
-}
-
 export async function GET(req: Request) {
-  if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  if (!(await authorizeMachineRequest(req))) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   if (!(await isAutomationEnabled('outreach'))) return NextResponse.json({ success: true, skipped: true, reason: 'AUTOMATION_DISABLED', capability: 'outreach' });
   if (!(await isOutboundEnabled())) return NextResponse.json({ success: true, skipped: true, reason: 'OUTBOUND_PAUSED', capability: 'outreach' });
 
