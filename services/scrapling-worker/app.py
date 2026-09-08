@@ -9,13 +9,14 @@ from urllib.parse import quote_plus, urljoin, urlparse
 from scrapling.fetchers import Fetcher, StealthyFetcher
 
 API_KEY = os.getenv("SCRAPLING_WORKER_API_KEY", "").strip()
+SERPER_API_KEY = os.getenv("SERPER_API_KEY", "").strip()
 HOST = os.getenv("SCRAPLING_WORKER_HOST", "0.0.0.0")
 PORT = int(os.getenv("SCRAPLING_WORKER_PORT", "8787"))
 MAX_RESULTS = int(os.getenv("SCRAPLING_MAX_RESULTS", "50"))
 FETCH_TIMEOUT = float(os.getenv("SCRAPLING_FETCH_TIMEOUT", "12"))
 
 BLOCKED_DOMAINS = {
-    "google.com", "bing.com", "duckduckgo.com", "facebook.com", "instagram.com",
+    "google.com", "bing.com", "duckduckgo.com", "brave.com", "facebook.com", "instagram.com",
     "linkedin.com", "youtube.com", "yelp.com", "yellowpages.com", "tripadvisor.com",
     "wikipedia.org", "reddit.com", "pinterest.com", "indeed.com", "glassdoor.com",
 }
@@ -101,7 +102,79 @@ def extract_search_results(page):
     return unique[:MAX_RESULTS]
 
 
-def search_web(query):
+def search_serper(query, location=""):
+    """Reliable API fallback. Keeps scraping as the free path, but avoids total discovery failure when search engines block the worker."""
+    if not SERPER_API_KEY:
+        return []
+    try:
+        import urllib.request
+        payload = {"q": query, "num": min(MAX_RESULTS, 50)}
+        if location:
+            payload["location"] = location
+        request = urllib.request.Request(
+            "https://google.serper.dev/search",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=FETCH_TIMEOUT) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        results = []
+        for item in data.get("organic", []) or []:
+            href = normalize_url(item.get("link", ""))
+            title = clean_text(item.get("title", ""))
+            if href and title and not is_blocked_url(href):
+                results.append({"url": href, "title": title, "snippet": clean_text(item.get("snippet", ""))})
+        return results[:MAX_RESULTS]
+    except Exception as exc:
+        print(f"serper search failed: {exc}", file=sys.stderr)
+        return []
+
+
+def search_serper_places(query, location=""):
+    """Business-oriented fallback for local queries; returns websites/phone/address when Google Places data is available through Serper."""
+    if not SERPER_API_KEY:
+        return []
+    try:
+        import urllib.request
+        payload = {"q": query}
+        if location:
+            payload["location"] = location
+        request = urllib.request.Request(
+            "https://google.serper.dev/places",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=FETCH_TIMEOUT) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        results = []
+        for item in data.get("places", []) or []:
+            href = normalize_url(item.get("website", ""))
+            title = clean_text(item.get("title", ""))
+            if not title or not href or is_blocked_url(href):
+                continue
+            results.append({
+                "url": href,
+                "title": title,
+                "phone": clean_text(item.get("phoneNumber", "")) or None,
+                "address": clean_text(item.get("address", "")) or None,
+            })
+        return results[:MAX_RESULTS]
+    except Exception as exc:
+        print(f"serper places failed: {exc}", file=sys.stderr)
+        return []
+
+
+def search_web(query, location=""):
+    # Prefer a reliable structured provider when configured. Free HTML search remains the fallback.
+    api_results = search_serper(query, location)
+    if api_results:
+        return api_results
+    place_results = search_serper_places(query, location)
+    if place_results:
+        return place_results
+
     encoded = quote_plus(query)
     engines = [
         f"https://www.bing.com/search?q={encoded}&count=30&setlang=en-US",
@@ -129,7 +202,6 @@ def query_variants(query):
     no_service = re.sub(r"\s+(Google Ads|Meta Ads|SEO|social media marketing|website development|lead generation|conversion optimization)\b", "", base, flags=re.I).strip()
     variants.append(no_service)
     variants.append(re.sub(r"\s+\b(official website|contact|phone|local business|agency)\b", "", no_service, flags=re.I).strip())
-    # Search engines often over-constrain quoted multi-term queries. Keep a natural-language fallback.
     variants.append(re.sub(r"[\"']", "", no_service).strip())
     variants.append(re.sub(r"[\"']", "", no_service).replace("  ", " ").strip() + " business")
     return list(dict.fromkeys(v for v in variants if v))
@@ -156,8 +228,26 @@ def extract_lead(result, requested_location):
     page = fetch_page(url)
     if not page:
         page = fetch_page(url, stealth=True)
+
+    # Structured provider results may already contain enough business data to survive a blocked website.
+    provider_phone = clean_text(result.get("phone")) if result.get("phone") else None
     if not page:
-        return None
+        title = clean_text(result.get("title", ""))
+        if not title or BAD_TITLES.search(title):
+            return None
+        score = 40 + (5 if provider_phone else 0)
+        return {
+            "name": title[:120],
+            "website": url,
+            "email": None,
+            "phone": provider_phone,
+            "whatsapp": None,
+            "linkedin": None,
+            "instagram": None,
+            "facebook": None,
+            "location": requested_location,
+            "score": min(score, 100),
+        }
 
     title = ""
     try:
@@ -221,7 +311,7 @@ def extract_lead(result, requested_location):
             business_emails.append(normalized)
     business_emails = list(dict.fromkeys(business_emails))[:3]
 
-    phone = next(iter(phones), None)
+    phone = next(iter(phones), None) or provider_phone
     score = 40
     if business_emails:
         score += 25
@@ -259,7 +349,7 @@ def discover(payload):
     limit = min(max(int(payload.get("limit", 20)), 1), MAX_RESULTS)
     candidates, seen = [], set()
     for query in queries:
-        for result in search_web(query):
+        for result in search_web(query, location):
             key = domain(result["url"])
             if key and key not in seen:
                 seen.add(key)
@@ -297,7 +387,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/health":
-            return self.send_json(200, {"ok": True, "service": "nexor-scrapling-worker", "scrapling": True})
+            return self.send_json(200, {"ok": True, "service": "nexor-scrapling-worker", "scrapling": True, "serper": bool(SERPER_API_KEY)})
         return self.send_json(404, {"error": "not_found"})
 
     def do_POST(self):
