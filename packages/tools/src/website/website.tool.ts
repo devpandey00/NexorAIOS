@@ -1,17 +1,18 @@
 import type { Tool, ToolInput, ToolOutput } from '../types/tool.js';
-
-type ApiData = { error?: string; message?: string } & Record<string, unknown>;
+import { researchService } from '@nexor/research';
 
 export const websiteTool: Tool = {
-  id: 'website', name: 'Website Analyzer', description: 'Run website research against the Nexor research API.', category: 'research',
+  id: 'website', name: 'Website Analyzer', description: 'Run Nexor website research directly inside the server runtime.', category: 'research',
   async execute(input: ToolInput): Promise<ToolOutput> {
-    const url = typeof input.url === 'string' ? input.url : '';
+    const url = typeof input.url === 'string' ? input.url.trim() : '';
     if (!url) return { success: false, error: 'url is required' };
-    const configuredBase = process.env.NEXOR_API_URL?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim();
-    const vercelUrl = process.env.VERCEL_URL?.trim();
-    const base = (configuredBase ? configuredBase : vercelUrl ? `https://${vercelUrl}` : 'http://localhost:3000').replace(/\/$/, '');
-    const response = await fetch(`${base}/api/research`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...input, url }) });
-    const data = (await response.json().catch(() => ({}))) as ApiData;
-    return response.ok ? { success: true, data } : { success: false, error: data.error ?? data.message ?? `Website analysis failed (${response.status})` };
+    try {
+      const research = await researchService.analyze(url);
+      return research.success
+        ? { success: true, data: { result: { research } } }
+        : { success: false, data: { result: { research } }, error: 'Website research returned no usable result' };
+    } catch (error) {
+      return { success: false, error: `Website analysis failed: ${error instanceof Error ? error.message : String(error)}` };
+    }
   },
 };
