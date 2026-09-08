@@ -376,9 +376,6 @@ importers:
 
   packages/tools:
     dependencies:
-      '@nexor/ai':
-        specifier: workspace:*
-        version: link:../ai
       '@nexor/core':
         specifier: workspace:*
         version: link:../core
