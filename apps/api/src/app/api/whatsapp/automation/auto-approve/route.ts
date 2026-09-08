@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabaseClients, OutreachChannel, OutreachStatus } from '@nexor/database';
 import { getWhatsAppProviderStatus } from '@/lib/outreach-sender';
-import { isAutomationEnabled } from '@/lib/automation-settings';
+import { isAutomationEnabled, isOutboundEnabled } from '@/lib/automation-settings';
 
 export const runtime = 'nodejs';
 
@@ -33,6 +33,7 @@ function eligible(lead: { businessName: string; country: string | null; whatsapp
 export async function POST(req: NextRequest) {
   if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   if (!(await isAutomationEnabled('whatsapp_sending'))) return NextResponse.json({ success: true, skipped: true, reason: 'AUTOMATION_DISABLED' });
+  if (!(await isOutboundEnabled())) return NextResponse.json({ success: true, skipped: true, reason: 'OUTBOUND_PAUSED', promoted: 0 });
 
   const provider = getWhatsAppProviderStatus();
   if (!provider.openwaConfigured && !provider.templateConfigured) {
@@ -53,6 +54,7 @@ export async function POST(req: NextRequest) {
   const firstAt = Date.now() + delayMs;
   let promoted = 0;
   for (let index = 0; index < eligibleRows.length; index += 1) {
+    if (!(await isOutboundEnabled())) break;
     const row = eligibleRows[index];
     const result = await prisma.outreach.updateMany({
       where: { id: row.id, channel: OutreachChannel.WHATSAPP, status: { in: [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED] } },
@@ -61,5 +63,5 @@ export async function POST(req: NextRequest) {
     promoted += result.count;
   }
 
-  return NextResponse.json({ success: true, promoted, considered: rows.length, scheduledFrom: promoted ? new Date(firstAt).toISOString() : null, delayMs, provider });
+  return NextResponse.json({ success: true, promoted, considered: rows.length, scheduledFrom: promoted ? new Date(firstAt).toISOString() : null, delayMs, provider, outboundEnabled: await isOutboundEnabled() });
 }
