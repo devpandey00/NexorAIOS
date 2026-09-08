@@ -1,5 +1,7 @@
 name: Nexor realtime automation workers
 
+# Production deployment retrigger marker: code + DB migration are already fixed on main.
+
 on:
   schedule:
     - cron: '*/5 * * * *'
