@@ -33,17 +33,9 @@ export const AUTOMATION_LABELS: Record<AutomationKey, string> = {
   growth_reports: '3-hour growth + milestone reports',
 };
 
-async function ensureTable(db: ReturnType<typeof getDatabaseClients>['write']) {
-  // PostgreSQL prepared statements reject multiple SQL commands in one call.
-  // Split first-use DDL so serverless connections can initialize reliably.
-  await db.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS public.automation_settings (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), key varchar(100) NOT NULL UNIQUE, enabled boolean NOT NULL DEFAULT true, config jsonb, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`);
-  await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_automation_settings_enabled ON public.automation_settings(enabled)`);
-}
-
 export async function isAutomationEnabled(key: AutomationKey): Promise<boolean> {
   try {
     const db = getDatabaseClients().write;
-    await ensureTable(db);
     const setting = await db.automationSetting.findUnique({ where: { key } });
     if (setting) return setting.enabled;
     await db.automationSetting.create({ data: { key, enabled: true } });
@@ -54,7 +46,6 @@ export async function isAutomationEnabled(key: AutomationKey): Promise<boolean> 
   }
 }
 
-/** Master gate for externally visible side effects. */
 export async function isOutboundEnabled(): Promise<boolean> {
   return (await isAutomationEnabled('master_autopilot')) && (await isAutomationEnabled('outbound_enabled'));
 }
@@ -62,7 +53,6 @@ export async function isOutboundEnabled(): Promise<boolean> {
 export async function getAutomationSettings() {
   try {
     const db = getDatabaseClients().write;
-    await ensureTable(db);
     await Promise.all(
       AUTOMATION_KEYS.map((key) =>
         db.automationSetting.upsert({ where: { key }, create: { key, enabled: true }, update: {} }),
@@ -85,6 +75,5 @@ export async function getAutomationSettings() {
 export async function setAutomationSetting(key: string, enabled: boolean) {
   if (!AUTOMATION_KEYS.includes(key as AutomationKey)) throw new Error(`Unknown automation capability: ${key}`);
   const db = getDatabaseClients().write;
-  await ensureTable(db);
   return db.automationSetting.upsert({ where: { key }, create: { key, enabled }, update: { enabled } });
 }
