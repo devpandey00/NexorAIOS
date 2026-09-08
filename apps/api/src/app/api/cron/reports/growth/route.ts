@@ -2,15 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDatabaseClients } from '@nexor/database';
 import { getReportSummary, sendNexorReportEmail } from '@/lib/email-reporting';
 import { isAutomationEnabled } from '@/lib/automation-settings';
+import { authorizeMachineRequest } from '@/lib/machine-auth';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
-
-function authorized(req: NextRequest) {
-  const secret = process.env.CRON_SECRET?.trim();
-  if (!secret) return process.env.NODE_ENV !== 'production';
-  return req.headers.get('authorization') === `Bearer ${secret}`;
-}
 
 const MILESTONES = [
   ['leads', 'Qualified leads', 50],
@@ -41,7 +36,7 @@ async function sendMilestone(subject: string, lines: string[]) {
 }
 
 export async function GET(req: NextRequest) {
-  if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  if (!(await authorizeMachineRequest(req))) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   if (!(await isAutomationEnabled('growth_reports'))) return NextResponse.json({ success: true, skipped: true, reason: 'AUTOMATION_DISABLED', capability: 'growth_reports' });
 
   const db = getDatabaseClients().write;
