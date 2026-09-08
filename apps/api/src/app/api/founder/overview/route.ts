@@ -26,11 +26,11 @@ export async function GET(request: NextRequest) {
           (SELECT COUNT(*) FROM public.leads)::int AS total_leads,
           (SELECT COUNT(*) FROM public.leads WHERE status = 'QUALIFIED')::int AS qualified_leads,
           (SELECT COUNT(*) FROM public.leads WHERE status IN ('QUALIFIED','PITCH_READY'))::int AS outreach_ready,
-          (SELECT COUNT(*) FROM public.leads WHERE status = 'REPLIED')::int AS replied_leads,
-          (SELECT COUNT(*) FROM public.leads WHERE status = 'MEETING_BOOKED')::int AS meeting_leads,
-          (SELECT COUNT(*) FROM public.leads WHERE status = 'PROPOSAL_SENT')::int AS proposal_leads,
-          (SELECT COUNT(*) FROM public.leads WHERE status = 'WON')::int AS won_leads,
-          (SELECT COALESCE(SUM(value),0) FROM public.opportunities WHERE stage = 'WON')::numeric AS won_revenue,
+          (SELECT COUNT(*) FROM public.leads WHERE status = 'REPLIED' AND updated_at >= CURRENT_DATE)::int AS replied_leads,
+          (SELECT COUNT(*) FROM public.leads WHERE status = 'MEETING_BOOKED' AND updated_at >= CURRENT_DATE)::int AS meeting_leads,
+          (SELECT COUNT(*) FROM public.leads WHERE status = 'PROPOSAL_SENT' AND updated_at >= CURRENT_DATE)::int AS proposal_leads,
+          (SELECT COUNT(*) FROM public.leads WHERE status = 'WON' AND updated_at >= CURRENT_DATE)::int AS won_leads,
+          (SELECT COALESCE(SUM(value),0) FROM public.opportunities WHERE stage = 'WON' AND updated_at >= CURRENT_DATE)::numeric AS won_revenue,
           (SELECT COUNT(*) FROM public.outreach WHERE status = 'SENT' AND sent_at >= CURRENT_DATE)::int AS sent_today,
           (SELECT COUNT(*) FROM public.outreach WHERE channel = 'EMAIL' AND status = 'SENT' AND sent_at >= CURRENT_DATE)::int AS email_sent_today,
           (SELECT COUNT(*) FROM public.outreach WHERE channel = 'WHATSAPP' AND status = 'SENT' AND sent_at >= CURRENT_DATE)::int AS whatsapp_sent_today,
@@ -62,6 +62,9 @@ export async function GET(request: NextRequest) {
 
     const summary = summaryRows[0] ?? {};
     const stageMap = Object.fromEntries(stageRows.map((row) => [row.stage, int(row.count)]));
+    const enabledMap = Object.fromEntries(automationSettings.map((setting) => [setting.key, setting.enabled]));
+    const masterEnabled = enabledMap.master_autopilot ?? enabledMap.autopilot ?? true;
+    const outboundEnabled = enabledMap.outbound_enabled ?? true;
 
     const integrations = {
       database: 'CONNECTED',
@@ -76,8 +79,6 @@ export async function GET(request: NextRequest) {
       leadDiscovery: configured('SERPER_API_KEY') || configured('GOOGLE_PLACES_API_KEY') || configured('SEARCH_PROVIDER') ? 'CONFIGURED' : 'CONFIG_REQUIRED',
       cron: configured('CRON_SECRET') ? 'CONFIGURED' : 'CONFIG_REQUIRED',
     };
-
-    const enabledMap = Object.fromEntries(automationSettings.map((setting) => [setting.key, setting.enabled]));
 
     return NextResponse.json({
       success: true,
@@ -109,7 +110,7 @@ export async function GET(request: NextRequest) {
       activity: activityRows,
       integrations,
       automation: automationSettings,
-      autopilot: { enabled: enabledMap.autopilot ?? true },
+      autopilot: { enabled: masterEnabled && outboundEnabled },
     });
   } catch (error) {
     console.error('[FOUNDER OVERVIEW ERROR]', error);
