@@ -1,3 +1,4 @@
+// Production safety: CRM notes payload is bounded before persistence.
 import type { ToolInput } from '../types/tool.js';
 import type { ToolOutput } from '../types/tool.js';
 import { toolRegistry } from '../registry/tool-registry.js';
