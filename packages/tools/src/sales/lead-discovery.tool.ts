@@ -10,26 +10,18 @@ function isOperationalBusinessLead(lead: { name: string; website: string }) {
 }
 
 export const leadDiscoveryTool: Tool = {
-  id: 'lead_discovery',
-  name: 'Lead Discovery',
-  description: 'Find real prospect websites and contact data through the configured discovery provider.',
-  category: 'sales',
+  id: 'lead_discovery', name: 'Lead Discovery', description: 'Find real prospect websites and contact data through configured discovery providers.', category: 'sales',
   async execute(input: ToolInput): Promise<ToolOutput> {
     const query = typeof input.query === 'string' ? input.query.trim() : String(input.command ?? '').trim();
     if (!query) return { success: false, error: 'query is required' };
-
     try {
       const limit = typeof input.limit === 'number' ? Math.max(1, Math.min(50, Math.floor(input.limit))) : 25;
       const result = await leadSearchService.search(query);
+      if (!result.success) return { success: false, data: result, error: result.providerErrors?.slice(-8).join(' | ') ?? 'Lead discovery unavailable' };
       const raw = result.leads.map((lead) => ({ name: lead.name, website: lead.website, phone: lead.phone, address: lead.address }));
       const filtered = raw.filter(isOperationalBusinessLead).slice(0, limit);
-      const leads = filtered.map((lead) => ({
-        name: lead.name,
-        website: lead.website,
-        ...(lead.phone ? { phone: lead.phone } : {}),
-        ...(lead.address ? { address: lead.address } : {}),
-      }));
-      return { success: true, data: { query, count: leads.length, filteredOut: raw.length - filtered.length, leads } };
+      const leads = filtered.map((lead) => ({ name: lead.name, website: lead.website, ...(lead.phone ? { phone: lead.phone } : {}), ...(lead.address ? { address: lead.address } : {}) }));
+      return { success: true, data: { query, count: leads.length, filteredOut: raw.length - filtered.length, leads, provider: result.provider, providerErrors: result.providerErrors ?? [] } };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
