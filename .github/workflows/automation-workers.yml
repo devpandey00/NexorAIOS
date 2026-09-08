@@ -1,0 +1,65 @@
+name: Nexor realtime automation workers
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+
+concurrency:
+  group: nexor-realtime-workers
+  cancel-in-progress: false
+
+jobs:
+  workers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Allow production deployment to settle after a main push
+        if: ${{ github.event_name == 'push' }}
+        run: sleep 90
+
+      - name: Acquire GitHub OIDC machine token
+        id: oidc
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const token = await core.getIDToken('nexoraios-production');
+            core.setOutput('token', token);
+
+      - name: Run Nexor automation workers
+        env:
+          NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
+          GITHUB_OIDC_TOKEN: ${{ steps.oidc.outputs.token }}
+        run: |
+          set -uo pipefail
+          failures=0
+          call() {
+            local name="$1" url="$2" method="${3:-GET}" body="${4:-}" file code
+            file="$(mktemp)"
+            if [[ "$method" == "POST" ]]; then
+              code="$(curl --silent --show-error --retry 2 --retry-delay 2 --retry-all-errors --max-time 300 -o "$file" -w '%{http_code}' -H "Authorization: Bearer $GITHUB_OIDC_TOKEN" -H 'Content-Type: application/json' -X POST "$NEXOR_BASE_URL$url" --data "$body")"
+            else
+              code="$(curl --silent --show-error --retry 2 --retry-delay 2 --retry-all-errors --max-time 300 -o "$file" -w '%{http_code}' -H "Authorization: Bearer $GITHUB_OIDC_TOKEN" "$NEXOR_BASE_URL$url")"
+            fi
+            echo "=== $name [$code] ==="
+            cat "$file"; echo
+            rm -f "$file"
+            if [[ ! "$code" =~ ^2[0-9][0-9]$ ]]; then failures=$((failures+1)); return 1; fi
+            return 0
+          }
+          call discovery /api/campaigns/auto/run || true
+          call scheduler /api/automations/run POST '{}' || true
+          call whatsapp_generate /api/whatsapp/automation-worker POST '{"action":"generate","limit":20}' || true
+          call whatsapp_approve /api/whatsapp/automation-worker POST '{"action":"auto-approve"}' || true
+          call whatsapp_send /api/whatsapp/automation-worker POST '{"action":"run_due","limit":20}' || true
+          call followups /api/cron/followups || true
+          call outreach /api/cron/outreach || true
+          call social /api/cron/social-publish || true
+          call reporting /api/cron/reports/growth || true
+          echo "worker_failures=$failures"
+          if [[ "$failures" -ne 0 ]]; then exit 1; fi
