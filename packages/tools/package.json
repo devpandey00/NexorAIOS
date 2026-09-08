@@ -17,7 +17,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@nexor/ai": "workspace:*",
     "@nexor/core": "workspace:*",
     "@nexor/database": "workspace:*",
     "@nexor/research": "workspace:*",
