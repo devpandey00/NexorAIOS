@@ -9,6 +9,15 @@ async function db() {
   return getDatabaseClients().write;
 }
 
+function jsonSafe<T>(value: T): T {
+  if (typeof value === 'bigint') return Number(value) as T;
+  if (Array.isArray(value)) return value.map((item) => jsonSafe(item)) as T;
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, jsonSafe(item)])) as T;
+  }
+  return value;
+}
+
 export async function ensureAiosPlatform() {
   // Kept as an explicit compatibility hook for existing callers. Schema
   // lifecycle is owned by the migration pipeline, not application startup.
@@ -40,7 +49,7 @@ export async function getCommandCenter() {
   const weighted = Object.entries(stageRows).reduce((sum, [s, x]) => sum + x.value * (probabilities[s] ?? 0), 0);
   const invoiceRows = Object.fromEntries(invoices.map(x => [x.status, { count: toNumber(x.count), total: Number(x.total) }]));
   const revenue = Number(payments[0]?.total ?? 0);
-  return {
+  return jsonSafe({
     brand: NEXOR_BRAND.name,
     sales: { leads: toNumber(leadCounts.reduce((s, x) => s + x.count, BigInt(0))), contacted: leads.CONTACTED ?? 0, replies: leads.REPLIED ?? 0, qualified: leads.QUALIFIED ?? 0, meetings: leads.MEETING_BOOKED ?? 0, proposals: leads.PROPOSAL_SENT ?? 0, won: leads.WON ?? 0, lost: leads.LOST ?? 0, pipeline, expectedRevenue: weighted },
     marketing: { campaigns: campaigns.reduce((s, x) => s + toNumber(x.count), 0), social },
@@ -50,7 +59,7 @@ export async function getCommandCenter() {
     automations: { active: toNumber(automations.find(x => x.enabled)?.count ?? 0) },
     approvals,
     proposals,
-  };
+  });
 }
 
 export async function writeAudit(input: { userId?: string | null; action: string; targetType?: string; targetId?: string; before?: unknown; after?: unknown; providerResponse?: unknown; success?: boolean; error?: string }) {
@@ -67,7 +76,8 @@ export async function createApproval(input: { action: string; targetType: string
 
 export async function listApprovals(status = 'PENDING') {
   const prisma = await db();
-  return prisma.$queryRawUnsafe(`SELECT id, action, target_type AS "targetType", target_id AS "targetId", payload, reason, status, created_at AS "createdAt", approved_at AS "approvedAt", executed_at AS "executedAt", error FROM public.aios_approvals WHERE status = $1 ORDER BY created_at DESC LIMIT 100`, status);
+  const rows = await prisma.$queryRawUnsafe(`SELECT id, action, target_type AS "targetType", target_id AS "targetId", payload, reason, status, created_at AS "createdAt", approved_at AS "approvedAt", executed_at AS "executedAt", error FROM public.aios_approvals WHERE status = $1 ORDER BY created_at DESC LIMIT 100`, status);
+  return jsonSafe(rows);
 }
 
 export async function setApproval(id: string, status: 'APPROVED' | 'REJECTED', userId?: string | null) {
