@@ -132,8 +132,14 @@ async function verifyGitHubOidc(token: string): Promise<boolean> {
 }
 
 export async function authorizeMachineRequest(request: Request): Promise<boolean> {
+  // Prefer a dedicated machine header. Production proxies can consume or rewrite
+  // the standard Authorization header; the custom header keeps GitHub OIDC intact.
+  const machineHeader =
+    request.headers.get('x-nexor-machine-token')?.trim() ??
+    request.headers.get('x-github-oidc-token')?.trim() ??
+    '';
   const authorization = request.headers.get('authorization')?.trim() ?? '';
-  const bearer = authorization.replace(/^Bearer\s+/i, '');
+  const bearer = machineHeader || authorization.replace(/^Bearer\s+/i, '');
 
   const cronSecret = process.env.CRON_SECRET?.trim();
   if (cronSecret && bearer === cronSecret) return true;
