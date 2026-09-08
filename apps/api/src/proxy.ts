@@ -2,14 +2,20 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifySessionToken } from './lib/auth';
 
 const PUBLIC_API = ['/api/auth/login', '/api/auth/logout', '/api/auth/me', '/api/health'];
-const MACHINE_PREFIXES = ['/api/cron/', '/api/webhooks/'];
+const MACHINE_PREFIXES = [
+  '/api/cron/',
+  '/api/webhooks/',
+  '/api/campaigns/auto/',
+  '/api/automations/run',
+  '/api/whatsapp/automation',
+];
 
 function isPublicApi(pathname: string) {
   return PUBLIC_API.some((path) => pathname === path || pathname.startsWith(`${path}/`));
 }
 
 function isMachineRoute(pathname: string) {
-  return MACHINE_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+  return MACHINE_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
 export default function proxy(request: NextRequest) {
