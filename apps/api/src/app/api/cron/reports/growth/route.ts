@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
 
     const countsRows = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(`
       SELECT
-        (SELECT COUNT(*) FROM public.leads) AS leads,
+        (SELECT COUNT(*) FROM public.leads WHERE status = 'QUALIFIED') AS leads,
         (SELECT COUNT(*) FROM public.outreach WHERE channel = 'EMAIL' AND status = 'SENT') AS emails,
         (SELECT COUNT(*) FROM public.outreach WHERE channel = 'WHATSAPP' AND status = 'SENT') AS whatsapp,
         (SELECT COUNT(*) FROM public.content_posts WHERE status = 'PUBLISHED') AS social,
