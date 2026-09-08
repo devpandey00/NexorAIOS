@@ -2,18 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { claimScheduledSocialContent, updateSocialContent } from '@/lib/social-content';
 import { publishSocialPost } from '@/lib/social-publisher';
 import { isAutomationEnabled, isOutboundEnabled } from '@/lib/automation-settings';
+import { authorizeMachineRequest } from '@/lib/machine-auth';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
 
-function authorized(req: NextRequest) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return process.env.NODE_ENV !== 'production';
-  return req.headers.get('authorization') === `Bearer ${secret}`;
-}
-
 export async function GET(req: NextRequest) {
-  if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  if (!(await authorizeMachineRequest(req))) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   if (!(await isAutomationEnabled('social_publishing'))) return NextResponse.json({ success: true, skipped: true, reason: 'AUTOMATION_DISABLED', capability: 'social_publishing' });
   if (!(await isOutboundEnabled())) return NextResponse.json({ success: true, skipped: true, reason: 'OUTBOUND_PAUSED', capability: 'social_publishing' });
 
