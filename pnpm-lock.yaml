@@ -376,6 +376,18 @@ importers:
 
   packages/tools:
     dependencies:
+      '@nexor/ai':
+        specifier: workspace:*
+        version: link:../ai
+      '@nexor/core':
+        specifier: workspace:*
+        version: link:../core
+      '@nexor/database':
+        specifier: workspace:*
+        version: link:../database
+      '@nexor/research':
+        specifier: workspace:*
+        version: link:../research
       '@nexor/search':
         specifier: workspace:*
         version: link:../search
