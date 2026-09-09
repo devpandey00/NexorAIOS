@@ -108,6 +108,8 @@ jobs:
           fi
           rm -f "$approval_file"
 
+          # Email outreach is safe to auto-queue; WhatsApp/social remain provider/compliance gated.
+          call outreach_auto_approve /api/cron/outreach-approve || true
           call whatsapp_send /api/whatsapp/automation-worker POST '{"action":"run_due","limit":20}' || true
           call followups /api/cron/followups || true
           call outreach /api/cron/outreach || true
