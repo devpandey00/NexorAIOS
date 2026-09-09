@@ -63,12 +63,28 @@ export async function discoverOpportunities(kind: OpportunityKind, location?: st
     seen.add(url);
 
     const title = String(result.name ?? '').trim() || url;
+    const lead = await prisma.lead.upsert({
+      where: { website: url },
+      create: {
+        businessName: title,
+        niche: kind === 'JOB' ? 'hiring prospect' : kind === 'INFLUENCER' ? 'business influencer prospect' : 'company prospect',
+        country: location?.trim() || 'Unknown',
+        website: url,
+        status: 'NEW',
+      },
+      update: {
+        businessName: title,
+        ...(location?.trim() ? { country: location.trim() } : {}),
+      },
+      select: { id: true },
+    });
+
     const inserted = await prisma.$queryRaw<Opportunity[]>`
       INSERT INTO public.opportunities
-        (kind, title, organization, url, source, location, notes)
+        (lead_id, kind, title, organization, url, source, location, notes)
       VALUES
-        (${kind}, ${title}, ${title}, ${url}, 'web-search', ${location ?? null}, ${`Discovered by Nexor ${kind.toLowerCase()} autopilot.`})
-      ON CONFLICT (kind, url) DO UPDATE SET updated_at = now()
+        (${lead.id}, ${kind}, ${title}, ${title}, ${url}, 'web-search', ${location ?? null}, ${`Discovered by Nexor ${kind.toLowerCase()} autopilot.`})
+      ON CONFLICT (kind, url) DO UPDATE SET updated_at = now(), lead_id = EXCLUDED.lead_id
       RETURNING
         id, kind, title, organization, url, source, location, contact, notes, status,
         created_at AS "createdAt"
