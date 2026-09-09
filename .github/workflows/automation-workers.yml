@@ -2,12 +2,11 @@ name: Nexor realtime automation workers
 
 # Fast production workers: outbound, follow-ups, social publishing, reporting and scheduling.
 # Long-running lead discovery is handled by a separate workflow so it can never block these workers.
+# This worker is schedule-driven so source-code deployments can never block production automation.
 
 on:
   schedule:
     - cron: '*/5 * * * *'
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -23,23 +22,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      - name: Wait for this exact main commit to be live on Vercel
-        if: ${{ github.event_name == 'push' }}
-        env:
-          NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
-          EXPECTED_COMMIT: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          for attempt in $(seq 1 30); do
-            response="$(curl --silent --show-error --max-time 15 "$NEXOR_BASE_URL/api/health" || true)"
-            commit="$(printf '%s' "$response" | python -c 'import json,sys; print(json.load(sys.stdin).get("commit", ""))' 2>/dev/null || true)"
-            echo "deployment commit=$commit expected=$EXPECTED_COMMIT attempt=$attempt"
-            if [[ "$commit" == "$EXPECTED_COMMIT" ]]; then exit 0; fi
-            sleep 10
-          done
-          echo "Vercel did not expose the expected commit within 5 minutes"
-          exit 1
-
       - name: Acquire GitHub OIDC machine token
         id: oidc
         uses: actions/github-script@v8
