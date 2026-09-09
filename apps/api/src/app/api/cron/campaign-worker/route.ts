@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { CampaignStatus, getDatabaseClients, JobStatus } from '@nexor/database';
+import { CampaignStatus, getDatabaseClients, JobStatus, JobType } from '@nexor/database';
 import { runCampaign } from '@/lib/campaign-runner';
 import { isAutomationEnabled } from '@/lib/automation-settings';
 import { authorizeMachineRequest } from '@/lib/machine-auth';
@@ -15,18 +15,22 @@ export async function GET(req: NextRequest) {
   const staleBefore = new Date(Date.now() - 15 * 60 * 1000);
 
   try {
-    // Recover work abandoned by a timed-out function invocation.
-    await db.campaign.updateMany({
-      where: { status: CampaignStatus.RUNNING, startedAt: { lt: staleBefore } },
-      data: { status: CampaignStatus.QUEUED, startedAt: null },
-    });
+    // Recover only discovery work abandoned by a timed-out function invocation.
     await db.job.updateMany({
-      where: { status: JobStatus.RUNNING, startedAt: { lt: staleBefore } },
-      data: { status: JobStatus.QUEUED, startedAt: null },
+      where: { type: JobType.LEAD_DISCOVERY, status: JobStatus.RUNNING, startedAt: { lt: staleBefore } },
+      data: { status: JobStatus.QUEUED, startedAt: null, error: 'Recovered stale discovery job' },
+    });
+    await db.campaign.updateMany({
+      where: {
+        status: CampaignStatus.RUNNING,
+        startedAt: { lt: staleBefore },
+        jobs: { some: { type: JobType.LEAD_DISCOVERY, status: JobStatus.QUEUED } },
+      },
+      data: { status: CampaignStatus.QUEUED, startedAt: null },
     });
 
     const candidates = await db.campaign.findMany({
-      where: { status: CampaignStatus.QUEUED },
+      where: { status: CampaignStatus.QUEUED, jobs: { some: { type: JobType.LEAD_DISCOVERY, status: JobStatus.QUEUED } } },
       orderBy: { createdAt: 'asc' },
       take: 10,
       select: { id: true, name: true },
@@ -34,7 +38,7 @@ export async function GET(req: NextRequest) {
 
     for (const candidate of candidates) {
       const job = await db.job.findFirst({
-        where: { campaignId: candidate.id, status: JobStatus.QUEUED },
+        where: { campaignId: candidate.id, type: JobType.LEAD_DISCOVERY, status: JobStatus.QUEUED },
         orderBy: { createdAt: 'asc' },
         select: { id: true },
       });
@@ -61,7 +65,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ success: true, claimed: false, message: 'No queued campaign with a queued discovery job.' });
+    return NextResponse.json({ success: true, claimed: false, message: 'No queued discovery campaign is waiting.' });
   } catch (error) {
     console.error('[CAMPAIGN WORKER ERROR]', error);
     return NextResponse.json({ success: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 });
