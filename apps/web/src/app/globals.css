@@ -1,61 +1,72 @@
 @import "tailwindcss";
 
-/**
- * NEXOR design tokens, merged into the existing Tailwind v4 setup.
- * Tailwind v4 has no tailwind.config.js by default — tokens are declared
- * as CSS variables and mapped to utilities via @theme inline, same
- * pattern this file already used for --color-background/--color-foreground.
- *
- * Palette source: see docs/dashboard-design-notes.md for where these
- * values came from and the light/dark conflicts found in the supplied
- * design package.
- */
-
 :root,
 [data-theme='dark'] {
   color-scheme: dark;
-  --background: #0d0d0d;
-  --foreground: #e5e2e1;
-
-  --nx-surface: #121212;
-  --nx-surface-elevated: #1a1a1a;
-  --nx-surface-hover: #202020;
-  --nx-border: #262626;
-  --nx-text-secondary: #bacac5;
-  --nx-text-muted: #859490;
-  --nx-teal: #2dd4bf;
-  --nx-gold: #d4af37;
-  --nx-success: #2dd4bf;
-  --nx-warning: #e9c349;
-  --nx-danger: #ffb4ab;
-  --nx-info: #9fb8ff;
+  --background: #070a09;
+  --foreground: #f3f7f4;
+  --nx-surface: #0d1210;
+  --nx-surface-elevated: #131a17;
+  --nx-surface-hover: #19221e;
+  --nx-border: rgba(255,255,255,.08);
+  --nx-text-secondary: #b7c5bf;
+  --nx-text-muted: #7e9189;
+  --nx-teal: #43e6bd;
+  --nx-gold: #d6b86a;
+  --nx-success: #43e6bd;
+  --nx-warning: #f1c75b;
+  --nx-danger: #ff8e83;
+  --nx-info: #91b5ff;
+  --nx-glow: rgba(67,230,189,.14);
+  --nx-radius-control: 10px;
+  --nx-radius-panel: 18px;
 }
 
 [data-theme='light'] {
   color-scheme: light;
-  --background: #f9f8f6;
-  --foreground: #201f1c;
-
+  --background: #f6f8f6;
+  --foreground: #17201c;
   --nx-surface: #ffffff;
-  --nx-surface-elevated: #f2f0ed;
-  --nx-surface-hover: #ece9e4;
-  --nx-border: #e4e0d9;
-  --nx-text-secondary: #4a463f;
-  --nx-text-muted: #837c6f;
-  --nx-teal: #0f9c8a;
-  --nx-gold: #a9820c;
-  --nx-success: #0f9c8a;
-  --nx-warning: #a9820c;
+  --nx-surface-elevated: #f0f4f1;
+  --nx-surface-hover: #e9efeb;
+  --nx-border: rgba(19,39,30,.10);
+  --nx-text-secondary: #506159;
+  --nx-text-muted: #75837d;
+  --nx-teal: #087f68;
+  --nx-gold: #8c6d12;
+  --nx-success: #087f68;
+  --nx-warning: #9a7210;
   --nx-danger: #b3261e;
   --nx-info: #3457c4;
+  --nx-glow: rgba(8,127,104,.10);
+  --nx-radius-control: 10px;
+  --nx-radius-panel: 18px;
 }
+
+[data-nx-theme='forest'] { --nx-teal:#43e6a5; --nx-glow:rgba(67,230,165,.16); }
+[data-nx-theme='emerald'] { --nx-teal:#32d39a; --nx-glow:rgba(50,211,154,.14); }
+[data-nx-theme='midnight'] { --nx-teal:#62a7ff; --nx-glow:rgba(98,167,255,.15); }
+[data-nx-theme='ocean'] { --nx-teal:#49c7d9; --nx-glow:rgba(73,199,217,.15); }
+[data-nx-theme='aurora'] { --nx-teal:#a78bfa; --nx-glow:rgba(167,139,250,.15); }
+[data-nx-theme='indigo'] { --nx-teal:#818cf8; --nx-glow:rgba(129,140,248,.15); }
+[data-nx-theme='sunset'] { --nx-teal:#f2a65a; --nx-glow:rgba(242,166,90,.15); }
+[data-nx-theme='monochrome'] { --nx-teal:#d5d8d6; --nx-glow:rgba(255,255,255,.08); }
+[data-nx-theme='studio'] { --nx-teal:#c084fc; --nx-glow:rgba(192,132,252,.10); }
+
+[data-nx-theme='pearl'],
+[data-nx-theme='arctic'],
+[data-nx-theme='sand'] { --nx-teal:#087f68; --nx-glow:rgba(8,127,104,.08); }
+[data-nx-theme='graphite'],
+[data-nx-theme='slate'] { --nx-teal:#8da39b; --nx-glow:rgba(141,163,155,.10); }
+
+[data-density='compact'] { --nx-radius-panel:14px; }
+[data-density='dense'] { --nx-radius-panel:10px; --nx-radius-control:8px; }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-
   --color-nx-surface: var(--nx-surface);
   --color-nx-surface-elevated: var(--nx-surface-elevated);
   --color-nx-surface-hover: var(--nx-surface-hover);
@@ -69,50 +80,43 @@
   --color-nx-warning: var(--nx-warning);
   --color-nx-danger: var(--nx-danger);
   --color-nx-info: var(--nx-info);
-
-  --radius-nx-control: 4px;
-  --radius-nx-panel: 6px;
-  --radius-nx-chip: 2px;
 }
 
-* {
-  box-sizing: border-box;
-}
-
-html {
-  min-width: 320px;
-  background: var(--background);
-}
-
+* { box-sizing: border-box; }
+html { min-width: 320px; background:var(--background); }
 body {
-  margin: 0;
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
-  transition: background-color 200ms ease, color 200ms ease;
+  margin:0;
+  background:
+    radial-gradient(900px 420px at 50% -10%, var(--nx-glow), transparent 68%),
+    var(--background);
+  color:var(--foreground);
+  font-family:var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+  transition:background-color 220ms ease,color 180ms ease;
 }
 
-button,
-a,
-input,
-textarea,
-select {
-  -webkit-tap-highlight-color: transparent;
+::selection { background:color-mix(in srgb,var(--nx-teal) 28%,transparent); }
+button,a,input,textarea,select { -webkit-tap-highlight-color:transparent; }
+button { touch-action:manipulation; }
+
+.nx-panel {
+  background:color-mix(in srgb,var(--nx-surface) 94%,transparent);
+  border:1px solid var(--nx-border);
+  border-radius:var(--nx-radius-panel);
+  box-shadow:0 16px 50px rgba(0,0,0,.10);
+  backdrop-filter:blur(18px);
 }
 
-button {
-  touch-action: manipulation;
+.nx-panel-hover { transition:transform 180ms ease, border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease; }
+.nx-panel-hover:hover { transform:translateY(-1px); border-color:color-mix(in srgb,var(--nx-teal) 26%,var(--nx-border)); box-shadow:0 20px 60px rgba(0,0,0,.14); }
+
+.nx-accent-glow { box-shadow:0 0 0 1px color-mix(in srgb,var(--nx-teal) 20%,transparent), 0 0 34px var(--nx-glow); }
+
+@media (max-width: 767px) {
+  .nx-panel { border-radius:14px; backdrop-filter:blur(12px); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    scroll-behavior: auto !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
+  *,*::before,*::after { scroll-behavior:auto!important; animation-duration:.01ms!important; animation-iteration-count:1!important; transition-duration:.01ms!important; }
 }
