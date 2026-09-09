@@ -13,8 +13,21 @@ export async function GET(req: NextRequest) {
   if (!(await isOutboundEnabled())) return NextResponse.json({ success: true, skipped: true, reason: 'OUTBOUND_PAUSED', capability: 'social_publishing' });
 
   try {
-    const claimed = await claimScheduledSocialContent(20);
+    const batchSize = Math.min(Math.max(Number(process.env.SOCIAL_PUBLISH_MAX_PER_RUN ?? 3), 1), 5);
+    const staleBefore = new Date(Date.now() - 15 * 60 * 1000);
+    const { getDatabaseClients } = await import('@nexor/database');
+    const db = getDatabaseClients().write;
+
+    // If a function died while publishing, make the post eligible for a fresh attempt.
+    await db.$executeRaw`
+      UPDATE public.content_posts
+      SET status = 'SCHEDULED', error = COALESCE(error, 'Recovered stale publishing claim'), updated_at = CURRENT_TIMESTAMP
+      WHERE status = 'PUBLISHING' AND updated_at < ${staleBefore}
+    `;
+
+    const claimed = await claimScheduledSocialContent(batchSize);
     const results: Array<{ id: string; success: boolean; error?: string }> = [];
+
     for (const post of claimed) {
       if (!(await isOutboundEnabled())) break;
       try {
@@ -26,8 +39,10 @@ export async function GET(req: NextRequest) {
         results.push({ id: post.id, success: false, error: message });
       }
     }
-    return NextResponse.json({ success: true, due: claimed.length, results, outboundEnabled: await isOutboundEnabled() });
+
+    return NextResponse.json({ success: true, due: claimed.length, batchSize, results, outboundEnabled: await isOutboundEnabled() });
   } catch (error) {
+    console.error('[CRON SOCIAL PUBLISH ERROR]', error);
     return NextResponse.json({ success: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }
