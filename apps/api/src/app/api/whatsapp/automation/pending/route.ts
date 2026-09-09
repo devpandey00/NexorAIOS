@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabaseClients, OutreachChannel, OutreachStatus } from '@nexor/database';
 import { authorizeMachineRequest } from '@/lib/machine-auth';
+import { getWhatsAppProviderStatus } from '@/lib/outreach-sender';
 
 export const runtime = 'nodejs';
 
@@ -24,9 +25,13 @@ export async function GET(req: NextRequest) {
       take: 20,
     });
 
+    const provider = getWhatsAppProviderStatus();
+    const automationReady = Boolean(provider.openwaConfigured || (provider.configured && provider.templateConfigured));
+
     return NextResponse.json({
       success: true,
       count: drafts.length,
+      provider: { ...provider, automationReady },
       drafts: drafts.map((draft) => ({
         id: draft.id,
         leadId: draft.lead.id,
