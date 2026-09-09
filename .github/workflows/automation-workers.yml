@@ -1,6 +1,7 @@
 name: Nexor realtime automation workers
 
 # Production deployment retrigger marker: code + DB migration are already fixed on main.
+# Fresh production verification trigger: dual-header GitHub OIDC worker authentication.
 
 on:
   schedule:
