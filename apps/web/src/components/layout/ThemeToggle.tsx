@@ -3,14 +3,17 @@
 import { useTheme } from './ThemeProvider';
 
 export function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
+  const { mode, setMode } = useTheme();
+  const isDark = mode === 'dark' || mode === 'system';
+  const nextMode = isDark ? 'light' : 'dark';
+
   return (
     <button
-      onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-      aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+      onClick={() => setMode(nextMode)}
+      aria-label={`Switch to ${nextMode} theme`}
       className="flex h-8 w-8 items-center justify-center rounded-nx-control border border-nx-border text-nx-text-secondary transition-colors duration-150 hover:bg-nx-surface-hover"
     >
-      {theme === 'dark' ? (
+      {isDark ? (
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
           <circle cx="12" cy="12" r="4" />
           <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
