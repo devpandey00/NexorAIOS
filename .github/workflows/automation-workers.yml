@@ -6,7 +6,7 @@ name: Nexor realtime automation workers
 
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '2-59/5 * * * *'
   workflow_dispatch:
 
 permissions:
