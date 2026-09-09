@@ -25,9 +25,9 @@ function htmlEscape(value: string) {
 
 async function sendMilestone(subject: string, lines: string[]) {
   const apiKey = process.env.RESEND_API_KEY?.trim();
-  const from = process.env.REPORT_FROM_EMAIL?.trim();
+  const from = process.env.REPORT_FROM_EMAIL?.trim() || process.env.OUTREACH_FROM_EMAIL?.trim();
   const to = process.env.REPORT_EMAIL_TO?.trim();
-  if (!apiKey || !from || !to) throw new Error('RESEND_API_KEY, REPORT_FROM_EMAIL and REPORT_EMAIL_TO are required for growth reports');
+  if (!apiKey || !from || !to) throw new Error('RESEND_API_KEY, REPORT_FROM_EMAIL/OUTREACH_FROM_EMAIL and REPORT_EMAIL_TO are required for growth reports');
   const html = `<div style="font-family:Arial,sans-serif;max-width:680px;margin:auto;padding:28px"><div style="letter-spacing:2px;font-size:11px;color:#a87928;font-weight:700">NEXORAIOS · FOUNDER ALERT</div><h1 style="font-size:28px">${htmlEscape(subject)}</h1><div style="border-top:1px solid #eee;padding-top:16px">${lines.map((line) => `<p>${htmlEscape(line)}</p>`).join('')}</div></div>`;
   const response = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ from, to: [to], subject, html }) });
   const data = await response.json().catch(() => ({}));
