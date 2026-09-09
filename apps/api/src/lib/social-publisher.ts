@@ -1,9 +1,9 @@
 import { listSocialContent, updateSocialContent, type SocialContentPlatform } from './social-content';
 
 function graphVersion() {
-  const version = process.env.META_GRAPH_VERSION?.trim();
-  if (!version) throw new Error('META_GRAPH_VERSION is not configured');
-  return version;
+  // Keep Facebook publishing working when the project has a valid Meta token
+  // but the optional version env is not present. This can still be overridden.
+  return process.env.META_GRAPH_VERSION?.trim() || 'v23.0';
 }
 
 function metaToken() {
@@ -12,16 +12,42 @@ function metaToken() {
   return token;
 }
 
-async function metaRequest(path: string, body: Record<string, string>) {
+async function metaRequest(path: string, body: Record<string, string>, accessToken = metaToken()) {
   const response = await fetch(`https://graph.facebook.com/${graphVersion()}${path}`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ ...body, access_token: metaToken() }).toString(),
+    body: new URLSearchParams({ ...body, access_token: accessToken }).toString(),
     cache: 'no-store',
   });
   const json = await response.json().catch(() => ({}));
   if (!response.ok || json?.error) throw new Error(json?.error?.message ?? `Meta API request failed (${response.status})`);
   return json as { id?: string; post_id?: string };
+}
+
+async function resolveFacebookPage() {
+  const configuredPageId = process.env.META_PAGE_ID?.trim();
+  const userToken = metaToken();
+
+  if (configuredPageId) {
+    return { pageId: configuredPageId, accessToken: userToken };
+  }
+
+  const response = await fetch(
+    `https://graph.facebook.com/${graphVersion()}/me/accounts?fields=id,name,access_token&limit=100&access_token=${encodeURIComponent(userToken)}`,
+    { cache: 'no-store' },
+  );
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || body?.error) {
+    throw new Error(body?.error?.message ?? `Unable to discover Facebook Pages (${response.status})`);
+  }
+
+  const pages = Array.isArray(body?.data) ? body.data : [];
+  const page = pages.find((item: { id?: string; access_token?: string }) => item?.id && item?.access_token);
+  if (!page) {
+    throw new Error('No Facebook Page is available to this Meta access token. Grant the Page publishing permissions and reconnect the token.');
+  }
+
+  return { pageId: String(page.id), accessToken: String(page.access_token) };
 }
 
 function linkedinToken() {
@@ -170,9 +196,12 @@ export async function publishSocialPost(postId: string) {
 
   let externalId = '';
   if (post.platform === 'FACEBOOK') {
-    const pageId = process.env.META_PAGE_ID?.trim();
-    if (!pageId) throw new Error('META_PAGE_ID is not configured');
-    const result = await metaRequest(`/${pageId}/feed`, { message: `${post.caption}${post.hashtags.length ? `\n\n${post.hashtags.join(' ')}` : ''}` });
+    const page = await resolveFacebookPage();
+    const result = await metaRequest(
+      `/${page.pageId}/feed`,
+      { message: `${post.caption}${post.hashtags.length ? `\n\n${post.hashtags.join(' ')}` : ''}` },
+      page.accessToken,
+    );
     externalId = result.post_id ?? result.id ?? '';
   } else if (post.platform === 'INSTAGRAM') {
     externalId = await publishInstagram(post);
@@ -191,8 +220,8 @@ export async function publishSocialPost(postId: string) {
 }
 
 export function isProviderConfigured(platform: SocialContentPlatform) {
-  if (platform === 'FACEBOOK') return Boolean(process.env.META_ACCESS_TOKEN && process.env.META_GRAPH_VERSION && process.env.META_PAGE_ID);
-  if (platform === 'INSTAGRAM') return Boolean(process.env.META_ACCESS_TOKEN && process.env.META_GRAPH_VERSION && metaInstagramUserId());
+  if (platform === 'FACEBOOK') return Boolean(process.env.META_ACCESS_TOKEN);
+  if (platform === 'INSTAGRAM') return Boolean(process.env.META_ACCESS_TOKEN && metaInstagramUserId());
   if (platform === 'LINKEDIN') return Boolean(process.env.LINKEDIN_ACCESS_TOKEN && process.env.LINKEDIN_AUTHOR_URN);
   if (platform === 'YOUTUBE') return Boolean(
     (process.env.YOUTUBE_CLIENT_ID && process.env.YOUTUBE_CLIENT_SECRET && process.env.YOUTUBE_REFRESH_TOKEN) ||
