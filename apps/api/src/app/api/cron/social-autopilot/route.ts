@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeMachineRequest } from '@/lib/machine-auth';
 import { isAutomationEnabled, isOutboundEnabled } from '@/lib/automation-settings';
-import { createSocialContent, listSocialContent, type SocialContentPlatform } from '@/lib/social-content';
+import { createSocialContent, listSocialContent, updateSocialContent, type SocialContentPlatform } from '@/lib/social-content';
 import { isProviderConfigured } from '@/lib/social-publisher';
 
 export const runtime = 'nodejs';
@@ -9,17 +9,71 @@ export const maxDuration = 30;
 
 const TEXT_PLATFORMS: SocialContentPlatform[] = ['FACEBOOK', 'LINKEDIN', 'X'];
 const DAILY_WINDOW_MS = 24 * 60 * 60 * 1000;
+const FAILED_RECOVERY_DELAY_MS = 15 * 60 * 1000;
+
+const DAILY_POSTS = [
+  {
+    title: 'Your leads are not the problem. Your system is.',
+    caption: 'If leads are coming in but sales still feel inconsistent, the bottleneck is often the system behind the marketing. NexorAIOS connects discovery, research, CRM, outreach, follow-ups, and reporting so your team can move from scattered activity to a repeatable growth engine.',
+    hashtags: ['#NexorAIOS', '#LeadGeneration', '#SalesAutomation', '#MarketingAutomation', '#AI'],
+  },
+  {
+    title: 'Stop losing leads between tools.',
+    caption: 'A lead should not disappear because it moved from an ad platform to a spreadsheet, then to a CRM, then into someone’s inbox. NexorAIOS is built around one operating loop: discover, understand, contact, follow up, and measure the result.',
+    hashtags: ['#NexorAIOS', '#CRM', '#LeadManagement', '#BusinessAutomation', '#Growth'],
+  },
+  {
+    title: 'More activity does not always mean more growth.',
+    caption: 'Posting more, sending more messages, and collecting more leads means very little if the workflow cannot prioritize the right opportunities. The goal is not more noise. The goal is a system that turns qualified opportunities into conversations and measurable outcomes.',
+    hashtags: ['#NexorAIOS', '#GrowthMarketing', '#SalesOS', '#Automation', '#AI'],
+  },
+  {
+    title: 'Research before you pitch.',
+    caption: 'Generic outreach gets ignored. Better outreach starts with context: website weaknesses, SEO gaps, ads, social activity, positioning, and the business problem behind the opportunity. NexorAIOS is designed to turn that research into a relevant sales conversation.',
+    hashtags: ['#NexorAIOS', '#SalesIntelligence', '#LeadResearch', '#B2BMarketing', '#AI'],
+  },
+  {
+    title: 'Follow-up should be a system, not a memory.',
+    caption: 'A good lead can go cold simply because nobody followed up at the right time. NexorAIOS keeps outreach, follow-ups, conversations, and CRM state connected so opportunities do not depend on someone remembering what to do next.',
+    hashtags: ['#NexorAIOS', '#FollowUp', '#SalesAutomation', '#CRM', '#RevenueOperations'],
+  },
+  {
+    title: 'Your marketing should create a feedback loop.',
+    caption: 'Discovery creates leads. Research creates context. Outreach creates conversations. CRM records the outcome. Reporting tells you what worked. That feedback loop is what turns marketing automation into an operating system instead of another collection of tools.',
+    hashtags: ['#NexorAIOS', '#MarketingOS', '#RevenueGrowth', '#Automation', '#DigitalMarketing'],
+  },
+  {
+    title: 'Build once. Let the system keep moving.',
+    caption: 'The real value of automation is not one impressive demo. It is the boring consistency: scheduled workers running, content being published, follow-ups being queued, outreach being processed, and results being recorded without someone clicking Run every morning.',
+    hashtags: ['#NexorAIOS', '#Autopilot', '#BusinessAutomation', '#AIWorkflows', '#GrowthSystems'],
+  },
+] as const;
 
 function buildPost(platform: SocialContentPlatform) {
-  const title = 'Stop guessing where your leads are coming from';
-  const caption = [
-    'Your marketing should not depend on random posting, scattered spreadsheets, or manual follow-ups.',
-    'NexorAIOS connects lead discovery, research, CRM, outreach, follow-ups, and social execution into one operating system.',
-    'If your business is generating attention but not enough qualified conversations, the problem is usually the system behind the marketing — not just the ad or the post.',
-    'Follow Nexor for practical growth systems, automation, and AI workflows built for real businesses.',
-  ].join('\n\n');
-  const hashtags = ['#NexorAIOS', '#DigitalMarketing', '#LeadGeneration', '#MarketingAutomation', '#AI'];
-  return { platform, title, caption, hashtags };
+  const dayIndex = Math.floor(Date.now() / DAILY_WINDOW_MS) % DAILY_POSTS.length;
+  const post = DAILY_POSTS[dayIndex];
+  return {
+    platform,
+    title: `${post.title} — ${platform}`,
+    caption: post.caption,
+    hashtags: [...post.hashtags],
+  };
+}
+
+function isRecoverableFailure(error: string | null) {
+  if (!error) return false;
+  const value = error.toLowerCase();
+  return value.includes('[auto_retry:') || ![
+    'not configured',
+    'authentication',
+    'unauthorized',
+    'permission',
+    'access token',
+    'no facebook page',
+    'requires a public mediaurl',
+    'public mediaurl',
+    'oauthexception',
+  ].some((needle) => value.includes(needle));
 }
 
 export async function GET(req: NextRequest) {
@@ -34,6 +88,7 @@ export async function GET(req: NextRequest) {
   try {
     const now = Date.now();
     const generated: Array<{ id: string; platform: SocialContentPlatform }> = [];
+    const recovered: Array<{ id: string; platform: SocialContentPlatform }> = [];
     const skipped: Array<{ platform: SocialContentPlatform; reason: string }> = [];
 
     for (const platform of TEXT_PLATFORMS) {
@@ -42,10 +97,36 @@ export async function GET(req: NextRequest) {
         continue;
       }
 
-      const recent = await listSocialContent({ platform, limit: 20 });
-      const hasRecentPost = recent.some((post) => now - new Date(post.createdAt).getTime() < DAILY_WINDOW_MS);
-      if (hasRecentPost) {
-        skipped.push({ platform, reason: 'RECENT_POST_EXISTS' });
+      const recent = await listSocialContent({ platform, limit: 50 });
+      const activePost = recent.find((post) => ['SCHEDULED', 'PUBLISHING'].includes(post.status));
+      const publishedRecently = recent.some((post) => post.status === 'PUBLISHED' && now - new Date(post.createdAt).getTime() < DAILY_WINDOW_MS);
+
+      if (activePost) {
+        skipped.push({ platform, reason: 'ACTIVE_POST_EXISTS' });
+        continue;
+      }
+      if (publishedRecently) {
+        skipped.push({ platform, reason: 'RECENT_PUBLISHED_POST_EXISTS' });
+        continue;
+      }
+
+      const latestFailed = recent.find((post) => post.status === 'FAILED');
+      if (latestFailed) {
+        const failedAt = new Date(latestFailed.updatedAt).getTime();
+        if (now - failedAt < FAILED_RECOVERY_DELAY_MS) {
+          skipped.push({ platform, reason: 'RECENT_FAILURE_BACKOFF' });
+          continue;
+        }
+        if (isRecoverableFailure(latestFailed.error)) {
+          await updateSocialContent(latestFailed.id, {
+            status: 'SCHEDULED',
+            scheduledAt: new Date(Date.now() + 1000).toISOString(),
+            error: latestFailed.error,
+          });
+          recovered.push({ id: latestFailed.id, platform });
+          continue;
+        }
+        skipped.push({ platform, reason: 'PERMANENT_PROVIDER_FAILURE' });
         continue;
       }
 
@@ -60,8 +141,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       success: true,
       generated,
+      recovered,
       skipped,
-      note: 'Text-only providers are auto-scheduled. Instagram/YouTube require media assets and are not fabricated by this worker.',
+      note: 'Configured text providers are automatically scheduled once per day. Transient failures are retried up to three times; permanent provider/auth failures are held until configuration is fixed.',
     });
   } catch (error) {
     console.error('[CRON SOCIAL AUTOPILOT ERROR]', error);
