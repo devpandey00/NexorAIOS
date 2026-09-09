@@ -27,7 +27,7 @@ async function sendMilestone(subject: string, lines: string[]) {
   const apiKey = process.env.RESEND_API_KEY?.trim();
   const from = process.env.REPORT_FROM_EMAIL?.trim() || process.env.OUTREACH_FROM_EMAIL?.trim();
   const to = process.env.REPORT_EMAIL_TO?.trim();
-  if (!apiKey || !from || !to) throw new Error('RESEND_API_KEY, REPORT_FROM_EMAIL/OUTREACH_FROM_EMAIL and REPORT_EMAIL_TO are required for growth reports');
+  if (!apiKey || !from || !to) return { skipped: true, reason: 'EMAIL_REPORTING_NOT_CONFIGURED' };
   const html = `<div style="font-family:Arial,sans-serif;max-width:680px;margin:auto;padding:28px"><div style="letter-spacing:2px;font-size:11px;color:#a87928;font-weight:700">NEXORAIOS · FOUNDER ALERT</div><h1 style="font-size:28px">${htmlEscape(subject)}</h1><div style="border-top:1px solid #eee;padding-top:16px">${lines.map((line) => `<p>${htmlEscape(line)}</p>`).join('')}</div></div>`;
   const response = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ from, to: [to], subject, html }) });
   const data = await response.json().catch(() => ({}));
@@ -67,20 +67,46 @@ export async function GET(req: NextRequest) {
       if (level > (previous[key] ?? 0)) reached.push({ key, label, count, milestone: level * step });
     }
 
-    const reportResult = dueForThreeHour ? await sendNexorReportEmail(3) : null;
+    let reportResult: unknown = null;
+    let reportSkipped = false;
+    if (dueForThreeHour) {
+      try {
+        reportResult = await sendNexorReportEmail(3);
+      } catch (error) {
+        reportSkipped = true;
+        console.warn('[GROWTH REPORT EMAIL SKIPPED]', error instanceof Error ? error.message : String(error));
+      }
+    }
+
     let milestoneMessageId: string | null = null;
+    let milestonesSkipped = false;
     if (reached.length) {
-      milestoneMessageId = await sendMilestone(
-        `NexorAIOS milestone · ${reached.map((item) => `${item.milestone} ${item.label.toLowerCase()}`).join(' · ')}`,
-        reached.map((item) => `${item.label}: ${item.count}. New milestone reached: ${item.milestone}.`),
-      );
+      try {
+        const result = await sendMilestone(
+          `NexorAIOS milestone · ${reached.map((item) => `${item.milestone} ${item.label.toLowerCase()}`).join(' · ')}`,
+          reached.map((item) => `${item.label}: ${item.count}. New milestone reached: ${item.milestone}.`),
+        );
+        if (typeof result === 'object' && result && 'skipped' in result) milestonesSkipped = true;
+        else milestoneMessageId = typeof result === 'string' ? result : null;
+      } catch (error) {
+        milestonesSkipped = true;
+        console.warn('[GROWTH MILESTONE EMAIL SKIPPED]', error instanceof Error ? error.message : String(error));
+      }
     }
 
     const nextState: MilestoneState = { ...previous };
     for (const [key, , step] of MILESTONES) nextState[key] = Math.floor(Number(counts[key] ?? 0) / step);
     await db.$executeRawUnsafe(`UPDATE public.automation_settings SET config = $1::jsonb, updated_at = NOW() WHERE key = 'growth_reports'`, JSON.stringify({ last3hAt: dueForThreeHour ? new Date().toISOString() : config.last3hAt ?? null, milestones: nextState }));
 
-    return NextResponse.json({ success: true, threeHourReport: reportResult, milestones: reached, milestoneMessageId, checkedAt: new Date().toISOString() });
+    return NextResponse.json({
+      success: true,
+      threeHourReport: reportResult,
+      reportSkipped,
+      milestones: reached,
+      milestoneMessageId,
+      milestonesSkipped,
+      checkedAt: new Date().toISOString(),
+    });
   } catch (error) {
     console.error('[GROWTH REPORT ERROR]', error);
     return NextResponse.json({ success: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 });
