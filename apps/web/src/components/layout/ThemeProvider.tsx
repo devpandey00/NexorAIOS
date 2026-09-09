@@ -30,10 +30,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<ThemeName>('obsidian');
   const [density, setDensityState] = useState<Density>('comfortable');
 
+  // Hydrate persisted client-only preferences after mount. These writes intentionally
+  // synchronize React state with localStorage and are therefore effect-driven.
   useEffect(() => {
     const storedMode = (window.localStorage.getItem(MODE_KEY) as AppearanceMode | null) ?? 'system';
     const storedTheme = (window.localStorage.getItem(THEME_KEY) as ThemeName | null) ?? 'obsidian';
     const storedDensity = (window.localStorage.getItem(DENSITY_KEY) as Density | null) ?? 'comfortable';
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setModeState(['light', 'dark', 'system'].includes(storedMode) ? storedMode : 'system');
     setThemeState(storedTheme);
     setDensityState(['comfortable', 'compact', 'dense'].includes(storedDensity) ? storedDensity : 'comfortable');
