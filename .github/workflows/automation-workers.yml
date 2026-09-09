@@ -80,18 +80,24 @@ jobs:
           echo "=== whatsapp_pending [$approval_code] ==="
           cat "$approval_file"; echo
           if [[ "$approval_code" =~ ^2[0-9][0-9]$ ]]; then
-            approval_ids="$(python - "$approval_file" <<'PY'
+            approval_state="$(python - "$approval_file" <<'PY'
           import json, sys
           try:
               data=json.load(open(sys.argv[1]))
+              provider=data.get('provider') or {}
               ids=[item.get('id') for item in data.get('drafts',[]) if isinstance(item,dict) and item.get('id')]
-              print(json.dumps(ids))
+              print(json.dumps({'ids': ids, 'automationReady': bool(provider.get('automationReady'))}))
           except Exception:
-              print('[]')
+              print(json.dumps({'ids': [], 'automationReady': False}))
           PY
           )"
-            if [[ "$approval_ids" != "[]" ]]; then
-              call whatsapp_approve /api/whatsapp/automation-worker POST "{\"ids\":$approval_ids}" || true
+            approval_ids="$(python -c 'import json,sys; print(json.dumps(json.loads(sys.argv[1]).get("ids",[])))' "$approval_state")"
+            approval_ready="$(python -c 'import json,sys; print("true" if json.loads(sys.argv[1]).get("automationReady") else "false")' "$approval_state")"
+            if [[ "$approval_ids" != "[]" && "$approval_ready" == "true" ]]; then
+              call whatsapp_approve /api/whatsapp/automation-worker POST "{\"action\":\"approve\",\"ids\":$approval_ids}" || true
+            elif [[ "$approval_ids" != "[]" ]]; then
+              echo "=== whatsapp_approve [200] ==="
+              echo '{"success":true,"skipped":true,"reason":"WHATSAPP_PROVIDER_NOT_READY"}'
             else
               echo "=== whatsapp_approve [200] ==="
               echo '{"success":true,"skipped":true,"reason":"NO_PENDING_WHATSAPP_APPROVALS"}'
