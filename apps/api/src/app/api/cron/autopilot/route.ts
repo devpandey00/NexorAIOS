@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { OutreachStatus } from '@nexor/database';
 import { isAutomationEnabled } from '@/lib/automation-settings';
+import { authorizeMachineRequest } from '@/lib/machine-auth';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
-function authorized(req: NextRequest) {
+async function authorized(req: NextRequest) {
+  if (await authorizeMachineRequest(req)) return true;
   const secret = process.env.CRON_SECRET;
   if (!secret) return process.env.NODE_ENV !== 'production';
   return req.headers.get('authorization') === `Bearer ${secret}`;
@@ -19,7 +21,6 @@ async function processScheduledOutreach() {
   const minDelayMs = Math.max(Number(process.env.OUTREACH_MIN_DELAY_MS ?? 2000), 0);
   const scheduled = await prisma.outreach.findMany({ where: { status: OutreachStatus.SCHEDULED, scheduledAt: { lte: new Date() } }, orderBy: { scheduledAt: 'asc' }, take: perRun });
   const results: Array<{ id: string; success: boolean; error?: string }> = [];
-
   for (const item of scheduled) {
     const claimed = await prisma.outreach.updateMany({ where: { id: item.id, status: OutreachStatus.SCHEDULED }, data: { status: OutreachStatus.APPROVED, error: null } });
     if (claimed.count !== 1) continue;
@@ -31,7 +32,7 @@ async function processScheduledOutreach() {
 }
 
 export async function GET(req: NextRequest) {
-  if (!authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  if (!await authorized(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   if (!(await isAutomationEnabled('autopilot'))) return NextResponse.json({ success: true, skipped: true, reason: 'AUTOMATION_DISABLED', capability: 'autopilot' });
   try {
     const { runAutopilot } = await import('@/lib/autopilot-runner');
