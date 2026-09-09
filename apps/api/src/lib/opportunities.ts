@@ -22,24 +22,9 @@ function getPrisma() {
 }
 
 const QUERY_TEMPLATES: Record<OpportunityKind, string[]> = {
-  JOB: [
-    'digital marketing remote jobs hiring',
-    'performance marketing manager remote jobs hiring',
-    'social media manager remote jobs hiring',
-    'SEO specialist remote jobs hiring',
-  ],
-  COMPANY: [
-    'local businesses hiring digital marketing agency',
-    'companies looking for lead generation agency',
-    'businesses looking for Google Ads agency',
-    'companies looking for social media marketing agency',
-  ],
-  INFLUENCER: [
-    'business influencers marketing collaboration',
-    'entrepreneur influencers marketing collaboration',
-    'real estate influencers collaboration business',
-    'local business creators collaboration',
-  ],
+  JOB: ['digital marketing remote jobs hiring', 'performance marketing manager remote jobs hiring', 'social media manager remote jobs hiring', 'SEO specialist remote jobs hiring'],
+  COMPANY: ['local businesses hiring digital marketing agency', 'companies looking for lead generation agency', 'businesses looking for Google Ads agency', 'companies looking for social media marketing agency'],
+  INFLUENCER: ['business influencers marketing collaboration', 'entrepreneur influencers marketing collaboration', 'real estate influencers collaboration business', 'local business creators collaboration'],
 };
 
 export async function discoverOpportunities(kind: OpportunityKind, location?: string, limit = 10) {
@@ -63,18 +48,14 @@ export async function discoverOpportunities(kind: OpportunityKind, location?: st
     seen.add(url);
 
     const title = String(result.name ?? '').trim() || url;
-    const lead = await prisma.lead.upsert({
-      where: { website: url },
-      create: {
+    const existingLead = await prisma.lead.findFirst({ where: { website: url }, select: { id: true } });
+    const lead = existingLead ?? await prisma.lead.create({
+      data: {
         businessName: title,
         niche: kind === 'JOB' ? 'hiring prospect' : kind === 'INFLUENCER' ? 'business influencer prospect' : 'company prospect',
         country: location?.trim() || 'Unknown',
         website: url,
         status: 'NEW',
-      },
-      update: {
-        businessName: title,
-        ...(location?.trim() ? { country: location.trim() } : {}),
       },
       select: { id: true },
     });
@@ -85,9 +66,7 @@ export async function discoverOpportunities(kind: OpportunityKind, location?: st
       VALUES
         (${lead.id}, ${kind}, ${title}, ${title}, ${url}, 'web-search', ${location ?? null}, ${`Discovered by Nexor ${kind.toLowerCase()} autopilot.`})
       ON CONFLICT (kind, url) DO UPDATE SET updated_at = now(), lead_id = EXCLUDED.lead_id
-      RETURNING
-        id, kind, title, organization, url, source, location, contact, notes, status,
-        created_at AS "createdAt"
+      RETURNING id, kind, title, organization, url, source, location, contact, notes, status, created_at AS "createdAt"
     `;
 
     const row = inserted[0];
@@ -102,8 +81,7 @@ export async function listOpportunities(input?: { kind?: OpportunityKind; status
   const prisma = getPrisma();
   const limit = Math.min(Math.max(input?.limit ?? 100, 1), 200);
   return prisma.$queryRaw<Opportunity[]>`
-    SELECT id, kind, title, organization, url, source, location, contact, notes, status,
-           created_at AS "createdAt"
+    SELECT id, kind, title, organization, url, source, location, contact, notes, status, created_at AS "createdAt"
     FROM public.opportunities
     WHERE (${input?.kind ?? null}::text IS NULL OR kind = ${input?.kind ?? null})
       AND (${input?.status ?? null}::text IS NULL OR status = ${input?.status ?? null})
