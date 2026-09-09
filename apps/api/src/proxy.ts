@@ -18,13 +18,23 @@ function isMachineRoute(pathname: string) {
   return MACHINE_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
+function hasMachineCredential(request: NextRequest) {
+  // Route handlers still perform the actual machine authentication. This only
+  // prevents the user-session proxy from rejecting a request before the route
+  // can validate its machine credential.
+  return Boolean(
+    request.headers.get('x-nexor-machine-token')?.trim() ||
+    request.headers.get('x-github-oidc-token')?.trim(),
+  );
+}
+
 export default function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isDashboard = pathname.startsWith('/dashboard');
   const isApi = pathname.startsWith('/api/');
 
   if (!isDashboard && !isApi) return NextResponse.next();
-  if (isApi && (isPublicApi(pathname) || isMachineRoute(pathname))) return NextResponse.next();
+  if (isApi && (isPublicApi(pathname) || isMachineRoute(pathname) || hasMachineCredential(request))) return NextResponse.next();
 
   const token = request.cookies.get('nexor_session')?.value;
   const user = verifySessionToken(token);
