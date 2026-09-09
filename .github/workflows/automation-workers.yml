@@ -1,7 +1,7 @@
 name: Nexor realtime automation workers
 
-# Production deployment retrigger marker: code + DB migration are already fixed on main.
-# Fresh production verification trigger: dual-header GitHub OIDC worker authentication.
+# Fast production workers: outbound, follow-ups, social publishing, reporting and scheduling.
+# Long-running lead discovery is handled by a separate workflow so it can never block these workers.
 
 on:
   schedule:
@@ -16,12 +16,12 @@ permissions:
 
 concurrency:
   group: nexor-realtime-workers
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   workers:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 8
     steps:
       - name: Wait for this exact main commit to be live on Vercel
         if: ${{ github.event_name == 'push' }}
@@ -48,7 +48,7 @@ jobs:
             const token = await core.getIDToken('nexoraios-production');
             core.setOutput('token', token);
 
-      - name: Run Nexor automation workers
+      - name: Run fast Nexor automation workers
         env:
           NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
           GITHUB_OIDC_TOKEN: ${{ steps.oidc.outputs.token }}
@@ -59,9 +59,9 @@ jobs:
             local name="$1" url="$2" method="${3:-GET}" body="${4:-}" file code
             file="$(mktemp)"
             if [[ "$method" == "POST" ]]; then
-              code="$(curl --silent --show-error --retry 2 --retry-delay 2 --retry-all-errors --max-time 300 -o "$file" -w '%{http_code}' -H "X-Nexor-Machine-Token: $GITHUB_OIDC_TOKEN" -H "Authorization: Bearer $GITHUB_OIDC_TOKEN" -H 'Content-Type: application/json' -X POST "$NEXOR_BASE_URL$url" --data "$body")"
+              code="$(curl --silent --show-error --retry 2 --retry-delay 2 --retry-all-errors --max-time 120 -o "$file" -w '%{http_code}' -H "X-Nexor-Machine-Token: $GITHUB_OIDC_TOKEN" -H "Authorization: Bearer $GITHUB_OIDC_TOKEN" -H 'Content-Type: application/json' -X POST "$NEXOR_BASE_URL$url" --data "$body")"
             else
-              code="$(curl --silent --show-error --retry 2 --retry-delay 2 --retry-all-errors --max-time 300 -o "$file" -w '%{http_code}' -H "X-Nexor-Machine-Token: $GITHUB_OIDC_TOKEN" -H "Authorization: Bearer $GITHUB_OIDC_TOKEN" "$NEXOR_BASE_URL$url")"
+              code="$(curl --silent --show-error --retry 2 --retry-delay 2 --retry-all-errors --max-time 120 -o "$file" -w '%{http_code}' -H "X-Nexor-Machine-Token: $GITHUB_OIDC_TOKEN" -H "Authorization: Bearer $GITHUB_OIDC_TOKEN" "$NEXOR_BASE_URL$url")"
             fi
             echo "=== $name [$code] ==="
             cat "$file"; echo
@@ -70,11 +70,11 @@ jobs:
             return 0
           }
 
-          call discovery /api/campaigns/auto/run || true
+          # Queue discovery only. The separate discovery worker performs the expensive research.
+          call discovery_queue /api/campaigns/auto/run || true
           call scheduler /api/automations/run POST '{}' || true
           call whatsapp_generate /api/whatsapp/automation-worker POST '{"action":"generate","limit":20}' || true
 
-          # Read pending WhatsApp approvals through a dedicated machine-authenticated endpoint.
           approval_file="$(mktemp)"
           approval_code="$(curl --silent --show-error --retry 2 --retry-delay 2 --retry-all-errors --max-time 60 -o "$approval_file" -w '%{http_code}' -H "X-Nexor-Machine-Token: $GITHUB_OIDC_TOKEN" -H "Authorization: Bearer $GITHUB_OIDC_TOKEN" "$NEXOR_BASE_URL/api/whatsapp/automation/pending")"
           echo "=== whatsapp_pending [$approval_code] ==="
