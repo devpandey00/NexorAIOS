@@ -31,13 +31,8 @@ function buildDiscoveryQueries(query: string): string[] {
     `${core} ${loc} official website`,
     `${core} ${loc} contact`,
     `${core} ${loc} business`,
-    `${core} ${loc} company`,
-    `${core} ${loc} studio`,
-    `${core} ${loc} firm`,
-    `${core} ${loc} agency`,
-    `${core} ${loc} directory`,
     service ? `${core} ${loc} ${service}` : '',
-  ].map((item) => item.replace(/\s+/g, ' ').trim()).filter(Boolean))].slice(0, 12);
+  ].map((item) => item.replace(/\s+/g, ' ').trim()).filter(Boolean))].slice(0, 6);
 }
 
 async function findDuplicateLead(input: { website?: string; email?: string; whatsapp?: string; socialUrls?: string[]; businessName: string }) {
@@ -68,7 +63,9 @@ export async function runCampaign(campaignId: string) {
       return { success: false, campaignId, discovered: 0, processed: 0, successful: 0, failed: 0, qualified: 0, provider: searchResult.provider, queries: discoveryQueries, retryScheduled, attempts: attemptsUsed, error: message };
     }
     let processed = 0, successful = 0, failed = 0, qualified = 0; const niche = inferNiche(campaign.query); const country = inferCountry(campaign.query);
-    for (const result of searchResult.leads) {
+    const maxLeads = Math.min(Math.max(Number(process.env.CAMPAIGN_MAX_LEADS_PER_RUN ?? 20), 1), 50);
+    const leadsToProcess = searchResult.leads.slice(0, maxLeads);
+    for (const result of leadsToProcess) {
       try {
         const businessName = cleanLeadName(result.name); if (!businessName || looksLikeNonBusinessName(businessName)) { processed++; continue; }
         const normalizedWebsite = result.website ? normalizeWebsite(result.website) : ''; const normalizedPhone = result.phone ? normalizePhone(result.phone) : '';
@@ -82,7 +79,7 @@ export async function runCampaign(campaignId: string) {
         const intelligence = assessLead({ website: research.website, technology: research.technology, social: Object.fromEntries(Object.entries(research.social ?? {})), seo: Object.fromEntries(Object.entries(research.seo ?? {})) });
         const email = research.contacts?.emails?.[0]; const phone = research.contacts?.phones?.[0]; const normalizedResearchPhone = phone ? normalizePhone(phone) : normalizedPhone; const social = Object.fromEntries(Object.entries(research.social ?? {})) as Record<string, unknown>; const socialUrls = Object.values(social).filter((value): value is string => typeof value === 'string' && value.startsWith('http'));
         const salesBrief = intelligence.score >= 60 ? buildSalesBrief({ businessName, niche, country, website: result.website, intelligence, research, email, phone }) : null;
-        if (createdThisRun) { const duplicateAfterResearch = await findDuplicateLead({ website: normalizedWebsite, email, whatsapp: normalizedResearchPhone, socialUrls, businessName }); if (duplicateAfterResearch && duplicateAfterResearch.id !== lead.id) { await prisma.lead.delete({ where: { id: lead.id } }); lead = duplicateAfterResearch; await prisma.campaignLead.upsert({ where: { campaignId_leadId: { campaignId, leadId: lead.id } }, create: { campaignId, leadId: lead.id }, update: {} }); } }
+        if (createdThisRun) { const duplicateAfterResearch = await findDuplicateLead({ website: normalizedWebsite, email, whatsapp: normalizedResearchPhone, socialUrls, businessName }); if (duplicateAfterResearch && duplicateAfterResearch.id !== lead.id) { await prisma.lead.delete({ where: { id: lead.id } }); lead = duplicateAfterResearch; await prisma.campaignLead.upsert({ where: { campaignId_leadId: lead.id ? { campaignId, leadId: lead.id } : { campaignId, leadId: lead.id } }, create: { campaignId, leadId: lead.id }, update: {} }); } }
         await prisma.lead.update({ where: { id: lead.id }, data: { businessName, niche, country: lead.country === 'Unknown' ? country : lead.country, email: email ?? lead.email, whatsapp: normalizedResearchPhone || lead.whatsapp, auditScore: intelligence.score, status: intelligence.score >= 60 ? LeadStatus.QUALIFIED : LeadStatus.RESEARCHED, notes: JSON.stringify({ research, intelligence, salesBrief, source: 'campaign-discovery', discoveryQueries }) } });
         const socialEntries = [['INSTAGRAM', social.instagram],['FACEBOOK', social.facebook],['LINKEDIN', social.linkedin],['YOUTUBE', social.youtube],['X', social.x ?? social.twitter],['TIKTOK', social.tiktok]] as const;
         for (const [platform, url] of socialEntries) { if (typeof url !== 'string' || !url) continue; await prisma.socialProfile.upsert({ where: { leadId_platform: { leadId: lead.id, platform } }, create: { leadId: lead.id, platform, url, confidence: 100, source: 'website-research' }, update: { url, confidence: 100, source: 'website-research' } }); }
