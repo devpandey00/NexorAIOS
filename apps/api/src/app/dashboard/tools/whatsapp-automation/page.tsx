@@ -1,75 +1,34 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
-type Lead = { id: string; businessName: string; whatsapp: string | null };
-type Draft = { id: string; message: string; status: string; scheduledAt: string | null; lead: Lead };
-type FailedItem = { id: string; businessName: string; reason: string; updatedAt: string; isRecent: boolean };
-type Provider = { configured: boolean; mode: string; openwaConfigured: boolean; templateConfigured: boolean; templateLanguage: string; automationReady?: boolean };
-type Data = { provider: Provider; stats: { drafts:number; approved:number; scheduled:number; sent:number; failed:number; failedLast24h:number; replies:number; notContactable:number; rejected:number }; drafts:Draft[]; approved:Draft[]; scheduled:Draft[]; notContactable:Array<{id:string;businessName:string;reason:string}>; recentFailed:FailedItem[] };
+type Lead={id:string;businessName:string;whatsapp:string|null};
+type Item={id:string;message:string;status:string;scheduledAt:string|null;sentAt?:string|null;error?:string|null;providerMessageId?:string|null;lead:Lead};
+type Provider={configured:boolean;mode:string;openwaConfigured:boolean;templateConfigured:boolean;templateLanguage:string;automationReady?:boolean};
+type Data={provider:Provider;stats:{drafts:number;approved:number;scheduled:number;sent:number;failed:number;failedLast24h:number;replies:number;notContactable:number;whatsappHold?:number;rejected:number};drafts:Item[];approved:Item[];scheduled:Item[];recentFailed:Array<{id:string;businessName:string;reason:string;updatedAt:string;isRecent:boolean}>};
 
-const statLabels: Record<string,string> = { sent:'Sent', approved:'Queued', scheduled:'Scheduled', drafts:'Drafts', failed:'Failed', failedLast24h:'Failed 24h', replies:'Replies', notContactable:'No WhatsApp' };
+type Tab='QUEUE'|'SENT'|'FAILED'|'BLOCKED';
 
-export default function WhatsAppAutomationPage() {
-  const [data,setData]=useState<Data|null>(null);
-  const [loading,setLoading]=useState(true);
-  const [running,setRunning]=useState(false);
-  const [message,setMessage]=useState('');
-
-  const load=useCallback(async()=>{
-    try {
-      const response=await fetch('/api/whatsapp/automation',{cache:'no-store'}); const json=await response.json();
-      if(!response.ok||!json.success) throw new Error(json.error??'Unable to load automation');
-      setData(json); setMessage('');
-    } catch(error) { setMessage(error instanceof Error?error.message:String(error)); }
-    finally { setLoading(false); }
-  },[]);
-
-  useEffect(()=>{ void load(); const timer=window.setInterval(()=>void load(),20000); return ()=>window.clearInterval(timer); },[load]);
-
-  async function run(action:string) {
-    setRunning(true); setMessage('');
-    try {
-      const response=await fetch('/api/whatsapp/automation',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action,limit:10})});
-      const json=await response.json(); if(!response.ok||!json.success) throw new Error(json.error??'Automation action failed');
-      setMessage(action==='generate'?`Automation checked leads: ${json.created??0} new, ${json.autoApproved??0} queued automatically.`:`Automation sent ${json.sent??0}; ${json.failed??0} failed.`);
-      await load();
-    } catch(error) { setMessage(error instanceof Error?error.message:String(error)); }
-    finally { setRunning(false); }
-  }
-
-  const provider=data?.provider;
-  const ready=Boolean(provider?.automationReady);
-  const templateReady=Boolean(provider?.templateConfigured);
-  const openwa=Boolean(provider?.openwaConfigured);
-  const blocker=!ready && !openwa ? 'Meta first-contact outreach is blocked until an approved WhatsApp message template is configured.' : '';
-
-  return <main className="mx-auto w-full max-w-5xl space-y-4 px-3 py-3 sm:space-y-5 sm:px-5 sm:py-5">
-    <section className="nexor-panel overflow-hidden p-4 sm:p-6">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0"><div className="font-mono text-[7px] tracking-[0.16em] text-[var(--accent)]">WHATSAPP AUTOPILOT</div><h1 className="mt-1 text-lg font-semibold leading-tight sm:text-xl">Hands-free outreach</h1><p className="mt-2 text-[9px] leading-5 text-[var(--text-muted)]">Nexor discovers → researches → drafts → queues → sends → follows up automatically. No approval click required.</p></div>
-        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[7px] font-bold ${ready?'bg-emerald-500/15 text-emerald-400':'bg-amber-500/15 text-amber-400'}`}>{ready?'AUTOPILOT ON':'WAITING'}</span>
-      </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <div className={`rounded-xl border p-3 ${provider?.configured?'border-emerald-500/25 bg-emerald-500/5':'border-red-500/25 bg-red-500/5'}`}><div className="text-[8px] font-semibold">PROVIDER</div><div className="mt-1 text-[9px]">{openwa?'OpenWA':'Meta Cloud API'} {provider?.configured?'connected':'not configured'}</div></div>
-        <div className={`rounded-xl border p-3 ${ready?'border-emerald-500/25 bg-emerald-500/5':'border-amber-500/25 bg-amber-500/5'}`}><div className="text-[8px] font-semibold">FIRST CONTACT</div><div className="mt-1 text-[9px]">{openwa?'OpenWA session ready':templateReady?`Approved template · ${provider?.templateLanguage??'en_US'}`:'Template required for Meta cold outreach'}</div></div>
-      </div>
-      {blocker&&<div className="mt-3 rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 text-[8px] leading-4 text-amber-200">{blocker} Nexor will keep researching and preparing eligible leads, but it will not falsely mark a message as sent.</div>}
-    </section>
-
-    <section className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
-      {Object.entries(data?.stats??{}).filter(([key])=>key!=='rejected').map(([key,value])=><div key={key} className="nexor-panel min-w-0 p-3"><div className="truncate text-[7px] uppercase tracking-[0.1em] text-[var(--text-muted)]">{statLabels[key]??key}</div><div className="mt-1 text-xl font-semibold">{value}</div></div>)}
-    </section>
-
-    <section className="nexor-panel p-4 sm:p-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><div className="text-[10px] font-semibold">Automation status</div><div className="mt-1 text-[8px] leading-4 text-[var(--text-muted)]">GitHub worker checks this pipeline every 5 minutes. The page refreshes every 20 seconds.</div></div><button type="button" disabled={running||loading} onClick={()=>void run('generate')} className="w-full rounded-lg bg-[var(--accent)] px-4 py-3 text-[8px] font-bold text-black disabled:opacity-50 sm:w-auto">RUN AUTOPILOT NOW</button></div>
-      {message&&<div className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3 text-[8px] leading-4">{message}</div>}
-    </section>
-
-    <section className="nexor-panel overflow-hidden"><div className="border-b border-[var(--border)] p-4"><div className="text-[10px] font-semibold">Send queue</div><div className="mt-1 text-[8px] text-[var(--text-muted)]">Only approved, due messages are sent. The worker handles this automatically.</div></div><div className="divide-y divide-[var(--border)]">{(data?.approved??[]).map(item=><article key={item.id} className="p-4"><div className="flex min-w-0 gap-3"><span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-[10px] text-emerald-400">✓</span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><strong className="text-[9px]">{item.lead.businessName}</strong><span className="max-w-full break-all rounded bg-[var(--surface-2)] px-2 py-1 font-mono text-[7px]">{item.lead.whatsapp}</span></div><div className="mt-2 whitespace-pre-wrap break-words text-[8px] leading-5 text-[var(--text-secondary)]">{item.message}</div><div className="mt-2 text-[7px] text-[var(--text-muted)]">Due {item.scheduledAt?new Date(item.scheduledAt).toLocaleString():'now'}</div></div></div></article>)}{!data?.approved?.length&&<div className="p-8 text-center text-[8px] text-[var(--text-muted)]">Queue is clear. Nexor will add and send eligible leads automatically.</div>}</div></section>
-
-    <section className="nexor-panel overflow-hidden"><div className="flex items-center justify-between gap-3 border-b border-[var(--border)] p-4"><div><div className="text-[10px] font-semibold">Recent failures</div><div className="mt-1 text-[8px] text-[var(--text-muted)]">{data?.stats?.failedLast24h??0} in the last 24 hours</div></div></div><div className="divide-y divide-[var(--border)]">{(data?.recentFailed??[]).slice(0,10).map(item=><div key={item.id} className="p-4"><div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between"><strong className="text-[9px]">{item.businessName}</strong><span className="text-[7px] text-red-400">{item.isRecent?'RECENT':'HISTORICAL'}</span></div><div className="mt-1 break-words text-[8px] leading-4 text-[var(--text-muted)]">{item.reason}</div></div>)}{!data?.recentFailed?.length&&<div className="p-8 text-center text-[8px] text-[var(--text-muted)]">No failed sends.</div>}</div></section>
-
-    <section className="nexor-panel p-4"><div className="text-[10px] font-semibold">Contactability</div><div className="mt-1 text-[8px] text-[var(--text-muted)]">{data?.stats?.notContactable??0} eligible businesses currently have no WhatsApp number. Nexor will not invent or guess one.</div></section>
-  </main>;
+export default function WhatsAppAutomationPage(){
+ const [data,setData]=useState<Data|null>(null);const [history,setHistory]=useState<Item[]>([]);const [tab,setTab]=useState<Tab>('QUEUE');const [loading,setLoading]=useState(true);const [running,setRunning]=useState(false);const [message,setMessage]=useState('');
+ const load=useCallback(async()=>{try{const [a,o]=await Promise.all([fetch('/api/whatsapp/automation',{cache:'no-store'}),fetch('/api/outreach',{cache:'no-store'})]);const aj=await a.json();const oj=await o.json();if(!a.ok||!aj.success)throw new Error(aj.error||'WhatsApp automation unavailable');setData(aj);if(oj.success)setHistory((oj.drafts||[]).filter((x:Item)=>x.channel==='WHATSAPP'));setMessage('')}catch(e){setMessage(e instanceof Error?e.message:String(e))}finally{setLoading(false)}},[]);
+ useEffect(()=>{void load();const t=window.setInterval(()=>void load(),10000);return()=>window.clearInterval(t)},[load]);
+ async function run(action:string){setRunning(true);setMessage('');try{const r=await fetch('/api/whatsapp/automation',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action,limit:10})});const j=await r.json();if(!r.ok||!j.success)throw new Error(j.error||'Automation action failed');setMessage(action==='generate'?`Checked ${j.considered??0} leads · created ${j.created??0} · rejected ${j.rejected?.length??0}.`:`Sent ${j.sent??0} · failed ${j.failed??0}.`);await load()}catch(e){setMessage(e instanceof Error?e.message:String(e))}finally{setRunning(false)}}
+ const sent=useMemo(()=>history.filter(x=>x.status==='SENT').slice(0,50),[history]);
+ const failed=useMemo(()=>history.filter(x=>x.status==='FAILED').slice(0,50),[history]);
+ const queue=useMemo(()=>[...(data?.approved||[]),...(data?.scheduled||[]),...(data?.drafts||[])], [data]);
+ const blocked=useMemo(()=>history.filter(x=>['CANCELLED'].includes(x.status)).slice(0,50),[history]);
+ const provider=data?.provider;const ready=Boolean(provider?.automationReady);const openwa=Boolean(provider?.openwaConfigured);
+ return <main className="mx-auto w-full max-w-6xl space-y-4 px-0 py-0 sm:space-y-5">
+  <section className="nexor-panel overflow-hidden p-4 sm:p-6"><div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><div className="font-mono text-[7px] tracking-[.18em] text-[var(--accent)]">SALES · WHATSAPP OS</div><h1 className="mt-1 text-2xl font-semibold tracking-[-.03em]">WhatsApp Control Room</h1><p className="mt-1.5 max-w-2xl text-[9px] leading-5 text-[var(--text-secondary)]">One place for drafts, approved queue, sent messages and failures. The UI never calls an approved message “sent” until the provider confirms it.</p></div><div className={`rounded-full px-3 py-2 font-mono text-[8px] font-bold ${ready?'bg-emerald-500/10 text-emerald-500':'bg-amber-500/10 text-amber-500'}`}>{ready?'● PROVIDER READY':'● PROVIDER CHECK'}</div></div><div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4"><div className="nx-mini-stat"><span>PROVIDER</span><strong>{openwa?'OpenWA':'Meta'}</strong></div><div className="nx-mini-stat"><span>QUEUE</span><strong>{data?.stats.approved??0}</strong></div><div className="nx-mini-stat"><span>SENT</span><strong>{data?.stats.sent??0}</strong></div><div className="nx-mini-stat"><span>FAILED</span><strong>{data?.stats.failed??0}</strong></div></div>{!openwa&&<div className="mt-3 nx-feedback">Meta first-contact sending requires an approved template. OpenWA is the active path when its three production variables are configured.</div>}{message&&<div className="mt-3 nx-feedback">{message}</div>}</section>
+  <section className="nexor-panel p-3 sm:p-4"><div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div className="nx-tabbar w-full sm:w-auto">{(['QUEUE','SENT','FAILED','BLOCKED'] as Tab[]).map(x=><button key={x} className={`nx-tab ${tab===x?'nx-tab-active':''}`} onClick={()=>setTab(x)}>{x==='QUEUE'?`Queue ${queue.length}`:x==='SENT'?`Sent ${sent.length}`:x==='FAILED'?`Failed ${failed.length}`:`Blocked ${blocked.length}`}</button>)}</div><button onClick={()=>void run('generate')} disabled={running||loading} className="nx-primary-action sm:!mt-0 sm:w-auto">{running?'RUNNING…':'RUN AUTOPILOT'}</button></div></section>
+  <section className="nexor-panel overflow-hidden">
+   <div className="nx-section-head"><div><div className="text-[11px] font-semibold">{tab==='QUEUE'?'Live send queue':tab==='SENT'?'Provider-confirmed delivery':tab==='FAILED'?'Failed attempts':'Other outreach states'}</div><div className="mt-1 text-[8px] text-[var(--text-muted)]">Auto-refreshing every 10 seconds.</div></div><span className="nx-live-dot">LIVE</span></div>
+   <div className="divide-y divide-[var(--border)]">
+    {(tab==='QUEUE'?queue:tab==='SENT'?sent:tab==='FAILED'?failed:blocked).map(item=><article key={item.id} className="nx-outreach-row"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><strong className="break-words text-[10px]">{item.lead?.businessName||'Unknown lead'}</strong><span className="nx-status nx-status-muted">WHATSAPP</span><span className={`nx-status ${item.status==='SENT'?'nx-status-ok':item.status==='FAILED'?'nx-status-danger':item.status==='APPROVED'?'nx-status-ai':'nx-status-warn'}`}>{item.status}</span></div><div className="mt-1 font-mono text-[8px] text-[var(--text-muted)]">{item.lead?.whatsapp||'No number'}</div><details className="nx-message-details mt-2"><summary>View message</summary><div className="mt-2 whitespace-pre-wrap break-words rounded-lg bg-[var(--surface-2)] p-3 text-[9px] leading-5 text-[var(--text-secondary)]">{item.message}</div></details>{item.error&&<div className="mt-2 rounded-lg border border-red-500/20 bg-red-500/5 p-2 text-[8px] leading-4 text-red-400">{item.error}</div>}{item.status==='SENT'&&<div className="mt-2 font-mono text-[7px] text-emerald-500">Provider ID: {item.providerMessageId||'confirmed'}</div>}</div><div className="shrink-0 text-left text-[8px] text-[var(--text-muted)] sm:text-right">{item.sentAt?`Sent ${new Date(item.sentAt).toLocaleString()}`:item.scheduledAt?`Due ${new Date(item.scheduledAt).toLocaleString()}`:''}</div></article>)}
+    {!(tab==='QUEUE'?queue:tab==='SENT'?sent:tab==='FAILED'?failed:blocked).length&&<div className="p-10 text-center text-[9px] text-[var(--text-muted)]">{tab==='SENT'?'No provider-confirmed WhatsApp messages yet.':tab==='FAILED'?'No failed WhatsApp records.':'Nothing in this view.'}</div>}
+   </div>
+  </section>
+  <section className="nexor-panel p-4"><div className="text-[10px] font-semibold">Why a message may not send</div><div className="mt-2 grid gap-2 sm:grid-cols-3"><div className="rounded-lg bg-[var(--surface-2)] p-3 text-[8px] leading-4 text-[var(--text-muted)]">1. Lead must be an eligible international business lead.</div><div className="rounded-lg bg-[var(--surface-2)] p-3 text-[8px] leading-4 text-[var(--text-muted)]">2. WhatsApp opt-in must be recorded before automated first contact.</div><div className="rounded-lg bg-[var(--surface-2)] p-3 text-[8px] leading-4 text-[var(--text-muted)]">3. Provider must confirm delivery; otherwise Nexor records the real failure.</div></div></section>
+ </main>;
 }
