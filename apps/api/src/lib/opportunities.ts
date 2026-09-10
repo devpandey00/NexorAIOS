@@ -60,12 +60,15 @@ export async function discoverOpportunities(kind: OpportunityKind, location?: st
       select: { id: true },
     });
 
+    // `name` became a required column in the sales-pipeline reconciliation migration.
+    // Keep the legacy opportunity fields intact, but always populate the canonical name
+    // so autonomous discovery cannot fail with PostgreSQL 23502 after that migration.
     const inserted = await prisma.$queryRaw<Opportunity[]>`
       INSERT INTO public.opportunities
-        (lead_id, kind, title, organization, url, source, location, notes)
+        (lead_id, kind, title, name, organization, url, source, location, notes)
       VALUES
-        (${lead.id}, ${kind}, ${title}, ${title}, ${url}, 'web-search', ${location ?? null}, ${`Discovered by Nexor ${kind.toLowerCase()} autopilot.`})
-      ON CONFLICT (kind, url) DO UPDATE SET updated_at = now(), lead_id = EXCLUDED.lead_id
+        (${lead.id}, ${kind}, ${title}, ${title}, ${title}, ${url}, 'web-search', ${location ?? null}, ${`Discovered by Nexor ${kind.toLowerCase()} autopilot.`})
+      ON CONFLICT (kind, url) DO UPDATE SET updated_at = now(), lead_id = EXCLUDED.lead_id, name = EXCLUDED.name
       RETURNING id, kind, title, organization, url, source, location, contact, notes, status, created_at AS "createdAt"
     `;
 
