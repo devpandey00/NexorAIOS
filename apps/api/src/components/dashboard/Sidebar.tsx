@@ -8,7 +8,7 @@ const groups = [
   { title: 'ACQUISITION', items: [['Lead Generation','/dashboard/tools/lead-finder','◎'],['Leads','/dashboard/tools/lead-inbox','◉'],['Research','/dashboard/tools/seo-audit','⌕'],['Campaigns','/dashboard/command','◌'],['Opportunities','/dashboard/tools/opportunities','◇']] },
   { title: 'SALES', items: [['Outreach','/dashboard/tools/whatsapp-drafts','↗'],['WhatsApp','/dashboard/tools/whatsapp-sending','◍'],['Email','/dashboard/tools/email-drafts','✉'],['Inbox','/dashboard/tools/whatsapp-inbox','□'],['CRM','/dashboard/tools/crm-pipeline','◫'],['Follow-ups','/dashboard/tools/follow-up-manager','↻'],['Proposals','/dashboard/aios#proposals','▤']] },
   { title: 'GROWTH', items: [['Social Growth','/dashboard/tools/social-growth','✦'],['Social Hub','/dashboard/tools/social-scheduler','◎'],['Content Calendar','/dashboard/tools/content-calendar','◫'],['Content Studio','/dashboard/tools/content-ideas','✎'],['Meta Ads','/dashboard/tools/meta-ads-overview','M'],['SEO','/dashboard/tools/seo-audit','⌕']] },
-  { title: 'OPERATIONS', items: [['AI Agents','/dashboard/tools/ai-agents','✧'],['Automations','/dashboard/tools/automation-center','⚙'],['Automation Control','/dashboard/settings/automation','◉'],['Approvals','/dashboard/aios#approvals','✓'],['Clients','/dashboard/aios#clients','◉'],['Finance','/dashboard/aios#finance','₹'],['Reports','/dashboard/tools/google-reporting','▤'],['Settings Studio','/dashboard/settings/studio','⚙']] },
+  { title: 'OPERATIONS', items: [['AI Agents','/dashboard/tools/ai-agents','✧'],['Automations','/dashboard/tools/automation-center','⚙'],['Automation Control','/dashboard/settings/automation','◉'],['Approvals','/dashboard/aios#approvals','✓'],['Clients','/dashboard/aios#clients','◉'],['Finance','/dashboard/aios#finance','₹'],['Reports','/dashboard/tools/google-reporting','▤']] },
 ];
 
 export default function Sidebar() {
@@ -37,14 +37,11 @@ export default function Sidebar() {
         ))}
       </div>
       <div className="border-t border-[var(--border)] p-3">
-        <Link href="/dashboard/settings/studio" className="mb-3 flex items-center gap-2 rounded-[10px] border border-[var(--primary)]/20 bg-[var(--primary-soft)] px-3 py-2.5 hover:border-[var(--primary)]/40">
-          <span className="h-1.5 w-1.5 rounded-full bg-[var(--primary)]" /><div><div className="text-[8px] font-semibold text-[var(--text)]">Admin Control Plane</div><div className="mt-0.5 font-mono text-[6px] text-[var(--text-muted)]">SETTINGS · APPEARANCE · SYSTEM</div></div>
-        </Link>
         <div className="mb-3 flex items-center gap-2 rounded-[10px] border border-[var(--success)]/15 bg-[var(--success)]/[.035] px-3 py-2.5">
           <span className="h-1.5 w-1.5 rounded-full bg-[var(--success)] shadow-[0_0_8px_var(--success)]" />
           <div><div className="text-[8px] font-semibold text-[var(--text)]">Operating normally</div><div className="mt-0.5 font-mono text-[6px] text-[var(--text-muted)]">CORE · DATABASE · AGENTS</div></div>
         </div>
-        <Link href="/dashboard/settings/studio" className="flex items-center gap-3 px-2 py-2"><div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-[var(--primary)]/20 bg-[var(--primary-soft)] text-[10px] font-bold text-[var(--primary)]"><img src="/founder-avatar.svg" alt="Dev" className="h-full w-full object-cover" onError={(e)=>{e.currentTarget.style.display='none'}}/><span>D</span></div><div><div className="text-[9px] font-semibold text-[var(--text)]">Dev</div><div className="text-[7px] text-[var(--text-muted)]">Founder · Nexor</div></div></Link>
+        <div className="flex items-center gap-3 px-2 py-2"><div className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--primary)]/20 bg-[var(--primary-soft)] text-[10px] font-bold text-[var(--primary)]">D</div><div><div className="text-[9px] font-semibold text-[var(--text)]">Dev</div><div className="text-[7px] text-[var(--text-muted)]">Founder · Nexor</div></div></div>
       </div>
     </aside>
   );
