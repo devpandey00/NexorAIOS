@@ -2,128 +2,29 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-type Lead = {
-  id: string;
-  businessName: string;
-  ownerName: string | null;
-  niche: string;
-  country: string;
-  website: string | null;
-  email: string | null;
-  whatsapp: string | null;
-  auditScore: number | null;
-  status: string;
-  createdAt: string;
-};
+type Lead={id:string;businessName:string;ownerName:string|null;niche:string;country:string;website:string|null;email:string|null;whatsapp:string|null;auditScore:number|null;status:string;createdAt:string};
+type Outreach={id:string;channel:string;status:string;message:string;error:string|null;scheduledAt:string|null;sentAt:string|null;lead:Lead};
+const tone:Record<string,string>={DRAFT:'nx-status nx-status-muted',APPROVAL_REQUIRED:'nx-status nx-status-warn',APPROVED:'nx-status nx-status-ai',SCHEDULED:'nx-status nx-status-ai',SENT:'nx-status nx-status-ok',FAILED:'nx-status nx-status-danger'};
+const label=(s:string)=>s.replaceAll('_',' ');
 
-type Draft = {
-  id: string;
-  channel: string;
-  status: string;
-  message: string;
-  lead: Lead;
-};
-
-export default function LeadInboxWorkspace() {
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [drafts, setDrafts] = useState<Draft[]>([]);
-  const [query, setQuery] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState('');
-
-  async function load() {
-    setLoading(true);
-    try {
-      const [leadResponse, draftResponse] = await Promise.all([
-        fetch('/api/leads', { cache: 'no-store' }),
-        fetch('/api/outreach/drafts', { cache: 'no-store' }),
-      ]);
-      const leadData = await leadResponse.json();
-      const draftData = await draftResponse.json();
-      if (!leadResponse.ok) throw new Error(leadData.message ?? 'Unable to load CRM leads');
-      setLeads(leadData.data ?? []);
-      setDrafts(draftData.drafts ?? []);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => { void load(); }, []);
-
-  const visible = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return leads;
-    return leads.filter((lead) => `${lead.businessName} ${lead.ownerName ?? ''} ${lead.niche} ${lead.country} ${lead.status}`.toLowerCase().includes(q));
-  }, [leads, query]);
-
-  async function approve(id: string) {
-    const response = await fetch('/api/outreach/drafts', {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id, action: 'approve' }),
-    });
-    const data = await response.json();
-    setMessage(response.ok && data.success ? 'Draft approved.' : data.error ?? 'Approval failed');
-    await load();
-  }
-
-  return (
-    <section className="space-y-5">
-      <div className="nexor-panel p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <div className="font-mono text-[7px] tracking-[0.15em] text-[var(--accent)]">SALES & CRM</div>
-            <h2 className="mt-2 text-xl font-semibold">Lead Inbox</h2>
-            <p className="mt-1 text-[9px] leading-5 text-[var(--text-secondary)]">Live CRM leads, scores, contactability and outreach approval queue.</p>
-          </div>
-          <button type="button" onClick={() => void load()} className="rounded-lg border border-[var(--border)] px-3 py-2 text-[8px]">{loading ? 'LOADING…' : 'REFRESH'}</button>
-        </div>
-        <div className="mt-4 flex gap-2">
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search business, niche, country or status" className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-4 py-3 text-[9px] text-[var(--text)] outline-none" />
-          <div className="rounded-xl border border-[var(--border)] px-4 py-3 font-mono text-[8px] text-[var(--text-muted)]">{visible.length} LEADS</div>
-        </div>
-        {message && <div className="mt-3 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-3 text-[8px] text-[var(--text-secondary)]">{message}</div>}
-      </div>
-
-      <div className="grid gap-3">
-        {visible.map((lead) => (
-          <article key={lead.id} className="nexor-panel p-5">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="text-[11px] font-semibold">{lead.businessName}</h3>
-                  <span className="rounded-full border border-[var(--border)] px-2 py-1 text-[7px]">{lead.status}</span>
-                  {lead.auditScore !== null && <span className="rounded-full bg-[var(--accent-soft)] px-2 py-1 text-[7px] text-[var(--accent)]">SCORE {lead.auditScore}</span>}
-                </div>
-                <div className="mt-2 text-[8px] text-[var(--text-muted)]">{lead.niche} · {lead.country} · {lead.ownerName ?? 'Owner not identified'}</div>
-                <div className="mt-3 flex flex-wrap gap-2 text-[8px] text-[var(--text-secondary)]">
-                  {lead.website && <a className="rounded-lg border border-[var(--border)] px-3 py-2" href={lead.website} target="_blank" rel="noreferrer">Website ↗</a>}
-                  {lead.email && <span className="rounded-lg border border-[var(--border)] px-3 py-2">{lead.email}</span>}
-                  {lead.whatsapp && <span className="rounded-lg border border-[var(--border)] px-3 py-2">WA {lead.whatsapp}</span>}
-                </div>
-              </div>
-            </div>
-          </article>
-        ))}
-        {!loading && !visible.length && <div className="nexor-panel p-10 text-center text-[9px] text-[var(--text-muted)]">No CRM leads found. Run Lead Finder or Sales Machine first.</div>}
-      </div>
-
-      <section className="nexor-panel overflow-hidden">
-        <div className="border-b border-[var(--border)] p-5"><div className="text-[11px] font-semibold">Outreach approval queue</div><div className="mt-1 text-[8px] text-[var(--text-muted)]">Approve drafts here before any sender is allowed to send.</div></div>
-        <div className="divide-y divide-[var(--border)]">
-          {drafts.map((draft) => (
-            <article key={draft.id} className="p-5">
-              <div className="flex flex-col gap-4 lg:flex-row lg:justify-between">
-                <div><div className="flex flex-wrap items-center gap-2"><strong className="text-[9px]">{draft.lead.businessName}</strong><span className="rounded bg-[var(--surface-2)] px-2 py-1 font-mono text-[7px]">{draft.channel}</span><span className="text-[7px] text-[var(--text-muted)]">{draft.status}</span></div><p className="mt-3 max-w-4xl whitespace-pre-wrap text-[9px] leading-5 text-[var(--text-secondary)]">{draft.message}</p></div>
-                {['DRAFT', 'APPROVAL_REQUIRED'].includes(draft.status) && <button type="button" onClick={() => void approve(draft.id)} className="h-fit rounded-lg bg-[var(--accent)] px-3 py-2 text-[7px] font-bold text-black">APPROVE</button>}
-              </div>
-            </article>
-          ))}
-          {!drafts.length && <div className="p-10 text-center text-[9px] text-[var(--text-muted)]">No outreach drafts waiting for approval.</div>}
-        </div>
-      </section>
-    </section>
-  );
+export default function LeadInboxWorkspace(){
+ const[leads,setLeads]=useState<Lead[]>([]),[outreach,setOutreach]=useState<Outreach[]>([]),[query,setQuery]=useState(''),[tab,setTab]=useState<'all'|'approval'|'active'|'failed'>('all'),[loading,setLoading]=useState(true),[busy,setBusy]=useState<string|null>(null),[message,setMessage]=useState('');
+ async function load(){setLoading(true);try{const[a,b]=await Promise.all([fetch('/api/leads',{cache:'no-store'}),fetch('/api/outreach',{cache:'no-store'})]);const ad=await a.json(),bd=await b.json();if(!a.ok)throw new Error(ad.message??'Unable to load CRM leads');if(!b.ok)throw new Error(bd.error??'Unable to load outreach');setLeads(ad.data??[]);setOutreach(bd.drafts??[]);}catch(e){setMessage(e instanceof Error?e.message:String(e))}finally{setLoading(false)}}
+ useEffect(()=>{void load()},[]);
+ const visibleLeads=useMemo(()=>{const q=query.trim().toLowerCase();return!q?leads:leads.filter(x=>`${x.businessName} ${x.ownerName??''} ${x.niche} ${x.country} ${x.status}`.toLowerCase().includes(q))},[leads,query]);
+ const visibleOutreach=useMemo(()=>{const q=query.trim().toLowerCase();return outreach.filter(x=>{if(q&&!`${x.lead.businessName} ${x.channel} ${x.status} ${x.message}`.toLowerCase().includes(q))return false;if(tab==='approval')return['DRAFT','APPROVAL_REQUIRED'].includes(x.status);if(tab==='active')return['APPROVED','SCHEDULED','SENT'].includes(x.status);if(tab==='failed')return x.status==='FAILED';return true})},[outreach,query,tab]);
+ const counts=useMemo(()=>({approval:outreach.filter(x=>['DRAFT','APPROVAL_REQUIRED'].includes(x.status)).length,active:outreach.filter(x=>['APPROVED','SCHEDULED'].includes(x.status)).length,sent:outreach.filter(x=>x.status==='SENT').length,failed:outreach.filter(x=>x.status==='FAILED').length}),[outreach]);
+ async function approve(id:string){setBusy(id);setMessage('');try{const r=await fetch('/api/outreach/drafts',{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({id,action:'approve'})}),d=await r.json();if(!r.ok||!d.success)throw new Error(d.error??'Approval failed');setMessage(d.sendResult?.sent?'Approved and sent successfully.':'Approved. Nexor queued the outreach for execution.');await load()}catch(e){setMessage(e instanceof Error?e.message:String(e));await load()}finally{setBusy(null)}}
+ return <section className="space-y-4 pb-2 sm:space-y-5">
+  <div className="nx-mobile-hero nexor-panel"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="nexor-ui-label text-[var(--primary)]">SALES / CONTROL ROOM</div><h2 className="mt-2 text-[22px] font-semibold tracking-[-0.03em] sm:text-2xl">Lead Inbox</h2><p className="mt-1.5 max-w-2xl text-[12px] leading-5 text-[var(--text-secondary)]">Research → approval → send → follow-up, visible in one operational queue.</p></div><button type="button" onClick={()=>void load()} disabled={loading} className="nx-icon-button" aria-label="Refresh leads">↻</button></div>
+   <div className="mt-4 grid grid-cols-4 gap-1.5 sm:gap-2"><div className="nx-mini-stat"><span>LEADS</span><strong>{visibleLeads.length}</strong></div><div className="nx-mini-stat"><span>APPROVAL</span><strong>{counts.approval}</strong></div><div className="nx-mini-stat"><span>SENT</span><strong>{counts.sent}</strong></div><div className="nx-mini-stat"><span>FAILED</span><strong>{counts.failed}</strong></div></div>
+   <div className="mt-3"><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search leads or outreach…" className="nx-search w-full" /></div>{message&&<div className="nx-feedback mt-3">{message}</div>}
+  </div>
+  <div className="nx-tabbar" role="tablist">{([['all','All'],['approval',`Approval ${counts.approval}`],['active',`Active ${counts.active}`],['failed',`Failed ${counts.failed}`]] as const).map(([k,v])=><button key={k} type="button" onClick={()=>setTab(k)} className={tab===k?'nx-tab nx-tab-active':'nx-tab'}>{v}</button>)}</div>
+  <section className="nexor-panel overflow-hidden"><div className="nx-section-head"><div><div className="text-[14px] font-semibold">Outreach execution</div><div className="mt-0.5 text-[11px] text-[var(--text-muted)]">Lead Inbox and Outreach are one queue.</div></div><span className="nx-live-dot">LIVE</span></div><div className="divide-y divide-[var(--border)]">
+   {visibleOutreach.map(x=><article key={x.id} className="nx-outreach-row"><div className="min-w-0 flex-1"><div className="flex min-w-0 items-center gap-2"><div className="min-w-0 flex-1 truncate text-[13px] font-semibold">{x.lead.businessName}</div><span className="shrink-0 rounded-md bg-[var(--surface-2)] px-2 py-1 font-mono text-[9px] text-[var(--text-muted)]">{x.channel}</span><span className={tone[x.status]??'nx-status nx-status-muted'}>{label(x.status)}</span></div><div className="mt-1 text-[11px] text-[var(--text-muted)]">{x.lead.country} · {x.lead.niche}{x.lead.auditScore!==null?` · score ${x.lead.auditScore}`:''}</div><details className="nx-message-details mt-3"><summary>View message</summary><p className="mt-2 whitespace-pre-wrap text-[12px] leading-5 text-[var(--text-secondary)]">{x.message}</p></details>{x.error&&<div className="mt-2 rounded-lg border border-[var(--danger)]/20 bg-[var(--danger)]/[.04] p-2.5 text-[11px] text-[var(--danger)]">{x.error}</div>}</div>{['DRAFT','APPROVAL_REQUIRED'].includes(x.status)&&<button type="button" onClick={()=>void approve(x.id)} disabled={busy===x.id} className="nx-primary-action">{busy===x.id?'WORKING…':x.channel==='WHATSAPP'?'APPROVE & SEND':'APPROVE'}</button>}</article>)}
+   {!loading&&!visibleOutreach.length&&<div className="p-10 text-center text-[12px] text-[var(--text-muted)]">No outreach in this view.</div>}
+  </div></section>
+  <section className="nexor-panel overflow-hidden"><div className="nx-section-head"><div><div className="text-[14px] font-semibold">CRM leads</div><div className="mt-0.5 text-[11px] text-[var(--text-muted)]">Contactability and next action at a glance.</div></div></div><div className="grid gap-2 p-2 sm:grid-cols-2 sm:p-3 lg:grid-cols-3">{visibleLeads.slice(0,60).map(x=><article key={x.id} className="nx-lead-card"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><div className="truncate text-[13px] font-semibold">{x.businessName}</div><div className="mt-1 text-[10px] text-[var(--text-muted)]">{x.country} · {x.niche}</div></div>{x.auditScore!==null&&<span className="nx-score">{x.auditScore}</span>}</div><div className="mt-3 flex flex-wrap gap-1.5">{x.website&&<a className="nx-chip" href={x.website} target="_blank" rel="noreferrer">Website ↗</a>}{x.email&&<span className="nx-chip">Email</span>}{x.whatsapp&&<span className="nx-chip">WhatsApp</span>}</div></article>)}{!loading&&!visibleLeads.length&&<div className="p-8 text-center text-[12px] text-[var(--text-muted)] sm:col-span-2 lg:col-span-3">No CRM leads found. Run Lead Finder or Sales Machine first.</div>}</div></section>
+ </section>;
 }
