@@ -1,30 +1,29 @@
 import { NEXOR_BRAND } from '@nexor/shared';
 import { createSocialContent } from './social-content';
+import { isAutomationEnabled } from './automation-settings';
 
-/**
- * The five-minute machine worker already has dedicated, bounded workers for
- * campaign discovery and approved outreach. The legacy /api/cron/autopilot
- * endpoint must therefore orchestrate only lightweight work; doing discovery,
- * research and opportunity scraping inline can exceed Vercel's function limit
- * and prevent the rest of the automation cycle from running.
- */
+/** Lightweight daily orchestration. Heavy discovery and outbound work stays in bounded workers. */
 export async function runAutopilot() {
   const startedAt = Date.now();
   const socialDrafts: string[] = [];
+  const socialScheduled: string[] = [];
+  const publishingEnabled = await isAutomationEnabled('social_publishing');
 
   if (process.env.AUTOPILOT_SOCIAL_DRAFTS !== 'false') {
     for (const platform of ['INSTAGRAM', 'FACEBOOK', 'LINKEDIN'] as const) {
       try {
+        const canAutoPublish = platform === 'FACEBOOK' && publishingEnabled && Boolean(process.env.META_ACCESS_TOKEN);
         const post = await createSocialContent({
           platform,
-          status: 'DRAFT',
+          status: canAutoPublish ? 'SCHEDULED' : 'DRAFT',
+          scheduledAt: canAutoPublish ? new Date(Date.now() + 30 * 60 * 1000).toISOString() : null,
           title: `${NEXOR_BRAND.name} ${platform} growth post`,
-          caption: `Share one practical digital-growth insight for business owners, with a clear call to action and no invented claims. ${NEXOR_BRAND.name} helps businesses with ${NEXOR_BRAND.services.slice(0, 4).join(', ')}.`,
+          caption: `One practical digital-growth insight for business owners, with a clear call to action and no invented claims. ${NEXOR_BRAND.name} helps businesses with ${NEXOR_BRAND.services.slice(0, 4).join(', ')}.`,
           hashtags: NEXOR_BRAND.defaultHashtags,
         });
-        socialDrafts.push(post.id);
+        if (canAutoPublish) socialScheduled.push(post.id); else socialDrafts.push(post.id);
       } catch (error) {
-        console.error(`[AUTOPILOT SOCIAL DRAFT ${platform}]`, error);
+        console.error(`[AUTOPILOT SOCIAL ${platform}]`, error);
       }
     }
   }
@@ -34,8 +33,9 @@ export async function runAutopilot() {
     durationMs: Date.now() - startedAt,
     campaigns: [],
     socialDrafts,
+    socialScheduled,
     opportunities: { skipped: true, reason: 'Handled by dedicated discovery/sales-machine workers.' },
     opportunityDrafts: 0,
-    note: 'Autopilot is orchestration-only. Campaign discovery, research and approved outreach run in dedicated bounded workers so one slow provider cannot block the whole five-minute cycle.',
+    note: 'Autopilot orchestrates bounded workers. Connected Facebook posts are scheduled automatically; platforms requiring media or unavailable credentials remain drafts instead of being falsely marked published.',
   };
 }
