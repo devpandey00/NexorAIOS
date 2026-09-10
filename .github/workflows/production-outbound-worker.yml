@@ -85,6 +85,7 @@ jobs:
           rm -f "$approval_file"
 
           call whatsapp_send /api/whatsapp/automation-worker POST '{"action":"run_due","limit":20}' || true
+          call social_publish /api/cron/social-publish || true
           call followups /api/cron/followups || true
           call outreach_auto_approve /api/cron/outreach-approve || true
           call outreach /api/cron/outreach || true
