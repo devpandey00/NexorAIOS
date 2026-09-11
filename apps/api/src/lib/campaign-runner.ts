@@ -6,6 +6,8 @@ import { assessLead, buildPersonalizedPitch, buildSalesBrief } from '@nexor/core
 function getPrisma() { return getDatabaseClients().write; }
 function normalizeWebsite(url: string): string { try { const parsed = new URL(url); return `${parsed.protocol}//${parsed.hostname.replace(/^www\./,'').toLowerCase()}${parsed.pathname.replace(/\/$/,'')}`.slice(0, 500); } catch { return url.trim().toLowerCase().replace(/\/$/,'').slice(0, 500); } }
 function normalizePhone(phone: string): string { return phone.replace(/\D/g,'').slice(0, 30); }
+function normalizeEmail(email: string): string { return email.trim().toLowerCase().slice(0, 255); }
+function normalizeSocialUrl(url: string): string { return url.trim().slice(0, 500); }
 function cleanLeadName(name: string): string { return name.replace(/\s+/g,' ').replace(/\s*[|·–—-]\s*$/g,'').trim().slice(0, 255); }
 function looksLikeNonBusinessName(name: string): boolean { return [/^\s*(?:best|top)\s+\d+/i,/\b(?:directory|directories|jobs?|careers?|vacanc(?:y|ies)|news|articles?|guide|roundup)\b/i,/\bhow to\b/i].some((pattern) => pattern.test(name)); }
 function inferNiche(query: string): string { const cleaned = query.replace(/["']/g, ' ').replace(/\s+/g, ' ').trim(); return (cleaned.split(/\s+(?:in|at|for|with|needs|looking|seeking|want|requires)\s+/i)[0]?.trim() || cleaned).slice(0, 100); }
@@ -28,7 +30,7 @@ function buildDiscoveryQueries(query: string): string[] {
 async function findDuplicateLead(input: { website?: string; email?: string; whatsapp?: string; socialUrls?: string[]; businessName: string }) {
   const prisma = getPrisma(); const or: Prisma.LeadWhereInput[] = [];
   if (input.website) or.push({ website: input.website }); if (input.email) or.push({ email: input.email }); if (input.whatsapp) or.push({ whatsapp: input.whatsapp }); if (input.businessName) or.push({ businessName: { equals: input.businessName, mode: 'insensitive' } });
-  if (input.socialUrls?.length) { const social = await prisma.socialProfile.findFirst({ where: { url: { in: input.socialUrls } }, select: { leadId: true } }); if (social) return prisma.lead.findUnique({ where: { id: social.leadId } }); }
+  if (input.socialUrls?.length) { const social = await prisma.socialProfile.findFirst({ where: { url: { in: input.socialUrls.map(normalizeSocialUrl) } }, select: { leadId: true } }); if (social) return prisma.lead.findUnique({ where: { id: social.leadId } }); }
   return or.length ? prisma.lead.findFirst({ where: { OR: or }, orderBy: { createdAt: 'desc' } }) : null;
 }
 
@@ -45,7 +47,7 @@ export async function runCampaign(campaignId: string) {
       return { success: false, campaignId, discovered: 0, processed: 0, successful: 0, failed: 0, qualified: 0, provider: searchResult.provider, queries: discoveryQueries, retryScheduled, attempts: attemptsUsed, error: message };
     }
     let processed = 0, successful = 0, failed = 0, qualified = 0; const niche = inferNiche(campaign.query); const country = inferCountry(campaign.query);
-    // Vercel Hobby functions have a hard execution ceiling. Keep each invocation bounded;
+    // Vercel functions have a hard execution ceiling. Keep each invocation bounded;
     // the durable job remains queued for another worker pass when more leads are needed.
     const maxLeads = Math.min(Math.max(Number(process.env.CAMPAIGN_MAX_LEADS_PER_RUN ?? 3), 1), 10);
     const leadsToProcess = searchResult.leads.slice(0, maxLeads);
@@ -60,12 +62,15 @@ export async function runCampaign(campaignId: string) {
         let research; try { research = await researchService.analyze(result.website); } catch (researchError) { console.error(`[LEAD RESEARCH ERROR] ${result.name}`, researchError); research = { success: false } as const; }
         if (!research.success) { const fallbackScore = normalizedPhone ? 65 : 60; await prisma.lead.update({ where: { id: lead.id }, data: { auditScore: fallbackScore, status: LeadStatus.QUALIFIED, notes: JSON.stringify({ source: 'campaign-discovery', discoveryQueries, qualification: 'website_research_unavailable' }) } }); processed++; successful++; qualified++; continue; }
         const intelligence = assessLead({ website: research.website, technology: research.technology, social: Object.fromEntries(Object.entries(research.social ?? {})), seo: Object.fromEntries(Object.entries(research.seo ?? {})) });
-        const email = research.contacts?.emails?.[0]; const phone = research.contacts?.phones?.[0]; const normalizedResearchPhone = phone ? normalizePhone(phone) : normalizedPhone; const social = Object.fromEntries(Object.entries(research.social ?? {})) as Record<string, unknown>; const socialUrls = Object.values(social).filter((value): value is string => typeof value === 'string' && value.startsWith('http'));
-        const salesBrief = intelligence.score >= 60 ? buildSalesBrief({ businessName, niche, country, website: result.website, intelligence, research, email, phone }) : null;
+        const rawEmail = research.contacts?.emails?.[0]; const email = rawEmail ? normalizeEmail(rawEmail) : undefined;
+        const phone = research.contacts?.phones?.[0]; const normalizedResearchPhone = phone ? normalizePhone(phone) : normalizedPhone;
+        const social = Object.fromEntries(Object.entries(research.social ?? {})) as Record<string, unknown>;
+        const socialUrls = Object.values(social).filter((value): value is string => typeof value === 'string' && value.startsWith('http')).map(normalizeSocialUrl);
+        const salesBrief = intelligence.score >= 60 ? buildSalesBrief({ businessName, niche, country, website: normalizedWebsite, intelligence, research, email, phone: normalizedResearchPhone }) : null;
         if (createdThisRun) { const duplicateAfterResearch = await findDuplicateLead({ website: normalizedWebsite, email, whatsapp: normalizedResearchPhone, socialUrls, businessName }); if (duplicateAfterResearch && duplicateAfterResearch.id !== lead.id) { await prisma.lead.delete({ where: { id: lead.id } }); lead = duplicateAfterResearch; await prisma.campaignLead.upsert({ where: { campaignId_leadId: lead.id }, create: { campaignId, leadId: lead.id }, update: {} }); } }
         await prisma.lead.update({ where: { id: lead.id }, data: { businessName, niche, country: lead.country === 'Unknown' ? country : lead.country, email: email ?? lead.email, whatsapp: normalizedResearchPhone || lead.whatsapp, auditScore: intelligence.score, status: intelligence.score >= 60 ? LeadStatus.QUALIFIED : LeadStatus.RESEARCHED, notes: JSON.stringify({ research, intelligence, salesBrief, source: 'campaign-discovery', discoveryQueries }) } });
         const socialEntries = [['INSTAGRAM', social.instagram],['FACEBOOK', social.facebook],['LINKEDIN', social.linkedin],['YOUTUBE', social.youtube],['X', social.x ?? social.twitter],['TIKTOK', social.tiktok]] as const;
-        for (const [platform, url] of socialEntries) { if (typeof url !== 'string' || !url) continue; await prisma.socialProfile.upsert({ where: { leadId_platform: { leadId: lead.id, platform } }, create: { leadId: lead.id, platform, url, confidence: 100, source: 'website-research' }, update: { url, confidence: 100, source: 'website-research' } }); }
+        for (const [platform, url] of socialEntries) { if (typeof url !== 'string' || !url) continue; const normalizedSocial = normalizeSocialUrl(url); await prisma.socialProfile.upsert({ where: { leadId_platform: { leadId: lead.id, platform } }, create: { leadId: lead.id, platform, url: normalizedSocial, confidence: 100, source: 'website-research' }, update: { url: normalizedSocial, confidence: 100, source: 'website-research' } }); }
         if (intelligence.score >= 60) { qualified++; const createDraft = async (channel: OutreachChannel, message: string) => { const existingDraft = await prisma.outreach.findFirst({ where: { leadId: lead!.id, channel, status: { in: [OutreachStatus.DRAFT, OutreachStatus.APPROVAL_REQUIRED, OutreachStatus.APPROVED, OutreachStatus.SCHEDULED, OutreachStatus.SENT] } }, orderBy: { createdAt: 'desc' } }); if (!existingDraft) await prisma.outreach.create({ data: { leadId: lead!.id, campaignId, channel, status: OutreachStatus.APPROVAL_REQUIRED, message } }); }; if (lead.whatsapp) await createDraft(OutreachChannel.WHATSAPP, buildPersonalizedPitch({ businessName, requirement: intelligence.requirement, service: intelligence.service, findings: intelligence.findings })); if (email) await createDraft(OutreachChannel.EMAIL, buildPersonalizedPitch({ businessName, requirement: intelligence.requirement, service: intelligence.service, findings: intelligence.findings, email: true })); }
         successful++; processed++;
       } catch (error) { failed++; processed++; console.error(`[CAMPAIGN LEAD ERROR] ${result.name}`, error); }
