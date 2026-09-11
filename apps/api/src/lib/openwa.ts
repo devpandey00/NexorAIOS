@@ -23,6 +23,62 @@ function chatIdFromPhone(value: string) {
   return `${digits}@c.us`;
 }
 
+async function openwaFetch(path: string, init: RequestInit = {}) {
+  const { baseUrl, apiKey, sessionId } = getConfig();
+  if (!baseUrl || !apiKey || !sessionId) {
+    throw new Error('OpenWA is not configured: add OPENWA_BASE_URL, OPENWA_API_KEY and OPENWA_SESSION_ID in Vercel Production.');
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), OPENWA_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${baseUrl}${path}`, {
+      ...init,
+      headers: {
+        'X-API-Key': apiKey,
+        ...(init.headers ?? {}),
+      },
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const providerMessage = data?.message ?? data?.error ?? `OpenWA request failed (${response.status})`;
+      throw new Error(String(providerMessage));
+    }
+    return data;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error(`OpenWA request timed out after ${OPENWA_TIMEOUT_MS / 1000}s.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function getOpenWAConnectionStatus() {
+  const { sessionId } = getConfig();
+  if (!sessionId) throw new Error('OpenWA session ID is not configured.');
+  const data = await openwaFetch(`/api/sessions/${encodeURIComponent(sessionId)}`);
+  return {
+    id: data?.id ?? sessionId,
+    name: data?.name ?? null,
+    status: data?.status ?? data?.state ?? 'unknown',
+    ready: String(data?.status ?? data?.state ?? '').toLowerCase() === 'ready',
+  };
+}
+
+export async function startOpenWASession() {
+  const { sessionId } = getConfig();
+  if (!sessionId) throw new Error('OpenWA session ID is not configured.');
+  const data = await openwaFetch(`/api/sessions/${encodeURIComponent(sessionId)}/start`, { method: 'POST' });
+  return {
+    id: data?.id ?? sessionId,
+    status: data?.status ?? data?.state ?? 'starting',
+    ready: String(data?.status ?? data?.state ?? '').toLowerCase() === 'ready',
+  };
+}
+
 export async function sendOpenWAText(to: string, text: string) {
   const { baseUrl, apiKey, sessionId } = getConfig();
   if (!baseUrl || !apiKey || !sessionId) {
