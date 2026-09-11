@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabaseClients } from '@nexor/database';
-import { getReportSummary, sendNexorReportEmail } from '@/lib/email-reporting';
+import { sendNexorReportEmail } from '@/lib/email-reporting';
 import { isAutomationEnabled } from '@/lib/automation-settings';
 import { authorizeMachineRequest } from '@/lib/machine-auth';
 
@@ -41,13 +41,13 @@ export async function GET(req: NextRequest) {
 
   const db = getDatabaseClients().write;
   try {
-    const rows = await db.$queryRawUnsafe<Array<{ config: unknown }>>(`SELECT config FROM public.automation_settings WHERE key = 'growth_reports' LIMIT 1`);
+    const rows = await db.$queryRaw<Array<{ config: unknown }>>`SELECT config FROM public.automation_settings WHERE key = 'growth_reports' LIMIT 1`;
     const config = (rows[0]?.config && typeof rows[0].config === 'object' ? rows[0].config : {}) as { last3hAt?: string; milestones?: MilestoneState };
     const now = Date.now();
     const last3hAt = config.last3hAt ? new Date(config.last3hAt).getTime() : 0;
     const dueForThreeHour = !Number.isFinite(last3hAt) || now - last3hAt >= 3 * 60 * 60 * 1000;
 
-    const countsRows = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(`
+    const countsRows = await db.$queryRaw<Array<Record<string, unknown>>>`
       SELECT
         (SELECT COUNT(*) FROM public.leads WHERE status = 'QUALIFIED') AS leads,
         (SELECT COUNT(*) FROM public.outreach WHERE channel = 'EMAIL' AND status = 'SENT') AS emails,
@@ -56,7 +56,7 @@ export async function GET(req: NextRequest) {
         (SELECT COUNT(*) FROM public.messages WHERE direction = 'INBOUND') AS replies,
         (SELECT COUNT(*) FROM public.meetings WHERE status IN ('BOOKED','COMPLETED')) AS meetings,
         (SELECT COUNT(*) FROM public.opportunities WHERE stage = 'WON') AS won
-    `);
+    `;
     const counts = countsRows[0] ?? {};
     const previous = config.milestones ?? {};
     const reached: Array<{ key: string; label: string; count: number; milestone: number }> = [];
@@ -96,17 +96,9 @@ export async function GET(req: NextRequest) {
 
     const nextState: MilestoneState = { ...previous };
     for (const [key, , step] of MILESTONES) nextState[key] = Math.floor(Number(counts[key] ?? 0) / step);
-    await db.$executeRawUnsafe(`UPDATE public.automation_settings SET config = $1::jsonb, updated_at = NOW() WHERE key = 'growth_reports'`, JSON.stringify({ last3hAt: dueForThreeHour ? new Date().toISOString() : config.last3hAt ?? null, milestones: nextState }));
+    await db.$executeRaw`UPDATE public.automation_settings SET config = ${JSON.stringify({ last3hAt: dueForThreeHour ? new Date().toISOString() : config.last3hAt ?? null, milestones: nextState })}::jsonb, updated_at = NOW() WHERE key = 'growth_reports'`;
 
-    return NextResponse.json({
-      success: true,
-      threeHourReport: reportResult,
-      reportSkipped,
-      milestones: reached,
-      milestoneMessageId,
-      milestonesSkipped,
-      checkedAt: new Date().toISOString(),
-    });
+    return NextResponse.json({ success: true, threeHourReport: reportResult, reportSkipped, milestones: reached, milestoneMessageId, milestonesSkipped, checkedAt: new Date().toISOString() });
   } catch (error) {
     console.error('[GROWTH REPORT ERROR]', error);
     return NextResponse.json({ success: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 });
