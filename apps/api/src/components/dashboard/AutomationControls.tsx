@@ -13,7 +13,7 @@ export default function AutomationControls() {
   async function load() {
     setLoading(true); setError('');
     try {
-      const response = await fetch('/api/automation/settings', { cache: 'no-store' });
+      const response = await fetch('/api/automations/settings', { cache: 'no-store' });
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.error || 'Unable to load automation controls');
       setSettings(data.settings || []);
@@ -26,10 +26,10 @@ export default function AutomationControls() {
   async function toggle(key: string, enabled: boolean) {
     setSaving(key); setError('');
     try {
-      const response = await fetch('/api/automation/settings', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key, enabled }) });
+      const response = await fetch('/api/automations/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key, enabled }) });
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.error || 'Unable to save setting');
-      setSettings(data.settings || []);
+      await load();
     } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
     finally { setSaving(null); }
   }
