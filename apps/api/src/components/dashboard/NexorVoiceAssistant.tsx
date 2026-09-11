@@ -4,6 +4,14 @@ import { useEffect, useRef, useState } from 'react';
 
 type VoiceState = 'standby' | 'connecting' | 'listening' | 'thinking' | 'speaking' | 'error';
 type VoiceLog = { id: number; role: 'you' | 'nexor'; text: string; time: string };
+type RealtimeMessage = {
+  type?: string;
+  delta?: string;
+  transcript?: string;
+  name?: string;
+  call_id?: string;
+  arguments?: string;
+};
 
 const HIGH_IMPACT = /\b(?:delete|remove|erase|wipe|send|publish|post|approve|reject|pay|charge|transfer|shutdown|disable|disconnect|broadcast|message all)\b/i;
 const QUICK_COMMANDS = ['Show today’s priorities', 'Find my hottest leads', 'Run the sales machine', 'Give me a growth briefing'];
@@ -34,6 +42,7 @@ export default function NexorVoiceAssistant() {
     pcRef.current?.close(); pcRef.current = null;
     streamRef.current?.getTracks().forEach((track) => track.stop()); streamRef.current = null;
     if (audioRef.current) audioRef.current.srcObject = null;
+    pendingRef.current = null; pendingCallId.current = null; setPending(null);
     setEnabled(false); setState('standby');
   };
 
@@ -68,16 +77,17 @@ export default function NexorVoiceAssistant() {
       const dc = pc.createDataChannel('oai-events'); dcRef.current = dc;
       dc.onmessage = (event) => {
         try {
-          const message = JSON.parse(event.data) as { type?: string; delta?: string; transcript?: string; item?: { name?: string; call_id?: string; arguments?: string } };
+          const message = JSON.parse(event.data) as RealtimeMessage;
           if (message.type === 'input_audio_buffer.speech_started') { setState('listening'); setTranscript(''); }
           if (message.type === 'response.created') setState('thinking');
           if (message.type === 'response.audio_transcript.delta' && message.delta) setTranscript((value) => value + message.delta);
           if (message.type === 'response.audio_transcript.done' && message.transcript) { setResponse(message.transcript); addLog('nexor', message.transcript); setTranscript(''); setState('speaking'); }
           if (message.type === 'response.done') setState('listening');
           if (message.type === 'conversation.item.input_audio_transcription.completed' && message.transcript) { setTranscript(message.transcript); addLog('you', message.transcript); }
-          if (message.type === 'response.function_call_arguments.done' && message.item?.name === 'nexor_command' && message.item.call_id) {
-            let args: { command?: string } = {}; try { args = JSON.parse(message.item.arguments ?? '{}') as { command?: string }; } catch { /* invalid args */ }
-            if (args.command) void executeTool(message.item.call_id, args.command);
+          if (message.type === 'response.function_call_arguments.done' && message.name === 'nexor_command' && message.call_id) {
+            let args: { command?: string } = {};
+            try { args = JSON.parse(message.arguments ?? '{}') as { command?: string }; } catch { /* invalid args */ }
+            if (args.command) void executeTool(message.call_id, args.command);
           }
           if (message.type === 'error') { setState('error'); setResponse('Realtime voice reported an error.'); }
         } catch { /* ignore malformed events */ }
@@ -97,13 +107,23 @@ export default function NexorVoiceAssistant() {
     pendingRef.current = null; pendingCallId.current = null; setPending(null); void executeTool(callId, command);
   };
 
+  const cancelPending = () => {
+    const callId = pendingCallId.current;
+    pendingRef.current = null; pendingCallId.current = null; setPending(null);
+    if (callId) {
+      sendEvent({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: callId, output: JSON.stringify({ success: false, cancelled: true, reason: 'User cancelled the action.' }) } });
+      sendEvent({ type: 'response.create' });
+    }
+    setResponse('Action cancelled.'); setState('listening');
+  };
+
   useEffect(() => { mutedRef.current = muted; if (audioRef.current) audioRef.current.muted = muted; }, [muted]);
   useEffect(() => () => stop(), []);
 
   const active = state !== 'standby' && state !== 'error';
   const label = state === 'connecting' ? 'CONNECTING' : state === 'thinking' ? 'THINKING' : state === 'speaking' ? 'SPEAKING' : state === 'listening' ? 'LISTENING' : state === 'error' ? 'ATTENTION' : 'STANDBY';
 
-  const quick = (command: string) => { setTranscript(command); sendEvent({ type: 'conversation.item.create', item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: command }] } }); sendEvent({ type: 'response.create' }); };
+  const quick = (command: string) => { if (!enabled) return; setTranscript(command); sendEvent({ type: 'conversation.item.create', item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: command }] } }); sendEvent({ type: 'response.create' }); };
 
   return (
     <aside className="fixed bottom-5 right-5 z-[100] w-[min(480px,calc(100vw-2rem))]">
@@ -115,8 +135,8 @@ export default function NexorVoiceAssistant() {
         </div>
         <div className="px-4 py-4">
           <div className="grid grid-cols-[84px_1fr] gap-3"><button onClick={active ? stop : start} className="relative flex h-[84px] w-[84px] items-center justify-center overflow-hidden rounded-[24px] border border-[var(--accent)]/40 bg-[var(--accent-soft)] text-[var(--accent)]"><span className={`absolute h-12 w-12 rounded-full border border-[var(--accent)]/30 ${active ? 'animate-ping' : ''}`} /><span className="relative font-mono text-xl">{state === 'thinking' ? '◌' : '◉'}</span></button><div className="min-w-0"><div className="font-mono text-[7px] tracking-[0.18em] text-[var(--text-muted)]">LIVE TRANSCRIPT</div><div className="mt-1 min-h-10 text-[11px] leading-5">{transcript || response}</div><div className="mt-2 font-mono text-[6px] tracking-[0.14em] text-[var(--text-muted)]">SEMANTIC VAD · INTERRUPTION · SPEECH-TO-SPEECH · TOOL CALLING</div></div></div>
-          {pending && <div className="mt-3 rounded-2xl border border-amber-400/40 bg-amber-400/10 p-3"><div className="font-mono text-[7px] tracking-[0.16em] text-amber-600">APPROVAL REQUIRED</div><div className="mt-1 text-[9px]">{pending}</div><div className="mt-2 flex gap-2"><button onClick={confirm} className="rounded-lg bg-[var(--accent)] px-3 py-2 text-[8px] font-bold text-white">CONFIRM</button><button onClick={() => { pendingRef.current = null; pendingCallId.current = null; setPending(null); }} className="rounded-lg border border-[var(--border)] px-3 py-2 text-[8px]">CANCEL</button></div></div>}
-          <div className="mt-3 grid grid-cols-2 gap-2">{QUICK_COMMANDS.map((command) => <button key={command} onClick={() => quick(command)} className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-2 py-2 text-left text-[8px] text-[var(--text-secondary)] hover:border-[var(--accent)]/40 hover:text-[var(--text)]">{command}</button>)}</div>
+          {pending && <div className="mt-3 rounded-2xl border border-amber-400/40 bg-amber-400/10 p-3"><div className="font-mono text-[7px] tracking-[0.16em] text-amber-600">APPROVAL REQUIRED</div><div className="mt-1 text-[9px]">{pending}</div><div className="mt-2 flex gap-2"><button onClick={confirm} className="rounded-lg bg-[var(--accent)] px-3 py-2 text-[8px] font-bold text-white">CONFIRM</button><button onClick={cancelPending} className="rounded-lg border border-[var(--border)] px-3 py-2 text-[8px]">CANCEL</button></div></div>}
+          <div className="mt-3 grid grid-cols-2 gap-2">{QUICK_COMMANDS.map((command) => <button key={command} onClick={() => quick(command)} disabled={!enabled} className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-2 py-2 text-left text-[8px] text-[var(--text-secondary)] hover:border-[var(--accent)]/40 hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-40">{command}</button>)}</div>
           {logs.length > 0 && <div className="mt-3 max-h-28 space-y-1.5 overflow-auto rounded-2xl border border-[var(--border)] bg-[var(--surface-2)] p-2.5">{logs.slice(-4).map((log) => <div key={log.id} className="flex gap-2 text-[8px]"><span className="w-10 shrink-0 font-mono text-[6px] text-[var(--text-muted)]">{log.role === 'you' ? 'YOU' : 'NX'} · {log.time}</span><span className="text-[var(--text-secondary)]">{log.text}</span></div>)}</div>}
         </div>
       </div>
