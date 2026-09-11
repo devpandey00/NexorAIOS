@@ -1,359 +1,123 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-type VoiceState = 'idle' | 'armed' | 'listening' | 'thinking' | 'speaking' | 'error';
-type SpeechRecognitionResultLike = { isFinal: boolean; 0: { transcript: string } };
-type SpeechRecognitionEventLike = Event & { resultIndex: number; results: ArrayLike<SpeechRecognitionResultLike> };
-type SpeechRecognitionLike = {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
-  onend: (() => void) | null;
-  onerror: ((event: Event) => void) | null;
-  onstart: (() => void) | null;
-  start: () => void;
-  stop: () => void;
-};
-type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
-type WindowWithSpeech = Window & typeof globalThis & {
-  SpeechRecognition?: SpeechRecognitionConstructor;
-  webkitSpeechRecognition?: SpeechRecognitionConstructor;
-};
+type VoiceState = 'standby' | 'connecting' | 'listening' | 'thinking' | 'speaking' | 'error';
+type VoiceLog = { id: number; role: 'you' | 'nexor'; text: string; time: string };
 
-interface CommandResponse {
-  success: boolean;
-  route?: { workflow?: string; confidence?: number; reason?: string };
-  execution?: { success?: boolean; results?: Record<string, unknown>; error?: string; executionTime?: number };
-  error?: string;
-}
-
-type VoiceLog = { id: number; role: 'you' | 'nexor'; text: string; time: string; workflow?: string };
-
-const WAKE_WORD = /\b(?:hey|hello|hlo|hi|okay|ok)\s+nexor\b/i;
-const HIGH_IMPACT = /\b(?:delete|remove|erase|wipe|send|publish|post|approve|reject|pay|charge|transfer|shutdown|disable|disconnect|launch campaign|message all|broadcast)\b/i;
+const HIGH_IMPACT = /\b(?:delete|remove|erase|wipe|send|publish|post|approve|reject|pay|charge|transfer|shutdown|disable|disconnect|broadcast|message all)\b/i;
 const QUICK_COMMANDS = ['Show today’s priorities', 'Find my hottest leads', 'Run the sales machine', 'Give me a growth briefing'];
-
-function cleanCommand(text: string) {
-  return text.replace(WAKE_WORD, '').replace(/^[,.:;\s]+/, '').trim();
-}
-
-function humanWorkflow(workflow?: string) {
-  return (workflow ?? 'command').replaceAll('_', ' ');
-}
-
-function buildSpokenResponse(data: CommandResponse) {
-  if (!data.success) return `I couldn't complete that command. ${data.error ?? 'The command failed.'}`;
-  const workflow = humanWorkflow(data.route?.workflow);
-  const execution = data.execution;
-  if (execution?.success === false) return `${workflow} started but failed. ${execution.error ?? 'No further details were returned.'}`;
-  const resultCount = execution?.results ? Object.keys(execution.results).length : 0;
-  const seconds = execution?.executionTime ? Math.max(1, Math.round(execution.executionTime / 1000)) : 0;
-  return seconds
-    ? `${workflow} completed. I ran ${resultCount} operation${resultCount === 1 ? '' : 's'} in ${seconds} seconds.`
-    : `${workflow} completed. ${resultCount} operation${resultCount === 1 ? '' : 's'} finished.`;
-}
+const now = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 export default function NexorVoiceAssistant() {
-  const [state, setState] = useState<VoiceState>('idle');
+  const [state, setState] = useState<VoiceState>('standby');
   const [transcript, setTranscript] = useState('');
-  const [commandInput, setCommandInput] = useState('');
-  const [lastResponse, setLastResponse] = useState('Voice command center standing by.');
-  const [supported, setSupported] = useState(true);
+  const [response, setResponse] = useState('Nexor JARVIS standing by.');
   const [enabled, setEnabled] = useState(false);
   const [muted, setMuted] = useState(false);
   const [logs, setLogs] = useState<VoiceLog[]>([]);
-  const [pendingCommand, setPendingCommand] = useState<string | null>(null);
-  const [sessionStarted, setSessionStarted] = useState(false);
-
-  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
-  const enabledRef = useRef(false);
-  const armedRef = useRef(false);
-  const speakingRef = useRef(false);
-  const processingRef = useRef(false);
+  const [pending, setPending] = useState<string | null>(null);
+  const pcRef = useRef<RTCPeerConnection | null>(null);
+  const dcRef = useRef<RTCDataChannel | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const logId = useRef(0);
+  const pendingRef = useRef<string | null>(null);
+  const pendingCallId = useRef<string | null>(null);
   const mutedRef = useRef(false);
-  const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const logIdRef = useRef(0);
 
-  const pushLog = useCallback((role: VoiceLog['role'], text: string, workflow?: string) => {
-    setLogs((current) => [...current.slice(-7), {
-      id: ++logIdRef.current,
-      role,
-      text,
-      workflow,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    }]);
-  }, []);
+  const addLog = (role: VoiceLog['role'], text: string) => setLogs((items) => [...items.slice(-7), { id: ++logId.current, role, text, time: now() }]);
+  const sendEvent = (event: Record<string, unknown>) => { if (dcRef.current?.readyState === 'open') dcRef.current.send(JSON.stringify(event)); };
 
-  const speak = useCallback((text: string, after?: () => void) => {
-    if (mutedRef.current || typeof window === 'undefined' || !('speechSynthesis' in window)) {
-      after?.();
-      return;
+  const stop = () => {
+    dcRef.current?.close(); dcRef.current = null;
+    pcRef.current?.close(); pcRef.current = null;
+    streamRef.current?.getTracks().forEach((track) => track.stop()); streamRef.current = null;
+    if (audioRef.current) audioRef.current.srcObject = null;
+    setEnabled(false); setState('standby');
+  };
+
+  const executeTool = async (callId: string, command: string) => {
+    if (HIGH_IMPACT.test(command) && pendingRef.current !== command) {
+      pendingRef.current = command; pendingCallId.current = callId; setPending(command); setResponse('External-impact action detected. Confirm it on screen before I execute it.'); addLog('you', command); return;
     }
-    speakingRef.current = true;
-    setState('speaking');
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1;
-    utterance.pitch = 0.86;
-    utterance.volume = 1;
-    utterance.lang = 'en-IN';
-    const voices = window.speechSynthesis.getVoices();
-    const preferred = voices.find((voice) => /en-IN/i.test(voice.lang))
-      ?? voices.find((voice) => /en-US|en-GB/i.test(voice.lang));
-    if (preferred) utterance.voice = preferred;
-    utterance.onend = () => {
-      speakingRef.current = false;
-      after?.();
-      if (enabledRef.current && !processingRef.current) {
-        setState(armedRef.current ? 'listening' : 'idle');
-        restartRecognition();
-      }
-    };
-    utterance.onerror = () => {
-      speakingRef.current = false;
-      after?.();
-      if (enabledRef.current && !processingRef.current) restartRecognition();
-    };
-    window.speechSynthesis.speak(utterance);
-  }, []);
-
-  const startRecognition = useCallback(() => {
-    const recognition = recognitionRef.current;
-    if (!recognition || !enabledRef.current || speakingRef.current || processingRef.current) return;
-    try { recognition.start(); } catch { /* already listening */ }
-  }, []);
-
-  const restartRecognition = useCallback(() => {
-    if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
-    restartTimerRef.current = setTimeout(startRecognition, 250);
-  }, [startRecognition]);
-
-  const executeCommand = useCallback(async (command: string) => {
-    const query = command.trim();
-    if (!query || processingRef.current) return;
-    if (HIGH_IMPACT.test(query) && pendingCommand !== query) {
-      setPendingCommand(query);
-      setLastResponse('This can change external systems or send content. Confirm below to continue.');
-      setState('armed');
-      speak('This action can make an external change. Please confirm it on screen.');
-      return;
-    }
-
-    setPendingCommand(null);
-    processingRef.current = true;
-    armedRef.current = false;
-    setState('thinking');
-    setTranscript(query);
-    setLastResponse('Thinking, routing, and executing…');
-    pushLog('you', query);
-    recognitionRef.current?.stop();
-
     try {
-      const response = await fetch('/api/command', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query,
-          context: {
-            source: 'voice',
-            wakeWord: 'nexor',
-            interface: 'jarvis-command-center',
-            persona: 'jarvis',
-            responseStyle: 'concise, decisive, operational',
-          },
-        }),
-      });
-      const data = (await response.json()) as CommandResponse;
-      const spoken = buildSpokenResponse(data);
-      setLastResponse(spoken);
-      pushLog('nexor', spoken, data.route?.workflow);
-      if (!response.ok || !data.success) {
-        setState('error');
-        speak(spoken, () => { processingRef.current = false; armedRef.current = true; });
-        return;
-      }
-      speak(spoken, () => { processingRef.current = false; armedRef.current = true; });
+      setState('thinking'); setResponse('Executing through the Nexor command plane…'); addLog('you', command);
+      const res = await fetch('/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: command, context: { source: 'realtime-voice', interface: 'jarvis-command-center', persona: 'jarvis' } }) });
+      const data = await res.json() as { success?: boolean; error?: string; route?: { workflow?: string }; execution?: { error?: string } };
+      const spoken = data.success ? `${(data.route?.workflow ?? 'Command').replaceAll('_', ' ')} completed.` : `I could not complete that command. ${data.error ?? data.execution?.error ?? 'The command failed.'}`;
+      setResponse(spoken); addLog('nexor', spoken);
+      sendEvent({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: callId, output: JSON.stringify({ success: Boolean(data.success), workflow: data.route?.workflow, error: data.error ?? data.execution?.error }) } });
+      sendEvent({ type: 'response.create' }); setState('speaking');
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Network error.';
-      const spoken = `I couldn't reach the Nexor command service. ${message}`;
-      setLastResponse(spoken);
-      pushLog('nexor', spoken);
-      setState('error');
-      speak(spoken, () => { processingRef.current = false; armedRef.current = true; });
+      const message = error instanceof Error ? error.message : 'Command service unavailable.';
+      setResponse(message); setState('error');
+      sendEvent({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: callId, output: JSON.stringify({ success: false, error: message }) } }); sendEvent({ type: 'response.create' });
     }
-  }, [pendingCommand, pushLog, speak]);
+  };
 
-  useEffect(() => {
-    mutedRef.current = muted;
-    if (muted && typeof window !== 'undefined') window.speechSynthesis?.cancel();
-  }, [muted]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const speechWindow = window as WindowWithSpeech;
-    const Recognition = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
-    if (!Recognition) { setSupported(false); return; }
-
-    const recognition = new Recognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = 'en-IN';
-    recognition.onstart = () => {
-      if (!speakingRef.current && !processingRef.current) setState(armedRef.current ? 'listening' : 'idle');
-    };
-    recognition.onresult = (event) => {
-      let interim = '';
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        const result = event.results[index];
-        const text = result[0]?.transcript?.trim() ?? '';
-        if (!text) continue;
-        if (!result.isFinal) { interim += `${text} `; continue; }
-        setTranscript(text);
-        if (processingRef.current || speakingRef.current) continue;
-        if (!armedRef.current) {
-          if (!WAKE_WORD.test(text)) continue;
-          const command = cleanCommand(text);
-          armedRef.current = true;
-          if (command) void executeCommand(command);
-          else {
-            setState('armed');
-            setLastResponse('Yes. What should I do?');
-            recognition.stop();
-            speak('Yes. What should I do?', () => { if (!processingRef.current) restartRecognition(); });
+  const start = async () => {
+    if (enabled) return;
+    try {
+      setState('connecting'); setResponse('Opening secure realtime voice channel…');
+      const pc = new RTCPeerConnection(); pcRef.current = pc;
+      pc.ontrack = (event) => { if (!audioRef.current) return; audioRef.current.srcObject = event.streams[0]; audioRef.current.muted = mutedRef.current; void audioRef.current.play().catch(() => undefined); };
+      pc.onconnectionstatechange = () => { if (pc.connectionState === 'connected') { setEnabled(true); setState('listening'); setResponse('Realtime link established. Speak naturally.'); } if (['failed', 'closed'].includes(pc.connectionState)) setState('error'); };
+      const microphone = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+      streamRef.current = microphone; microphone.getTracks().forEach((track) => pc.addTrack(track, microphone));
+      const dc = pc.createDataChannel('oai-events'); dcRef.current = dc;
+      dc.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data) as { type?: string; delta?: string; transcript?: string; item?: { name?: string; call_id?: string; arguments?: string } };
+          if (message.type === 'input_audio_buffer.speech_started') { setState('listening'); setTranscript(''); }
+          if (message.type === 'response.created') setState('thinking');
+          if (message.type === 'response.audio_transcript.delta' && message.delta) setTranscript((value) => value + message.delta);
+          if (message.type === 'response.audio_transcript.done' && message.transcript) { setResponse(message.transcript); addLog('nexor', message.transcript); setTranscript(''); setState('speaking'); }
+          if (message.type === 'response.done') setState('listening');
+          if (message.type === 'conversation.item.input_audio_transcription.completed' && message.transcript) { setTranscript(message.transcript); addLog('you', message.transcript); }
+          if (message.type === 'response.function_call_arguments.done' && message.item?.name === 'nexor_command' && message.item.call_id) {
+            let args: { command?: string } = {}; try { args = JSON.parse(message.item.arguments ?? '{}') as { command?: string }; } catch { /* invalid args */ }
+            if (args.command) void executeTool(message.item.call_id, args.command);
           }
-        } else {
-          void executeCommand(text);
-        }
-      }
-      if (interim) setTranscript(interim.trim());
-    };
-    recognition.onerror = (event) => {
-      const error = event as Event & { error?: string };
-      if (error.error === 'not-allowed' || error.error === 'service-not-allowed') {
-        setState('error');
-        setLastResponse('Microphone permission is blocked. Allow microphone access for Nexor.');
-        enabledRef.current = false;
-        setEnabled(false);
-        return;
-      }
-      if (enabledRef.current && !speakingRef.current && !processingRef.current) restartRecognition();
-    };
-    recognition.onend = () => {
-      if (enabledRef.current && !speakingRef.current && !processingRef.current) restartRecognition();
-    };
-    recognitionRef.current = recognition;
-    return () => {
-      enabledRef.current = false;
-      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
-      recognition.stop();
-      window.speechSynthesis?.cancel();
-    };
-  }, [executeCommand, restartRecognition, speak]);
-
-  const toggleListening = () => {
-    if (!supported) return;
-    if (enabledRef.current) {
-      enabledRef.current = false;
-      armedRef.current = false;
-      recognitionRef.current?.stop();
-      window.speechSynthesis?.cancel();
-      speakingRef.current = false;
-      setEnabled(false);
-      setState('idle');
-      setLastResponse('Voice command center paused.');
-      return;
-    }
-    enabledRef.current = true;
-    armedRef.current = false;
-    setEnabled(true);
-    setSessionStarted(true);
-    setState('idle');
-    setLastResponse('Listening for “Hey Nexor”…');
-    startRecognition();
+          if (message.type === 'error') { setState('error'); setResponse('Realtime voice reported an error.'); }
+        } catch { /* ignore malformed events */ }
+      };
+      const offer = await pc.createOffer(); await pc.setLocalDescription(offer);
+      await new Promise<void>((resolve) => { if (pc.iceGatheringState === 'complete') return resolve(); const timer = window.setTimeout(resolve, 2500); pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') { window.clearTimeout(timer); resolve(); } }; });
+      const form = new FormData(); form.append('sdp', pc.localDescription?.sdp ?? '');
+      const answer = await fetch('/api/realtime/calls', { method: 'POST', body: form });
+      if (!answer.ok) throw new Error(await answer.text() || 'Realtime session could not be created.');
+      await pc.setRemoteDescription({ type: 'answer', sdp: await answer.text() });
+    } catch (error) { stop(); setState('error'); setResponse(error instanceof Error ? error.message : 'Unable to start realtime voice.'); }
   };
 
-  const submitText = async () => {
-    const command = commandInput.trim();
-    if (!command) return;
-    setCommandInput('');
-    await executeCommand(command);
+  const confirm = () => {
+    const command = pendingRef.current; const callId = pendingCallId.current;
+    if (!command || !callId) return;
+    pendingRef.current = null; pendingCallId.current = null; setPending(null); void executeTool(callId, command);
   };
 
-  const confirmPending = () => {
-    if (pendingCommand) void executeCommand(pendingCommand);
-  };
+  useEffect(() => { mutedRef.current = muted; if (audioRef.current) audioRef.current.muted = muted; }, [muted]);
+  useEffect(() => () => stop(), []);
 
-  const stateLabel = !supported ? 'VOICE UNSUPPORTED' : state === 'armed' ? 'READY' : state === 'listening' ? 'LISTENING' : state === 'thinking' ? 'EXECUTING' : state === 'speaking' ? 'SPEAKING' : state === 'error' ? 'ATTENTION' : 'STANDBY';
-  const orbMode = state === 'thinking' ? 'animate-spin' : state === 'speaking' ? 'animate-pulse' : enabled ? 'animate-pulse' : '';
-  const confidence = useMemo(() => state === 'thinking' ? 'ROUTING' : enabled ? (armedRef.current ? 'READY' : 'WAKE WORD') : 'OFFLINE', [enabled, state]);
+  const active = state !== 'standby' && state !== 'error';
+  const label = state === 'connecting' ? 'CONNECTING' : state === 'thinking' ? 'THINKING' : state === 'speaking' ? 'SPEAKING' : state === 'listening' ? 'LISTENING' : state === 'error' ? 'ATTENTION' : 'STANDBY';
+
+  const quick = (command: string) => { setTranscript(command); sendEvent({ type: 'conversation.item.create', item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: command }] } }); sendEvent({ type: 'response.create' }); };
 
   return (
-    <aside className="fixed bottom-5 right-5 z-[100] w-[min(460px,calc(100vw-2rem))]">
-      <div className="overflow-hidden rounded-[28px] border border-[var(--border-strong)] bg-[var(--surface)]/96 shadow-[0_30px_100px_rgba(20,24,55,0.22)] backdrop-blur-2xl">
+    <aside className="fixed bottom-5 right-5 z-[100] w-[min(480px,calc(100vw-2rem))]">
+      <audio ref={audioRef} autoPlay playsInline />
+      <div className="overflow-hidden rounded-[30px] border border-[var(--border-strong)] bg-[var(--surface)]/96 shadow-[0_30px_120px_rgba(20,24,55,0.24)] backdrop-blur-2xl">
         <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
-          <div className="flex items-center gap-3">
-            <div className={`relative flex h-10 w-10 items-center justify-center rounded-2xl border border-[var(--accent)]/40 bg-[var(--accent-soft)] text-[var(--accent)] ${orbMode}`}>
-              <span className="font-mono text-[11px] font-black">NX</span>
-              {enabled && <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-[var(--success)] ring-2 ring-[var(--surface)]" />}
-            </div>
-            <div>
-              <div className="flex items-center gap-2 text-[11px] font-black tracking-[0.12em] text-[var(--text)]">NEXOR <span className="text-[var(--accent)]">JARVIS</span></div>
-              <div className="mt-0.5 font-mono text-[7px] tracking-[0.18em] text-[var(--text-muted)]">{stateLabel} · {confidence} · SESSION {sessionStarted ? 'ACTIVE' : 'READY'}</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <button onClick={() => setMuted((value) => !value)} className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1.5 font-mono text-[7px] tracking-[0.1em] text-[var(--text-muted)] hover:text-[var(--text)]" title={muted ? 'Unmute voice' : 'Mute voice'}>{muted ? 'MUTED' : 'VOICE'}</button>
-            <button onClick={toggleListening} className={`rounded-lg px-3 py-1.5 font-mono text-[7px] font-bold tracking-[0.12em] transition ${enabled ? 'bg-[var(--accent)] text-white' : 'border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-secondary)] hover:border-[var(--accent)]/50'}`}>{enabled ? 'ONLINE' : 'ACTIVATE'}</button>
-          </div>
+          <div className="flex items-center gap-3"><div className={`relative flex h-11 w-11 items-center justify-center rounded-2xl border border-[var(--accent)]/50 bg-[var(--accent-soft)] text-[var(--accent)] ${active ? 'animate-pulse' : ''}`}><span className="font-mono text-[11px] font-black">NX</span>{active && <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-[var(--success)] ring-2 ring-[var(--surface)]" />}</div><div><div className="text-[11px] font-black tracking-[0.14em]">NEXOR <span className="text-[var(--accent)]">JARVIS</span></div><div className="mt-1 font-mono text-[7px] tracking-[0.18em] text-[var(--text-muted)]">REALTIME VOICE · {label}</div></div></div>
+          <div className="flex gap-1.5"><button onClick={() => setMuted((v) => !v)} className="rounded-lg border border-[var(--border)] px-2 py-1.5 font-mono text-[7px]">{muted ? 'MUTED' : 'VOICE'}</button><button onClick={active ? stop : start} className="rounded-lg bg-[var(--accent)] px-3 py-1.5 font-mono text-[7px] font-bold text-white">{active ? 'DISCONNECT' : 'ACTIVATE'}</button></div>
         </div>
-
-        <div className="px-4 pb-4 pt-4">
-          <div className="grid grid-cols-[76px_1fr] gap-3">
-            <button onClick={toggleListening} aria-label={enabled ? 'Stop Nexor voice' : 'Start Nexor voice'} className={`relative flex h-[76px] w-[76px] items-center justify-center overflow-hidden rounded-[22px] border ${enabled ? 'border-[var(--accent)]/60 bg-[var(--accent-soft)] text-[var(--accent)]' : 'border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-secondary)]'}`}>
-              <span className={`absolute h-12 w-12 rounded-full border border-[var(--accent)]/30 ${orbMode}`} />
-              <span className="relative text-xl">{state === 'speaking' ? '◒' : state === 'thinking' ? '◌' : enabled ? '◉' : '◌'}</span>
-            </button>
-            <div className="min-w-0">
-              <div className="font-mono text-[7px] font-semibold tracking-[0.18em] text-[var(--text-muted)]">LIVE TRANSCRIPT</div>
-              <div className="mt-1 min-h-[38px] text-[11px] leading-5 text-[var(--text)]">{transcript || 'Say “Hey Nexor” followed by an instruction.'}</div>
-              <div className="mt-2 flex gap-2 font-mono text-[6px] tracking-[0.12em] text-[var(--text-muted)]"><span>STT</span><span>•</span><span>TTS</span><span>•</span><span>MEMORY</span><span>•</span><span>TOOLS</span></div>
-            </div>
-          </div>
-
-          {pendingCommand && (
-            <div className="mt-3 rounded-2xl border border-[var(--warning)]/40 bg-[var(--warning-soft)] p-3">
-              <div className="font-mono text-[7px] font-bold tracking-[0.16em] text-[var(--warning)]">CONFIRM EXTERNAL ACTION</div>
-              <div className="mt-1 text-[9px] leading-4 text-[var(--text)]">{pendingCommand}</div>
-              <div className="mt-2 flex gap-2">
-                <button onClick={confirmPending} className="rounded-lg bg-[var(--text)] px-3 py-1.5 text-[8px] font-bold text-[var(--bg)]">CONFIRM & RUN</button>
-                <button onClick={() => setPendingCommand(null)} className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-[8px] text-[var(--text-secondary)]">CANCEL</button>
-              </div>
-            </div>
-          )}
-
-          <div className="mt-3 rounded-2xl border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5">
-            <div className="flex items-center justify-between font-mono text-[7px] tracking-[0.16em] text-[var(--text-muted)]"><span>NEXOR RESPONSE</span><span>{stateLabel}</span></div>
-            <div className="mt-1 text-[9px] leading-4 text-[var(--text-secondary)]">{lastResponse}</div>
-          </div>
-
-          <div className="mt-3 flex gap-2">
-            <input value={commandInput} onChange={(event) => setCommandInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void submitText(); }} placeholder="Type any command…" className="min-w-0 flex-1 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5 text-[9px] text-[var(--text)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]/50" />
-            <button onClick={() => void submitText()} className="rounded-xl bg-[var(--text)] px-3.5 py-2 text-[8px] font-bold text-[var(--bg)]">RUN</button>
-          </div>
-
-          <div className="mt-3 flex gap-1.5 overflow-x-auto pb-1">
-            {QUICK_COMMANDS.map((command) => <button key={command} onClick={() => void executeCommand(command)} className="shrink-0 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-1.5 text-[7px] text-[var(--text-secondary)] hover:border-[var(--accent)]/40 hover:text-[var(--accent)]">{command}</button>)}
-          </div>
-
-          {logs.length > 0 && (
-            <div className="mt-3 max-h-32 space-y-1 overflow-y-auto border-t border-[var(--border)] pt-2">
-              {logs.slice(-4).map((log) => <div key={log.id} className="flex gap-2 text-[8px] leading-4"><span className="w-8 shrink-0 font-mono text-[6px] uppercase text-[var(--text-muted)]">{log.role}</span><span className="min-w-0 flex-1 text-[var(--text-secondary)]">{log.text}</span><span className="font-mono text-[6px] text-[var(--text-muted)]">{log.time}</span></div>)}
-            </div>
-          )}
-
-          <div className="mt-3 flex items-center justify-between font-mono text-[6px] tracking-[0.12em] text-[var(--text-muted)]"><span>WAKE · HEY NEXOR</span><span>JARVIS MODE · COMMAND ROUTER</span></div>
+        <div className="px-4 py-4">
+          <div className="grid grid-cols-[84px_1fr] gap-3"><button onClick={active ? stop : start} className="relative flex h-[84px] w-[84px] items-center justify-center overflow-hidden rounded-[24px] border border-[var(--accent)]/40 bg-[var(--accent-soft)] text-[var(--accent)]"><span className={`absolute h-12 w-12 rounded-full border border-[var(--accent)]/30 ${active ? 'animate-ping' : ''}`} /><span className="relative font-mono text-xl">{state === 'thinking' ? '◌' : '◉'}</span></button><div className="min-w-0"><div className="font-mono text-[7px] tracking-[0.18em] text-[var(--text-muted)]">LIVE TRANSCRIPT</div><div className="mt-1 min-h-10 text-[11px] leading-5">{transcript || response}</div><div className="mt-2 font-mono text-[6px] tracking-[0.14em] text-[var(--text-muted)]">SEMANTIC VAD · INTERRUPTION · SPEECH-TO-SPEECH · TOOL CALLING</div></div></div>
+          {pending && <div className="mt-3 rounded-2xl border border-amber-400/40 bg-amber-400/10 p-3"><div className="font-mono text-[7px] tracking-[0.16em] text-amber-600">APPROVAL REQUIRED</div><div className="mt-1 text-[9px]">{pending}</div><div className="mt-2 flex gap-2"><button onClick={confirm} className="rounded-lg bg-[var(--accent)] px-3 py-2 text-[8px] font-bold text-white">CONFIRM</button><button onClick={() => { pendingRef.current = null; pendingCallId.current = null; setPending(null); }} className="rounded-lg border border-[var(--border)] px-3 py-2 text-[8px]">CANCEL</button></div></div>}
+          <div className="mt-3 grid grid-cols-2 gap-2">{QUICK_COMMANDS.map((command) => <button key={command} onClick={() => quick(command)} className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-2 py-2 text-left text-[8px] text-[var(--text-secondary)] hover:border-[var(--accent)]/40 hover:text-[var(--text)]">{command}</button>)}</div>
+          {logs.length > 0 && <div className="mt-3 max-h-28 space-y-1.5 overflow-auto rounded-2xl border border-[var(--border)] bg-[var(--surface-2)] p-2.5">{logs.slice(-4).map((log) => <div key={log.id} className="flex gap-2 text-[8px]"><span className="w-10 shrink-0 font-mono text-[6px] text-[var(--text-muted)]">{log.role === 'you' ? 'YOU' : 'NX'} · {log.time}</span><span className="text-[var(--text-secondary)]">{log.text}</span></div>)}</div>}
         </div>
       </div>
     </aside>
