@@ -17,6 +17,8 @@ export async function POST(req: NextRequest) {
     const item = await prisma.outreach.findUnique({ where: { id }, include: { lead: true } });
     if (!item) return NextResponse.json({ success: false, error: 'WhatsApp outreach not found' }, { status: 404 });
     if (item.channel !== OutreachChannel.WHATSAPP) return NextResponse.json({ success: false, error: 'This action is only available for WhatsApp outreach' }, { status: 400 });
+
+    // Only approval states may be promoted to APPROVED; other terminal/active states must not be sent again.
     const approvalPending = item.status === OutreachStatus.APPROVAL_REQUIRED || item.status === OutreachStatus.DRAFT;
     if (!approvalPending && item.status !== OutreachStatus.APPROVED) {
       return NextResponse.json({ success: false, error: `This message is ${item.status.toLowerCase()} and cannot be sent from the control room.` }, { status: 409 });
