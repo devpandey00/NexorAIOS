@@ -47,8 +47,6 @@ export async function runCampaign(campaignId: string) {
       return { success: false, campaignId, discovered: 0, processed: 0, successful: 0, failed: 0, qualified: 0, provider: searchResult.provider, queries: discoveryQueries, retryScheduled, attempts: attemptsUsed, error: message };
     }
     let processed = 0, successful = 0, failed = 0, qualified = 0; const niche = inferNiche(campaign.query); const country = inferCountry(campaign.query);
-    // Vercel functions have a hard execution ceiling. Keep each invocation bounded;
-    // the durable job remains queued for another worker pass when more leads are needed.
     const maxLeads = Math.min(Math.max(Number(process.env.CAMPAIGN_MAX_LEADS_PER_RUN ?? 3), 1), 10);
     const leadsToProcess = searchResult.leads.slice(0, maxLeads);
     for (const result of leadsToProcess) {
