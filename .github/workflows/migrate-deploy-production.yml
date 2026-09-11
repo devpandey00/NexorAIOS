@@ -3,9 +3,6 @@ name: Deploy Production Migrations
 on:
   push:
     branches: [main]
-    paths:
-      - 'packages/database/prisma/migrations/**'
-      - 'packages/database/prisma/schema.prisma'
   workflow_dispatch:
 
 permissions:
