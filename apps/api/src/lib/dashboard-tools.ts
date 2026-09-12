@@ -3,7 +3,7 @@ export interface NexorTool { slug: string; name: string; group: string; descript
 
 const groups: Array<[string, string[]]> = [
   ['Command & Autopilot', ['Autopilot','AI Command Center','Automation Center','Message Drafter']],
-  ['Lead Generation', ['Lead Finder','Google Maps Prospecting','Directory Prospecting','Query Generator','Industry Rotation','Location Rotation','Service Rotation','Search Intent Rotation','Lead Import','Lead Deduplication','Company Prospecting','Influencer Prospecting','Job Search','Project Finder']],
+  ['Lead Generation', ['Lead Finder','Opportunity Hunter','Google Maps Prospecting','Directory Prospecting','Query Generator','Industry Rotation','Location Rotation','Service Rotation','Search Intent Rotation','Lead Import','Lead Deduplication','Company Prospecting','Influencer Prospecting','Job Search','Project Finder']],
   ['Sales & CRM', ['Lead Inbox','Lead Scoring','ICP Scoring','Requirement Detector','Service Matcher','CRM Pipeline','Deal Tracker','Task Manager','Meeting Tracker','Proposal Tracker']],
   ['WhatsApp & Email', ['WhatsApp Automation','WhatsApp Drafts','WhatsApp Approval','WhatsApp Sending','Message Sender','WhatsApp Inbox','Messenger','Reply Classifier','Email Drafts','Email Approval','Email Sending','Email Inbox','Follow-up Manager']],
   ['Social Media', ['Social Media Manager','Content Calendar','Instagram Manager','Facebook Manager','LinkedIn Manager','X Manager','YouTube Manager','Social Scheduler','Social Inbox','Social Analytics','Hashtag Research']],
@@ -17,11 +17,11 @@ const groups: Array<[string, string[]]> = [
 ];
 
 const readyTools = new Set([
-  'Autopilot','Lead Finder','Lead Inbox','Company Prospecting','Influencer Prospecting','Job Search','Project Finder','Message Drafter','Message Sender','WhatsApp Automation','WhatsApp Drafts','Messenger','Content Calendar','Social Media Manager','Video Editing',
+  'Autopilot','Lead Finder','Opportunity Hunter','Lead Inbox','Company Prospecting','Influencer Prospecting','Job Search','Project Finder','Message Drafter','Message Sender','WhatsApp Automation','WhatsApp Drafts','Messenger','Content Calendar','Social Media Manager','Video Editing',
   'Lead Hunter Pro','Website Audit Bot','Social Audit Bot','Personalized Outreach','Follow-up Autopilot','Lead Qualification AI','Proposal Generator','Sales Call Copilot','Deal Closer','Trend Radar','Content Factory','Reel Script Generator','Creative Director AI','Content Calendar AI','Performance Learner','Repurpose Engine','Competitor Watch','Daily CEO Briefing','Ask Nexor AI','AI Task Manager','AI Memory','Risk Radar','Cashflow Dashboard','Invoice Reminder AI','Client Profitability','Monthly P&L Assistant','Payment Follow-up','Client Health Score','Monthly Report Generator','Campaign Performance Report','Client Renewal Radar',
 ]);
 
-export const nexorTools: NexorTool[] = groups.flatMap(([group, names]) => names.map(name => ({ slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''), name, group, description: `Workspace for ${name.toLowerCase()} inside NexorAIOS.`, status: readyTools.has(name) ? 'ready' : 'connect' })));
+export const nexorTools: NexorTool[] = groups.flatMap(([group, names]) => names.map(name => ({ slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''), name, group, description: name === 'Opportunity Hunter' ? 'Find, research and rank businesses by verified growth opportunity for Nexor Media.' : `Workspace for ${name.toLowerCase()} inside NexorAIOS.`, status: readyTools.has(name) ? 'ready' : 'connect' })));
 export const toolGroups = groups.map(([name]) => name);
 export const toolCount = nexorTools.length;
 export function getTool(slug: string): NexorTool | undefined { return nexorTools.find(tool => tool.slug === slug); }
