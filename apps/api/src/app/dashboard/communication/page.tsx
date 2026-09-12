@@ -65,6 +65,35 @@ export default function CommunicationCenter() {
   const [data, setData] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [health, setHealth] = useState<Array<{ name: string; status: string }>>([]);
+  const [leads, setLeads] = useState<Array<{ id: string; businessName: string; whatsapp: string | null; email: string | null }>>([]);
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [composerLeadId, setComposerLeadId] = useState('');
+  const [composerChannel, setComposerChannel] = useState<'WHATSAPP' | 'EMAIL' | 'INSTAGRAM' | 'FACEBOOK' | 'LINKEDIN'>('WHATSAPP');
+  const [composerMessage, setComposerMessage] = useState('');
+  const [composerScheduleAt, setComposerScheduleAt] = useState('');
+  const [composerBusy, setComposerBusy] = useState(false);
+  const [composerResult, setComposerResult] = useState('');
+
+  const loadHealth = useCallback(async () => {
+    try {
+      const response = await fetch('/api/health/integrations', { cache: 'no-store' });
+      const json = await response.json();
+      if (Array.isArray(json?.status)) setHealth(json.status);
+    } catch {
+      // Health strip is best-effort — a failed probe here should not block the rest of the dashboard.
+    }
+  }, []);
+
+  const loadLeads = useCallback(async () => {
+    try {
+      const response = await fetch('/api/leads', { cache: 'no-store' });
+      const json = await response.json();
+      if (Array.isArray(json?.data)) setLeads(json.data);
+    } catch {
+      // Composer lead picker degrades to a manual leadId paste if this fails.
+    }
+  }, []);
 
   const load = useCallback(async () => {
     const params = new URLSearchParams();
@@ -88,11 +117,73 @@ export default function CommunicationCenter() {
     }
   }, [channel, range, customFrom, customTo]);
 
+  async function submitComposer(mode: 'draft' | 'send' | 'schedule') {
+    if (!composerLeadId || !composerMessage.trim()) { setComposerResult('Pick a lead and write a message first.'); return; }
+    setComposerBusy(true);
+    setComposerResult('');
+    try {
+      const createRes = await fetch('/api/outreach', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'create', leadId: composerLeadId, channel: composerChannel, message: composerMessage.trim() }),
+      });
+      const created = await createRes.json();
+      if (!createRes.ok || !created.success) throw new Error(created.error || 'Could not save draft');
+      const outreachId = created.outreach.id as string;
+
+      if (mode === 'draft') {
+        setComposerResult('Saved as draft.');
+      } else {
+        const approveRes = await fetch('/api/outreach', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: outreachId, action: 'approve' }),
+        });
+        const approved = await approveRes.json();
+        if (!approveRes.ok || !approved.success) throw new Error(approved.error || 'Approval failed');
+
+        if (mode === 'send') {
+          const sendRes = await fetch('/api/outreach/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: outreachId }),
+          });
+          const sent = await sendRes.json();
+          if (!sendRes.ok || !sent.success) throw new Error(sent.error || 'Provider send failed');
+          setComposerResult(sent.manual ? `Manual action required — open ${sent.recipient} and send yourself, then mark sent.` : `Sent. Provider ID: ${sent.outreach?.providerMessageId ?? sent.outreach?.status ?? 'confirmed'}.`);
+        } else {
+          if (!composerScheduleAt) throw new Error('Pick a schedule time first.');
+          const scheduleRes = await fetch('/api/outreach/schedule', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: outreachId, scheduledAt: new Date(composerScheduleAt).toISOString() }),
+          });
+          const scheduled = await scheduleRes.json();
+          if (!scheduleRes.ok || !scheduled.success) throw new Error(scheduled.error || 'Scheduling failed');
+          setComposerResult(`Scheduled for ${new Date(composerScheduleAt).toLocaleString()}.`);
+        }
+      }
+      setComposerMessage('');
+      void load();
+    } catch (err) {
+      setComposerResult(err instanceof Error ? `Failed: ${err.message}` : 'Failed: unknown error');
+    } finally {
+      setComposerBusy(false);
+    }
+  }
+
   useEffect(() => {
     void load();
     const timer = window.setInterval(() => void load(), 30_000);
     return () => window.clearInterval(timer);
   }, [load]);
+
+  useEffect(() => {
+    void loadHealth();
+    void loadLeads();
+    const timer = window.setInterval(() => void loadHealth(), 60_000);
+    return () => window.clearInterval(timer);
+  }, [loadHealth, loadLeads]);
 
   const statCards = useMemo(
     () => [
@@ -116,10 +207,70 @@ export default function CommunicationCenter() {
                 WHATSAPP · EMAIL · INSTAGRAM · FACEBOOK · LINKEDIN
               </div>
             </div>
-            <button onClick={() => void load()} className="rounded-xl border border-[var(--border)] px-3 py-2 text-[9px] text-[var(--text-secondary)] hover:text-[var(--text)]">
-              REFRESH
-            </button>
+            <div className="flex gap-2">
+              <button onClick={() => setComposerOpen((v) => !v)} className="rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-2 text-[9px] font-semibold text-[var(--accent)]">
+                {composerOpen ? 'CLOSE COMPOSER' : '+ NEW MESSAGE'}
+              </button>
+              <button onClick={() => void load()} className="rounded-xl border border-[var(--border)] px-3 py-2 text-[9px] text-[var(--text-secondary)] hover:text-[var(--text)]">
+                REFRESH
+              </button>
+            </div>
           </section>
+
+          <section className="flex flex-wrap gap-2">
+            {health.map((h) => (
+              <div key={h.name} className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-1.5">
+                <span className={['h-1.5 w-1.5 rounded-full', h.status === 'CONNECTED' ? 'bg-emerald-400' : h.status === 'ERROR' ? 'bg-red-400' : 'bg-amber-400'].join(' ')} />
+                <span className="text-[8px] font-semibold uppercase text-[var(--text)]">{h.name}</span>
+                <span className="font-mono text-[7px] text-[var(--text-muted)]">{h.status}</span>
+              </div>
+            ))}
+            {!health.length && <div className="text-[8px] text-[var(--text-muted)]">Provider health unavailable.</div>}
+          </section>
+
+          {composerOpen && (
+            <section className="nexor-panel p-5">
+              <div className="mb-3 text-[11px] font-semibold text-[var(--text)]">Compose Message</div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block font-mono text-[7px] uppercase tracking-[0.1em] text-[var(--text-muted)]">Lead</label>
+                  <select value={composerLeadId} onChange={(e) => setComposerLeadId(e.target.value)} className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-[9px] text-[var(--text)]">
+                    <option value="">Select a lead…</option>
+                    {leads.map((l) => (
+                      <option key={l.id} value={l.id}>{l.businessName}{l.whatsapp ? ` · ${l.whatsapp}` : ''}{l.email ? ` · ${l.email}` : ''}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block font-mono text-[7px] uppercase tracking-[0.1em] text-[var(--text-muted)]">Channel</label>
+                  <select value={composerChannel} onChange={(e) => setComposerChannel(e.target.value as typeof composerChannel)} className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-[9px] text-[var(--text)]">
+                    <option value="WHATSAPP">WhatsApp (automated send)</option>
+                    <option value="EMAIL">Email (automated send)</option>
+                    <option value="INSTAGRAM">Instagram (manual — no automated DM API)</option>
+                    <option value="FACEBOOK">Facebook (manual — no automated DM API)</option>
+                    <option value="LINKEDIN">LinkedIn (manual — no automated DM API)</option>
+                  </select>
+                </div>
+              </div>
+              <div className="mt-3">
+                <label className="mb-1 block font-mono text-[7px] uppercase tracking-[0.1em] text-[var(--text-muted)]">Message</label>
+                <textarea value={composerMessage} onChange={(e) => setComposerMessage(e.target.value)} rows={4} placeholder="Write the message…" className="w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-[10px] text-[var(--text)] outline-none placeholder:text-[var(--text-muted)]" />
+              </div>
+              {['INSTAGRAM', 'FACEBOOK', 'LINKEDIN'].includes(composerChannel) && (
+                <div className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2 text-[8px] text-amber-400">
+                  This platform has no supported automated DM API here — sending will mark the outreach MANUAL_REQUIRED with the lead&apos;s saved profile link, for you to send by hand and confirm.
+                </div>
+              )}
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <input type="datetime-local" value={composerScheduleAt} onChange={(e) => setComposerScheduleAt(e.target.value)} className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1.5 text-[9px] text-[var(--text)]" />
+                <button disabled={composerBusy} onClick={() => void submitComposer('draft')} className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-[9px] text-[var(--text-secondary)] disabled:opacity-40">SAVE DRAFT</button>
+                <button disabled={composerBusy} onClick={() => void submitComposer('schedule')} className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-[9px] text-[var(--text-secondary)] disabled:opacity-40">SCHEDULE</button>
+                <button disabled={composerBusy} onClick={() => void submitComposer('send')} className="rounded-lg bg-[var(--accent)] px-4 py-2 text-[9px] font-bold text-black disabled:opacity-40">{composerBusy ? 'SENDING…' : 'SEND NOW'}</button>
+                <button disabled={composerBusy} onClick={() => { setComposerOpen(false); setComposerResult(''); }} className="rounded-lg px-3 py-2 text-[9px] text-[var(--text-muted)]">CANCEL</button>
+              </div>
+              {composerResult && <div className="mt-3 rounded-lg bg-[var(--surface-2)] px-3 py-2 text-[9px] text-[var(--text-secondary)]">{composerResult}</div>}
+            </section>
+          )}
 
           {error && (
             <section className="rounded-xl border border-amber-500/30 bg-amber-500/[0.06] px-4 py-3 text-[10px] text-amber-400">
