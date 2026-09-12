@@ -1,0 +1,115 @@
+name: Land production fixes on main
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  land:
+    if: github.event.head_commit.message != 'fix: land OpenWA media and OIDC token refresh'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('apps/api/src/lib/openwa.ts'); s=p.read_text()
+          if 'type OpenWAMediaKind' not in s:
+            marker='export async function sendOpenWAText(to: string, text: string) {'
+            block="""type OpenWAMediaKind = 'image' | 'video' | 'audio' | 'document';
+
+          const MEDIA_ENDPOINT: Record<OpenWAMediaKind, string> = {
+            image: 'send-image', video: 'send-video', audio: 'send-audio', document: 'send-document',
+          };
+
+          async function sendOpenWAMedia(kind: OpenWAMediaKind, to: string, mediaUrl: string, options: { caption?: string; filename?: string; mimetype?: string } = {}) {
+            const { baseUrl, apiKey, sessionId } = getConfig();
+            if (!baseUrl || !apiKey || !sessionId) throw new Error('OpenWA is not configured: add OPENWA_BASE_URL, OPENWA_API_KEY and OPENWA_SESSION_ID in Vercel Production.');
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), OPENWA_TIMEOUT_MS);
+            const body: Record<string, unknown> = { chatId: chatIdFromPhone(to), url: mediaUrl };
+            if (options.caption) body.caption = options.caption;
+            if (options.filename) body.filename = options.filename;
+            if (options.mimetype) body.mimetype = options.mimetype;
+            try {
+              const response = await fetch(`${baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/messages/${MEDIA_ENDPOINT[kind]}`, { method: 'POST', headers: { 'X-API-Key': apiKey, 'Content-Type': 'application/json' }, body: JSON.stringify(body), cache: 'no-store', signal: controller.signal });
+              const data = await response.json().catch(() => ({}));
+              if (!response.ok) throw new Error(String(data?.message ?? data?.error ?? `OpenWA ${kind} send failed (${response.status})`));
+              return (data?.messageId ?? data?.id ?? data?.message?.id) as string | undefined;
+            } catch (error) {
+              if (error instanceof DOMException && error.name === 'AbortError') throw new Error(`OpenWA request timed out after ${OPENWA_TIMEOUT_MS / 1000}s.`);
+              throw error;
+            } finally { clearTimeout(timeout); }
+          }
+          export async function sendOpenWAImage(to: string, mediaUrl: string, caption?: string) { return sendOpenWAMedia('image', to, mediaUrl, { caption }); }
+          export async function sendOpenWAVideo(to: string, mediaUrl: string, caption?: string) { return sendOpenWAMedia('video', to, mediaUrl, { caption }); }
+          export async function sendOpenWAAudio(to: string, mediaUrl: string) { return sendOpenWAMedia('audio', to, mediaUrl); }
+          export async function sendOpenWADocument(to: string, mediaUrl: string, filename: string, options: { caption?: string; mimetype?: string } = {}) { return sendOpenWAMedia('document', to, mediaUrl, { ...options, filename }); }
+
+          """
+            if marker not in s: raise SystemExit('openwa marker missing')
+            p.write_text(s.replace(marker, block+marker, 1))
+          p=Path('apps/api/src/lib/outreach-sender.ts'); s=p.read_text()
+          s=s.replace("import { getOpenWAStatus, sendOpenWAText } from './openwa';", "import { getOpenWAStatus, sendOpenWAText, sendOpenWAImage, sendOpenWAVideo, sendOpenWAAudio, sendOpenWADocument } from './openwa';", 1)
+          s=s.replace('async function sendWhatsApp(to:string, message:string, templateParameter:string) {', 'async function sendWhatsApp(to:string, message:string, templateParameter:string, media?:{url:string;type:string|null;caption:string|null}) {', 1)
+          s=s.replace('if(openwa.configured) return sendOpenWAText(to,message);', "if(openwa.configured){ if(media?.url){ const kind=(media.type||'').toLowerCase(); const caption=media.caption||message||undefined; if(kind==='image') return sendOpenWAImage(to,media.url,caption); if(kind==='video') return sendOpenWAVideo(to,media.url,caption); if(kind==='audio') return sendOpenWAAudio(to,media.url); if(kind==='document'){ const filename=media.url.split('/').pop()||'document'; return sendOpenWADocument(to,media.url,filename,{caption}); } throw new Error(`Unsupported WhatsApp media type: ${media.type}`); } return sendOpenWAText(to,message); }", 1)
+          s=s.replace('providerMessageId=await sendWhatsApp(recipient,outreach.message,outreach.message);', 'const media=outreach.mediaUrl?{url:outreach.mediaUrl,type:outreach.mediaType,caption:outreach.mediaCaption}:undefined;providerMessageId=await sendWhatsApp(recipient,outreach.message,outreach.message,media);', 1)
+          s=s.replace('await tx.message.create({data:{conversationId:conversation.id,direction:MessageDirection.OUTBOUND,content:outreach.message,providerMessageId}});', 'await tx.message.create({data:{conversationId:conversation.id,direction:MessageDirection.OUTBOUND,content:outreach.message,providerMessageId,mediaUrl:outreach.mediaUrl,mediaType:outreach.mediaType}});', 1)
+          p.write_text(s)
+          p=Path('packages/database/prisma/schema.prisma'); s=p.read_text()
+          if 'mediaUrl String? @map("media_url")' not in s:
+            s=s.replace('  message String @db.Text\n  approvedAt', '  message String @db.Text\n  mediaUrl String? @map("media_url") @db.Text\n  mediaType String? @map("media_type") @db.VarChar(20)\n  mediaCaption String? @map("media_caption") @db.Text\n  approvedAt', 1)
+            s=s.replace('  content String @db.Text\n  providerMessageId', '  content String @db.Text\n  mediaUrl String? @map("media_url") @db.Text\n  mediaType String? @map("media_type") @db.VarChar(20)\n  providerMessageId', 1)
+            p.write_text(s)
+          fetch='''          fetch_token() {
+            curl --silent --show-error --max-time 15 \\
+              -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \\
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=nexoraios-production" \\
+              | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
+          }
+          '''
+          for fn in ['automation-maintenance.yml','automation-workers.yml','emergency-outbound-run.yml','lead-discovery-worker.yml','production-outbound-worker.yml']:
+            p=Path('.github/workflows')/fn; s=p.read_text()
+            s=re.sub(r'\n      - name: Acquire GitHub OIDC machine token\n        id: oidc\n        uses: actions/github-script@v8\n        with:\n          script: \|\n            const token = await core\.getIDToken\(\'nexoraios-production\'\);\n            core\.setOutput\(\'token\', token\);\n', '\n', s, count=1)
+            s=s.replace('\n          GITHUB_OIDC_TOKEN: ${{ steps.oidc.outputs.token }}','')
+            if 'call() {' in s and 'fetch_token() {' not in s:
+              s=s.replace('          call() {',fetch+'          call() {',1)
+              s=s.replace('local name="$1" url="$2" method="${3:-GET}" body="${4:-}" file code','local name="$1" url="$2" method="${3:-GET}" body="${4:-}" file code token',1)
+              s=s.replace('            file="$(mktemp)"','            token="$(fetch_token)"\n            file="$(mktemp)"',1)
+              s=s.replace('$GITHUB_OIDC_TOKEN','$token')
+            else:
+              if 'fetch_token() {' not in s: s=s.replace('          set -euo pipefail\n','          set -euo pipefail\n'+fetch,1)
+              if 'token="$(fetch_token)"' not in s:
+                s=s.replace('          response_file="$(mktemp)"','          token="$(fetch_token)"\n          response_file="$(mktemp)"',1)
+                s=s.replace('          body_file="$(mktemp)"','          token="$(fetch_token)"\n          body_file="$(mktemp)"',1)
+              s=s.replace('$GITHUB_OIDC_TOKEN','$token')
+            if 'approval_file="$(mktemp)"' in s and 'approval_token="$(fetch_token)"' not in s:
+              s=s.replace('          approval_file="$(mktemp)"','          approval_token="$(fetch_token)"\n          approval_file="$(mktemp)"',1)
+              s=s.replace('$GITHUB_OIDC_TOKEN','$approval_token')
+            p.write_text(s)
+          PY
+          mkdir -p packages/database/prisma/migrations/20260912090000_add_outreach_media
+          cat > packages/database/prisma/migrations/20260912090000_add_outreach_media/migration.sql <<'SQL'
+          -- Add WhatsApp/media attachment support to outreach records.
+          -- Safe, additive, nullable columns only. No data loss, no destructive change.
+          ALTER TABLE "public"."outreach"
+            ADD COLUMN IF NOT EXISTS "media_url" TEXT,
+            ADD COLUMN IF NOT EXISTS "media_type" VARCHAR(20),
+            ADD COLUMN IF NOT EXISTS "media_caption" TEXT;
+
+          ALTER TABLE "public"."messages"
+            ADD COLUMN IF NOT EXISTS "media_url" TEXT,
+            ADD COLUMN IF NOT EXISTS "media_type" VARCHAR(20);
+          SQL
+          git diff --check
+          git add apps/api/src/lib/openwa.ts apps/api/src/lib/outreach-sender.ts packages/database/prisma/schema.prisma .github/workflows packages/database/prisma/migrations/20260912090000_add_outreach_media/migration.sql
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix: land OpenWA media and OIDC token refresh'
+          git push origin HEAD:main
