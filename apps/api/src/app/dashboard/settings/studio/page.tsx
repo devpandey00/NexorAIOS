@@ -1,6 +1,6 @@
 'use client';
 import{useEffect,useRef,useState}from'react';
-import Link from'react/link';
+import Link from'next/link';
 import DashboardLayout from'@/components/dashboard/DashboardLayout';
 const automation=[['master_autopilot','Master Autopilot'],['outbound_enabled','Outbound communications'],['campaign_discovery','Automatic lead discovery'],['scheduler','Durable automation scheduler'],['job_autopilot','AI job autopilot'],['autopilot','Daily business autopilot'],['whatsapp_generation','WhatsApp generation'],['whatsapp_sending','WhatsApp sending'],['followups','Automatic follow-ups'],['outreach','Automatic outreach queue'],['social_publishing','Social publishing'],['daily_reports','Daily reports'],['growth_reports','Growth reports']];
 const defaults={theme:'Executive Pearl',accent:'Indigo',density:'Comfortable',font_scale:'Default',founder_name:'Dev',founder_role:'Founder · Nexor Media',avatar_url:'/founder-avatar.svg'};
