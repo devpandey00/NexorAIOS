@@ -14,11 +14,6 @@ datasource db {
   schemas  = ["infra", "public"]
 }
 
-// -----------------------------------------------------------------------------
-// Infrastructure: Seed execution tracking
-// Ensures idempotent, auditable seed runs across environments.
-// -----------------------------------------------------------------------------
-
 model SeedExecution {
   id         String   @id @default(uuid()) @db.Uuid
   name       String   @unique @db.VarChar(255)
@@ -27,7 +22,6 @@ model SeedExecution {
   durationMs Int      @map("duration_ms")
   checksum   String?  @db.VarChar(64)
   metadata   Json?    @db.JsonB
-
   @@map("seed_executions")
   @@schema("infra")
 }
@@ -37,7 +31,6 @@ enum OutboxEventStatus {
   PROCESSING
   COMPLETED
   FAILED
-
   @@map("outbox_event_status")
   @@schema("infra")
 }
@@ -56,7 +49,6 @@ model OutboxEvent {
   organizationId String?           @map("organization_id") @db.Uuid
   createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
   processedAt    DateTime?         @map("processed_at") @db.Timestamptz(6)
-
   @@index([status, createdAt], map: "idx_outbox_events_status_created")
   @@index([aggregateType, aggregateId], map: "idx_outbox_events_aggregate")
   @@index([organizationId], map: "idx_outbox_events_organization")
@@ -75,7 +67,6 @@ enum LeadStatus {
   PROPOSAL_SENT
   WON
   LOST
-
   @@map("lead_status")
   @@schema("public")
 }
@@ -87,7 +78,6 @@ enum MeetingStatus {
   CANCELLED
   COMPLETED
   NO_SHOW
-
   @@map("meeting_status")
   @@schema("public")
 }
@@ -98,7 +88,6 @@ enum OpportunityStage {
   PROPOSAL
   WON
   LOST
-
   @@map("opportunity_stage")
   @@schema("public")
 }
@@ -109,7 +98,6 @@ enum ProposalStatus {
   ACCEPTED
   REJECTED
   EXPIRED
-
   @@map("proposal_status")
   @@schema("public")
 }
@@ -158,7 +146,6 @@ enum CampaignStatus {
   PARTIALLY_COMPLETED
   FAILED
   CANCELLED
-
   @@map("campaign_status")
   @@schema("public")
 }
@@ -170,7 +157,6 @@ enum JobStatus {
   FAILED
   RETRYING
   CANCELLED
-
   @@map("job_status")
   @@schema("public")
 }
@@ -190,7 +176,6 @@ enum JobType {
   OUTREACH
   FOLLOW_UP
   ANALYTICS
-
   @@map("job_type")
   @@schema("public")
 }
@@ -204,7 +189,6 @@ enum OutreachStatus {
   SENT
   FAILED
   CANCELLED
-
   @@map("outreach_status")
   @@schema("public")
 }
@@ -216,7 +200,6 @@ enum OutreachChannel {
   LINKEDIN
   FACEBOOK
   SMS
-
   @@map("outreach_channel")
   @@schema("public")
 }
@@ -228,7 +211,6 @@ enum ConversationChannel {
   LINKEDIN
   FACEBOOK
   SMS
-
   @@map("conversation_channel")
   @@schema("public")
 }
@@ -236,7 +218,6 @@ enum ConversationChannel {
 enum MessageDirection {
   INBOUND
   OUTBOUND
-
   @@map("message_direction")
   @@schema("public")
 }
@@ -246,7 +227,6 @@ enum FollowUpStatus {
   SCHEDULED
   COMPLETED
   CANCELLED
-
   @@map("follow_up_status")
   @@schema("public")
 }
@@ -256,7 +236,6 @@ enum TaskStatus {
   IN_PROGRESS
   COMPLETED
   CANCELLED
-
   @@map("task_status")
   @@schema("public")
 }
@@ -268,7 +247,6 @@ enum SocialPlatform {
   YOUTUBE
   X
   TIKTOK
-
   @@map("social_platform")
   @@schema("public")
 }
@@ -378,6 +356,9 @@ model Outreach {
   channel OutreachChannel
   status OutreachStatus @default(DRAFT)
   message String @db.Text
+  mediaUrl String? @map("media_url") @db.Text
+  mediaType String? @map("media_type") @db.VarChar(20)
+  mediaCaption String? @map("media_caption") @db.Text
   approvedAt DateTime? @map("approved_at") @db.Timestamptz(6)
   scheduledAt DateTime? @map("scheduled_at") @db.Timestamptz(6)
   sentAt DateTime? @map("sent_at") @db.Timestamptz(6)
@@ -414,6 +395,8 @@ model Message {
   conversationId String @map("conversation_id") @db.Uuid
   direction MessageDirection
   content String @db.Text
+  mediaUrl String? @map("media_url") @db.Text
+  mediaType String? @map("media_type") @db.VarChar(20)
   providerMessageId String? @map("provider_message_id") @db.VarChar(255)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
