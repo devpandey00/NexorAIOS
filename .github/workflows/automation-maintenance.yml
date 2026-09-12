@@ -2,11 +2,8 @@ name: Nexor scheduled automation
 
 on:
   schedule:
-    # Job/opportunity discovery every 2 hours.
     - cron: '0 */2 * * *'
-    # Daily autopilot at 10:00 UTC (15:30 IST).
     - cron: '0 10 * * *'
-    # Daily report at 13:00 UTC (18:30 IST).
     - cron: '0 13 * * *'
   workflow_dispatch:
     inputs:
@@ -52,18 +49,9 @@ jobs:
           fi
           echo "task=$task" >> "$GITHUB_OUTPUT"
 
-      - name: Acquire GitHub OIDC machine token
-        id: oidc
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const token = await core.getIDToken('nexoraios-production');
-            core.setOutput('token', token);
-
       - name: Run scheduled Nexor worker
         env:
           NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
-          GITHUB_OIDC_TOKEN: ${{ steps.oidc.outputs.token }}
           TASK: ${{ steps.task.outputs.task }}
         run: |
           set -euo pipefail
@@ -73,12 +61,16 @@ jobs:
             reports) path="/api/cron/reports/email" ;;
             *) echo "Unknown task: $TASK"; exit 1 ;;
           esac
+          token="$(curl --silent --show-error --max-time 15 \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=nexoraios-production" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
           body_file="$(mktemp)"
           echo "Running $path"
           http_code="$(curl --silent --show-error --retry 2 --retry-delay 3 --retry-all-errors --max-time 120 \
             -o "$body_file" -w '%{http_code}' \
-            -H "X-Nexor-Machine-Token: $GITHUB_OIDC_TOKEN" \
-            -H "Authorization: Bearer $GITHUB_OIDC_TOKEN" \
+            -H "X-Nexor-Machine-Token: $token" \
+            -H "Authorization: Bearer $token" \
             "$NEXOR_BASE_URL$path")"
           cat "$body_file"
           echo

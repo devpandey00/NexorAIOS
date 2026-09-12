@@ -79,6 +79,63 @@ export async function startOpenWASession() {
   };
 }
 
+type OpenWAMediaKind = 'image' | 'video' | 'audio' | 'document';
+
+const MEDIA_ENDPOINT: Record<OpenWAMediaKind, string> = {
+  image: 'send-image',
+  video: 'send-video',
+  audio: 'send-audio',
+  document: 'send-document',
+};
+
+async function sendOpenWAMedia(kind: OpenWAMediaKind, to: string, mediaUrl: string, options: { caption?: string; filename?: string; mimetype?: string } = {}) {
+  const { baseUrl, apiKey, sessionId } = getConfig();
+  if (!baseUrl || !apiKey || !sessionId) {
+    throw new Error('OpenWA is not configured: add OPENWA_BASE_URL, OPENWA_API_KEY and OPENWA_SESSION_ID in Vercel Production.');
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), OPENWA_TIMEOUT_MS);
+  const body: Record<string, unknown> = { chatId: chatIdFromPhone(to), url: mediaUrl };
+  if (options.caption) body.caption = options.caption;
+  if (options.filename) body.filename = options.filename;
+  if (options.mimetype) body.mimetype = options.mimetype;
+  try {
+    const response = await fetch(`${baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/messages/${MEDIA_ENDPOINT[kind]}`, {
+      method: 'POST',
+      headers: { 'X-API-Key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const providerMessage = data?.message ?? data?.error ?? `OpenWA ${kind} send failed (${response.status})`;
+      throw new Error(String(providerMessage));
+    }
+    return (data?.messageId ?? data?.id ?? data?.message?.id) as string | undefined;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error(`OpenWA request timed out after ${OPENWA_TIMEOUT_MS / 1000}s.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function sendOpenWAImage(to: string, mediaUrl: string, caption?: string) {
+  return sendOpenWAMedia('image', to, mediaUrl, { caption });
+}
+export async function sendOpenWAVideo(to: string, mediaUrl: string, caption?: string) {
+  return sendOpenWAMedia('video', to, mediaUrl, { caption });
+}
+export async function sendOpenWAAudio(to: string, mediaUrl: string) {
+  return sendOpenWAMedia('audio', to, mediaUrl);
+}
+export async function sendOpenWADocument(to: string, mediaUrl: string, filename: string, options: { caption?: string; mimetype?: string } = {}) {
+  return sendOpenWAMedia('document', to, mediaUrl, { ...options, filename });
+}
+
 export async function sendOpenWAText(to: string, text: string) {
   const { baseUrl, apiKey, sessionId } = getConfig();
   if (!baseUrl || !apiKey || !sessionId) {
