@@ -37,6 +37,7 @@ async function openwaFetch(path: string, init: RequestInit = {}, requireSession 
       ...init,
       headers: {
         'X-API-Key': apiKey,
+        'Authorization': `Bearer ${apiKey}`,
         ...(init.headers ?? {}),
       },
       cache: 'no-store',
@@ -76,8 +77,6 @@ async function resolveSessionId() {
     throw new Error(`OpenWA session "${sessionId}" was not found. Available sessions: ${available || 'none'}.`);
   } catch (error) {
     if (error instanceof Error && error.message.includes('OpenWA session')) throw error;
-    // Keep backwards compatibility with a valid UUID when the deployment key is session-scoped
-    // and cannot list the global session collection.
     return sessionId;
   }
 }
