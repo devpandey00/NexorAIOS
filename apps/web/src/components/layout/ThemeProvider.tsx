@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 type AppearanceMode = 'light' | 'dark' | 'system';
-type ThemeName = 'obsidian' | 'forest' | 'emerald' | 'midnight' | 'ocean' | 'graphite' | 'aurora' | 'indigo' | 'slate' | 'arctic' | 'pearl' | 'sand' | 'sunset' | 'monochrome' | 'studio';
+type ThemeName = 'obsidian' | 'pearl' | 'emerald' | 'indigo' | 'sand' | 'graphite';
 type Density = 'comfortable' | 'compact' | 'dense';
 
 type ThemeContextValue = {
@@ -20,9 +20,22 @@ const MODE_KEY = 'nexor-appearance-mode';
 const THEME_KEY = 'nexor-appearance-theme';
 const DENSITY_KEY = 'nexor-density';
 
+const THEME_MODES: Record<ThemeName, AppearanceMode> = {
+  obsidian: 'dark',
+  pearl: 'light',
+  emerald: 'dark',
+  indigo: 'dark',
+  sand: 'light',
+  graphite: 'dark',
+};
+
 function resolveMode(mode: AppearanceMode): 'light' | 'dark' {
   if (mode !== 'system') return mode;
   return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+}
+
+function isTheme(value: string | null): value is ThemeName {
+  return value === 'obsidian' || value === 'pearl' || value === 'emerald' || value === 'indigo' || value === 'sand' || value === 'graphite';
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
@@ -30,15 +43,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<ThemeName>('obsidian');
   const [density, setDensityState] = useState<Density>('comfortable');
 
-  // Hydrate persisted client-only preferences after mount. These writes intentionally
-  // synchronize React state with localStorage and are therefore effect-driven.
   useEffect(() => {
-    const storedMode = (window.localStorage.getItem(MODE_KEY) as AppearanceMode | null) ?? 'system';
-    const storedTheme = (window.localStorage.getItem(THEME_KEY) as ThemeName | null) ?? 'obsidian';
+    const storedMode = (window.localStorage.getItem(MODE_KEY) as AppearanceMode | null) ?? 'dark';
+    const storedTheme = window.localStorage.getItem(THEME_KEY);
     const storedDensity = (window.localStorage.getItem(DENSITY_KEY) as Density | null) ?? 'comfortable';
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setModeState(['light', 'dark', 'system'].includes(storedMode) ? storedMode : 'system');
-    setThemeState(storedTheme);
+    setModeState(['light', 'dark', 'system'].includes(storedMode) ? storedMode : 'dark');
+    setThemeState(isTheme(storedTheme) ? storedTheme : 'obsidian');
     setDensityState(['comfortable', 'compact', 'dense'].includes(storedDensity) ? storedDensity : 'comfortable');
   }, []);
 
@@ -60,9 +70,21 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     mode,
     theme,
     density,
-    setMode: (next) => { setModeState(next); window.localStorage.setItem(MODE_KEY, next); },
-    setTheme: (next) => { setThemeState(next); window.localStorage.setItem(THEME_KEY, next); },
-    setDensity: (next) => { setDensityState(next); window.localStorage.setItem(DENSITY_KEY, next); },
+    setMode: (next) => {
+      setModeState(next);
+      window.localStorage.setItem(MODE_KEY, next);
+    },
+    setTheme: (next) => {
+      setThemeState(next);
+      window.localStorage.setItem(THEME_KEY, next);
+      const themeMode = THEME_MODES[next];
+      setModeState(themeMode);
+      window.localStorage.setItem(MODE_KEY, themeMode);
+    },
+    setDensity: (next) => {
+      setDensityState(next);
+      window.localStorage.setItem(DENSITY_KEY, next);
+    },
   }), [mode, theme, density]);
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
