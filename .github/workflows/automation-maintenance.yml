@@ -4,7 +4,7 @@ on:
   schedule:
     - cron: '0 */2 * * *'
     - cron: '0 10 * * *'
-    - cron: '0 13 * * *'
+    - cron: '0 */4 * * *'
   workflow_dispatch:
     inputs:
       task:
@@ -43,7 +43,7 @@ jobs:
             case "$EVENT_SCHEDULE" in
               '0 */2 * * *') task="job-autopilot" ;;
               '0 10 * * *') task="autopilot" ;;
-              '0 13 * * *') task="reports" ;;
+              '0 */4 * * *') task="reports" ;;
               *) echo "Unknown schedule: $EVENT_SCHEDULE"; exit 1 ;;
             esac
           fi
