@@ -16,6 +16,6 @@ async function authorized(req: NextRequest) {
 export async function GET(req: NextRequest) {
   if (!(await authorized(req))) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   if (!(await isAutomationEnabled('daily_reports'))) return NextResponse.json({ success: true, skipped: true, reason: 'AUTOMATION_DISABLED', capability: 'daily_reports' });
-  try { return NextResponse.json(await sendNexorReportEmail(24)); }
+  try { return NextResponse.json(await sendNexorReportEmail(4)); }
   catch (error) { return NextResponse.json({ success: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 }); }
 }
