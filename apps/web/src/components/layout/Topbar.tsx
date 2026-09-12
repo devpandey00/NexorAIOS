@@ -1,6 +1,7 @@
 'use client';
 
 import { ThemeToggle } from './ThemeToggle';
+import { AppearancePickerCompact } from './AppearancePicker';
 import { CommandPalette } from '@/components/dashboard/CommandPalette';
 
 export function Topbar({ onRefresh, loading }: { onRefresh: () => void; loading: boolean }) {
@@ -24,6 +25,9 @@ export function Topbar({ onRefresh, loading }: { onRefresh: () => void; loading:
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
+        <div className="hidden lg:block">
+          <AppearancePickerCompact />
+        </div>
         <button
           onClick={onRefresh}
           disabled={loading}
