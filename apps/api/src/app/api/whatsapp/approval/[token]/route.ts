@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { after } from 'next/server';
 import { getDatabaseClients, OutreachChannel, OutreachStatus } from '@nexor/database';
 import { verifyWhatsAppApprovalToken } from '@/lib/whatsapp-approval';
-import { getWhatsAppProviderStatus } from '@/lib/outreach-sender';
+import { getWhatsAppProviderStatus, sendApprovedOutreach } from '@/lib/outreach-sender';
 
 export const runtime = 'nodejs';
+export const maxDuration = 300;
 
 function prisma() { return getDatabaseClients().write; }
 function page(title: string, body: string, status = 200) {
@@ -19,6 +21,23 @@ function optInAndInternational(notes: string | null, country: string | null) {
 
 async function loadRows(ids: string[]) {
   return prisma().outreach.findMany({ where: { id: { in: ids }, channel: OutreachChannel.WHATSAPP, status: OutreachStatus.APPROVAL_REQUIRED }, include: { lead: true }, orderBy: { createdAt: 'asc' }, take: 20 });
+}
+
+async function sendApprovedBatch(ids: string[]) {
+  const delayMs = Math.max(Number(process.env.WHATSAPP_MIN_DELAY_MS ?? 10000), 10000);
+  let sent = 0;
+  let failed = 0;
+  for (let index = 0; index < ids.length; index += 1) {
+    if (index > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    try {
+      const result = await sendApprovedOutreach(ids[index]);
+      if (!result.alreadySent) sent += 1;
+    } catch (error) {
+      failed += 1;
+      console.error('[WHATSAPP APPROVAL SEND]', ids[index], error instanceof Error ? error.message : String(error));
+    }
+  }
+  console.info('[WHATSAPP APPROVAL BATCH]', { count: ids.length, sent, failed });
 }
 
 export async function GET(_req: NextRequest, context: { params: Promise<{ token: string }> }) {
@@ -46,12 +65,11 @@ export async function POST(_req: NextRequest, context: { params: Promise<{ token
     const rows = await loadRows(ids);
     const eligible = rows.filter((row) => optInAndInternational(row.lead.notes, row.lead.country));
     if (!eligible.length) return page('Nothing approved', '<h1>No eligible messages were approved.</h1><p>The batch requires international recipients with recorded WhatsApp opt-in.</p>');
-    const delayMs = Math.max(Number(process.env.WHATSAPP_MIN_DELAY_MS ?? 10000), 10000);
-    const now = Date.now();
-    const scheduledIds = eligible.slice(0, 20).map((row, index) => ({ id: row.id, scheduledAt: new Date(now + delayMs + index * delayMs) }));
     const db = prisma();
-    await db.$transaction(scheduledIds.map((item) => db.outreach.updateMany({ where: { id: item.id, channel: OutreachChannel.WHATSAPP, status: OutreachStatus.APPROVAL_REQUIRED }, data: { status: OutreachStatus.APPROVED, approvedAt: new Date(), scheduledAt: item.scheduledAt, error: null } })));
-    return page('Batch approved', `<h1>✅ Batch approved</h1><p><strong>${scheduledIds.length}</strong> WhatsApp messages are approved. The first send is scheduled in about ${Math.round(delayMs / 1000)} seconds and the remaining messages are spaced at least ${Math.round(delayMs / 1000)} seconds apart.</p><p>Nexor will stop after this batch; the next batch requires a fresh approval email.</p>`);
+    await db.$transaction(eligible.map((row) => db.outreach.updateMany({ where: { id: row.id, channel: OutreachChannel.WHATSAPP, status: OutreachStatus.APPROVAL_REQUIRED }, data: { status: OutreachStatus.APPROVED, approvedAt: new Date(), scheduledAt: new Date(), error: null } })));
+    const scheduledIds = eligible.map((row) => row.id);
+    after(async () => { await sendApprovedBatch(scheduledIds); });
+    return page('Batch approved', `<h1>✅ Batch approved</h1><p><strong>${scheduledIds.length}</strong> WhatsApp messages are approved and sending has started. Nexor will send them sequentially with a minimum 10-second gap and record provider-confirmed results.</p><p>If the provider rejects a message, it will remain visible as FAILED with the real provider error.</p>`);
   } catch (error) {
     return page('Approval failed', `<h1>Approval failed</h1><p>${escapeHtml(error instanceof Error ? error.message : String(error))}</p>`, 400);
   }
