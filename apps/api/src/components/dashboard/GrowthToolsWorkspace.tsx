@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 
 const TOOLS = [
-  ['Lead Hunter Pro','LEAD_HUNTER','Find and rank the best existing prospects.'],['Website Audit Bot','WEBSITE_AUDIT','Turn website weaknesses into specific sales angles.'],['Social Audit Bot','SOCIAL_AUDIT','Identify public social content and conversion gaps.'],['Personalized Outreach','OUTREACH','Generate channel-specific personalized outreach.'],['Follow-up Autopilot','FOLLOW_UP','Create a safe 1/3/7/14-day follow-up plan.'],['Lead Qualification AI','QUALIFY','Classify a reply and recommend the next CRM action.'],['Proposal Generator','PROPOSAL','Draft a branded proposal from opportunity data.'],['Sales Call Copilot','ASK_NEXOR','Use the command assistant for live sales questions.'],['Deal Closer','DEAL','Move verified opportunities through closing stages.'],
+  ['Lead Hunter Pro','LEAD_HUNTER','Find and rank the best existing prospects.'],['Website Audit Bot','WEBSITE_AUDIT','Audit a prospect website and turn real weaknesses into specific sales angles.'],['Social Audit Bot','SOCIAL_AUDIT','Identify public social content and conversion gaps.'],['Personalized Outreach','OUTREACH','Generate channel-specific personalized outreach.'],['Follow-up Autopilot','FOLLOW_UP','Create a safe 1/3/7/14-day follow-up plan.'],['Lead Qualification AI','QUALIFY','Classify a reply and recommend the next CRM action.'],['Proposal Generator','PROPOSAL','Draft a branded proposal from opportunity data.'],['Sales Call Copilot','ASK_NEXOR','Use the command assistant for live sales questions.'],['Deal Closer','DEAL','Move verified opportunities through closing stages.'],
   ['Trend Radar','TREND_RADAR','Surface reusable content trends.'],['Content Factory','CONTENT_FACTORY','Create a multi-platform content pack.'],['Reel Script Generator','REEL_SCRIPT','Generate hook, scenes, voiceover and CTA.'],['Creative Director AI','CREATIVE_DIRECTOR','Build original creative briefs from inspiration.'],['Content Calendar AI','CONTENT_CALENDAR','Generate a 30/60-day draft calendar.'],['Performance Learner','PERFORMANCE_LEARNER','Learn from real social content records.'],['Repurpose Engine','REPURPOSE','Turn one source into ten content formats.'],['Competitor Watch','COMPETITOR_WATCH','Structure public competitor intelligence.'],
   ['Daily CEO Briefing','CEO_BRIEF','See sales, finance, operations and priorities.'],['Ask Nexor AI','ASK_NEXOR','Ask the command center questions.'],['AI Task Manager','TASK_PRIORITIZER','Prioritize open tasks.'],['AI Memory','AI_MEMORY','Retrieve a real CRM memory snapshot.'],['Risk Radar','RISK_RADAR','Detect overdue and operational risks.'],
   ['Cashflow Dashboard','CASHFLOW','Review invoice and payment cashflow.'],['Invoice Reminder AI','INVOICE_REMINDER','Draft an approval-first invoice reminder.'],['Client Profitability','PROFITABILITY','Calculate revenue, cost and margin.'],['Monthly P&L Assistant','PNL','Calculate a simple P&L snapshot.'],['Payment Follow-up','PAYMENT_FOLLOWUP','Draft an approval-first payment follow-up.'],
@@ -11,7 +11,7 @@ const TOOLS = [
 ] as const;
 
 export default function GrowthToolsWorkspace({ initialTool }: { initialTool?: string }) {
-  const initial = useMemo(() => TOOLS.find(x => x[1] === initialTool) ?? TOOLS[0], [initialTool]);
+  const initial = useMemo(() => TOOLS.find(x => x[0] === initialTool) ?? TOOLS[0], [initialTool]);
   const [selected, setSelected] = useState(initial);
   const [input, setInput] = useState('');
   const [result, setResult] = useState<any>(null);
