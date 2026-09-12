@@ -11,6 +11,7 @@ type Post = {
   hashtags: string[];
   scheduledAt: string | null;
   createdAt: string;
+  error?: string | null;
 };
 
 const platforms = ['INSTAGRAM', 'FACEBOOK', 'LINKEDIN', 'YOUTUBE', 'X', 'TIKTOK'];
@@ -24,12 +25,10 @@ export default function SocialContentWorkspace() {
   const [tone, setTone] = useState('premium, confident, practical');
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
 
-  const upcoming = useMemo(
-    () => posts.filter((post) => post.status === 'SCHEDULED').length,
-    [posts],
-  );
+  const upcoming = useMemo(() => posts.filter((post) => post.status === 'SCHEDULED').length, [posts]);
 
   async function loadPosts() {
     const response = await fetch('/api/social/content?limit=100', { cache: 'no-store' });
@@ -37,17 +36,14 @@ export default function SocialContentWorkspace() {
     if (data.success) setPosts(data.posts);
   }
 
-  useEffect(() => {
-    void loadPosts();
-  }, []);
+  useEffect(() => { void loadPosts(); }, []);
 
   async function generate() {
     setLoading(true);
     setMessage('Generating content…');
     try {
       const response = await fetch('/api/social/content/generate', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ platform, niche, goal, offer, audience, tone }),
       });
       const data = await response.json();
@@ -56,30 +52,47 @@ export default function SocialContentWorkspace() {
       await loadPosts();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Generation failed');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   }
 
   async function approve(id: string) {
-    const response = await fetch(`/api/social/content/${id}`, {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ status: 'APPROVED' }),
-    });
-    const data = await response.json();
-    if (data.success) await loadPosts();
+    setBusyId(id); setMessage('Approving…');
+    try {
+      const response = await fetch(`/api/social/content/${id}`, {
+        method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: 'APPROVED' }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error ?? 'Approval failed');
+      await loadPosts(); setMessage('Post approved.');
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Approval failed'); }
+    finally { setBusyId(null); }
   }
 
   async function schedule(id: string) {
-    const scheduledAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-    const response = await fetch(`/api/social/content/${id}`, {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ status: 'SCHEDULED', scheduledAt }),
-    });
-    const data = await response.json();
-    if (data.success) await loadPosts();
+    setBusyId(id); setMessage('Scheduling…');
+    try {
+      const scheduledAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+      const response = await fetch(`/api/social/content/${id}`, {
+        method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: 'SCHEDULED', scheduledAt }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error ?? 'Scheduling failed');
+      await loadPosts(); setMessage('Post scheduled for 1 hour from now.');
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Scheduling failed'); }
+    finally { setBusyId(null); }
+  }
+
+  async function publish(id: string) {
+    setBusyId(id); setMessage('Publishing…');
+    try {
+      const response = await fetch(`/api/social/content/${id}/publish`, { method: 'POST' });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error ?? 'Publishing failed');
+      await loadPosts(); setMessage('Published successfully.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Publishing failed');
+      await loadPosts();
+    } finally { setBusyId(null); }
   }
 
   return (
@@ -97,7 +110,6 @@ export default function SocialContentWorkspace() {
           <label className="text-[8px] font-mono tracking-[0.12em] text-[var(--text-muted)]">AUDIENCE<input value={audience} onChange={(event) => setAudience(event.target.value)} className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-3 py-3 text-[10px] text-[var(--text)]" /></label>
           <label className="text-[8px] font-mono tracking-[0.12em] text-[var(--text-muted)]">TONE<input value={tone} onChange={(event) => setTone(event.target.value)} className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-3 py-3 text-[10px] text-[var(--text)]" /></label>
         </div>
-
         <div className="mt-5 flex flex-wrap items-center gap-3">
           <button onClick={generate} disabled={loading} className="rounded-xl bg-[var(--accent)] px-5 py-3 text-[9px] font-bold text-black disabled:opacity-50">{loading ? 'GENERATING…' : 'GENERATE POST'}</button>
           <div className="rounded-xl border border-[var(--border)] px-4 py-3 text-[9px] text-[var(--text-secondary)]">{posts.length} posts · {upcoming} scheduled</div>
@@ -110,10 +122,16 @@ export default function SocialContentWorkspace() {
           <article key={post.id} className="nexor-panel p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div><div className="font-mono text-[7px] tracking-[0.12em] text-[var(--accent)]">{post.platform} · {post.status}</div><h3 className="mt-2 text-sm font-semibold text-[var(--text)]">{post.title}</h3></div>
-              <div className="flex gap-2">{post.status === 'DRAFT' && <button onClick={() => approve(post.id)} className="rounded-lg border border-[var(--border)] px-3 py-2 text-[8px] text-[var(--text-secondary)] hover:text-[var(--text)]">APPROVE</button>}{post.status === 'APPROVED' && <button onClick={() => schedule(post.id)} className="rounded-lg bg-[var(--accent-soft)] px-3 py-2 text-[8px] text-[var(--accent)]">SCHEDULE +1H</button>}</div>
+              <div className="flex gap-2">
+                {post.status === 'DRAFT' && <button disabled={busyId === post.id} onClick={() => approve(post.id)} className="rounded-lg border border-[var(--border)] px-3 py-2 text-[8px] text-[var(--text-secondary)] hover:text-[var(--text)]">APPROVE</button>}
+                {post.status === 'APPROVED' && <><button disabled={busyId === post.id} onClick={() => publish(post.id)} className="rounded-lg bg-[var(--accent)] px-3 py-2 text-[8px] font-bold text-black">PUBLISH NOW</button><button disabled={busyId === post.id} onClick={() => schedule(post.id)} className="rounded-lg bg-[var(--accent-soft)] px-3 py-2 text-[8px] text-[var(--accent)]">SCHEDULE +1H</button></>}
+                {post.status === 'SCHEDULED' && <button disabled={busyId === post.id} onClick={() => publish(post.id)} className="rounded-lg bg-[var(--accent)] px-3 py-2 text-[8px] font-bold text-black">PUBLISH NOW</button>}
+                {post.status === 'FAILED' && <button disabled={busyId === post.id} onClick={() => approve(post.id)} className="rounded-lg border border-[var(--border)] px-3 py-2 text-[8px] text-[var(--text-secondary)]">RE-APPROVE</button>}
+              </div>
             </div>
             <p className="mt-4 whitespace-pre-wrap text-[10px] leading-5 text-[var(--text-secondary)]">{post.caption}</p>
             <div className="mt-3 flex flex-wrap gap-2">{post.hashtags.map((tag) => <span key={tag} className="rounded-full border border-[var(--border)] px-2 py-1 text-[7px] text-[var(--text-muted)]">{tag}</span>)}</div>
+            {post.error && <div className="mt-3 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-[8px] leading-4 text-red-400">PUBLISH ERROR: {post.error}</div>}
           </article>
         ))}
         {!posts.length && <div className="nexor-panel p-10 text-center text-[9px] text-[var(--text-muted)]">No content yet. Generate the first post above.</div>}
