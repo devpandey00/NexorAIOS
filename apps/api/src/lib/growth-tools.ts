@@ -2,6 +2,8 @@ import { NEXOR_BRAND } from '@nexor/shared';
 import { getDatabaseClients } from '@nexor/database';
 import { getCommandCenter, ensureAiosPlatform, writeAudit, createApproval } from './aios-platform';
 import { buildSalesSequence } from './sales-message-engine';
+import { researchService } from '@nexor/research';
+import { assessLead, buildSalesBrief } from '@nexor/core';
 
 export type GrowthToolAction = 'LEAD_HUNTER'|'WEBSITE_AUDIT'|'SOCIAL_AUDIT'|'OUTREACH'|'FOLLOW_UP'|'QUALIFY'|'PROPOSAL'|'DEAL'|'TREND_RADAR'|'CONTENT_FACTORY'|'REEL_SCRIPT'|'CREATIVE_DIRECTOR'|'CONTENT_CALENDAR'|'PERFORMANCE_LEARNER'|'REPURPOSE'|'COMPETITOR_WATCH'|'CEO_BRIEF'|'ASK_NEXOR'|'TASK_PRIORITIZER'|'AI_MEMORY'|'RISK_RADAR'|'CASHFLOW'|'INVOICE_REMINDER'|'PROFITABILITY'|'PNL'|'PAYMENT_FOLLOWUP'|'CLIENT_HEALTH'|'REPORT'|'RENEWAL';
 const s=(v:unknown,f='')=>String(v??f).trim(); const n=(v:unknown,f=0)=>Number(v??f); const clamp=(v:number,a:number,b:number)=>Math.max(a,Math.min(b,v));
@@ -12,7 +14,14 @@ export async function runGrowthTool(action:GrowthToolAction,input:Record<string,
  await ensureAiosPlatform(); const brand=NEXOR_BRAND.name; const business=s(input.businessName||input.companyName,'Target business'); const website=s(input.website); const industry=s(input.industry,'business');
  switch(action){
  case 'LEAD_HUNTER':{const leads=await getDatabaseClients().read.lead.findMany({orderBy:[{auditScore:'desc'},{createdAt:'desc'}],take:clamp(n(input.limit,25),1,100)});return{action,count:leads.length,prospects:leads.map(x=>({id:x.id,businessName:x.businessName,website:x.website,country:x.country,score:x.auditScore,email:x.email,whatsapp:x.whatsapp,status:x.status}))}}
- case 'WEBSITE_AUDIT':return website?{action,business,website,findings:['Conversion clarity','Mobile UX','Trust signals','Lead capture','Local visibility','Social proof','Performance','SEO basics'].map((x,i)=>({priority:i<3?'HIGH':'MEDIUM',area:x,recommendation:`Review ${x.toLowerCase()} and turn the finding into one concrete growth action.`})),salesAngle:`Offer a focused ${brand} growth audit.`}:{action,status:'INPUT_REQUIRED',message:'Provide website URL.'};
+ case 'WEBSITE_AUDIT':{
+   if(!website)return{action,status:'INPUT_REQUIRED',message:'Provide website URL.'};
+   const research=await researchService.analyze(website);
+   if(!research.success)return{action,status:'RESEARCH_FAILED',business,website,error:research.error??'Website research provider returned no usable result.'};
+   const intelligence=assessLead({website:research.website,technology:research.technology,social:Object.fromEntries(Object.entries(research.social??{})),seo:Object.fromEntries(Object.entries(research.seo??{}))});
+   const salesBrief=buildSalesBrief({businessName:business,niche:industry,country:s(input.country),website,intelligence,research,phone:s(input.phone),email:research.contacts?.emails?.[0]});
+   return{action,status:'AUDITED',business,website,contacts:research.contacts,technology:research.technology,social:research.social,seo:research.seo,performance:research.performance,security:research.security,intelligence,salesBrief,findings:intelligence.findings??[],opportunityScore:intelligence.score,recommendedService:intelligence.service??salesBrief.recommendedService??null,salesAngle:salesBrief.salesAngle??null,nextAction:salesBrief.nextAction??null};
+ }
  case 'SOCIAL_AUDIT':return{action,business,platform:s(input.platform,'Instagram'),findings:['Posting consistency','Content mix','Profile CTA','Hook quality','Lead capture'],opportunities:['Short-form video','Educational series','Offer-led content','Stronger CTA','Content repurposing']};
  case 'OUTREACH':{const channel=s(input.channel,'WHATSAPP').toUpperCase() as 'WHATSAPP'|'EMAIL'|'INSTAGRAM'|'FACEBOOK'|'LINKEDIN';return{action,approvalRequired:true,sequence:buildSalesSequence({businessName:business,contactName:s(input.contactName),website,service:s(input.service,'growth marketing'),requirement:s(input.requirement),findings:stringList(input.findings),country:s(input.country),channel})}}
  case 'FOLLOW_UP':return{action,sequence:[1,3,7,14].map((day,i)=>({day,stage:['FIRST_TOUCH','FOLLOW_UP_1','FOLLOW_UP_2','BREAKUP'][i],rule:i===3?'Close the loop politely.':'Add value; stop immediately if the prospect replies or opts out.'}))};
