@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabaseClients } from '@nexor/database';
 import { getSessionUser } from '@/lib/auth';
-import type { Prisma } from '@prisma/client';
 
 export const runtime = 'nodejs';
 
@@ -47,9 +46,10 @@ export async function POST(request: NextRequest) {
       if (Object.prototype.hasOwnProperty.call(input, key)) next[key] = input[key];
     }
 
-    // Request bodies are JSON, so normalize the merged control-plane object and
-    // explicitly hand Prisma the JSON input type it expects.
-    const jsonConfig = JSON.parse(JSON.stringify(next)) as Prisma.InputJsonValue;
+    // Keep this route independent of the app-level @prisma/client package.
+    // The payload is JSON already, so this normalization produces a plain JSON object
+    // that Prisma accepts for the Json field without importing Prisma types here.
+    const jsonConfig = JSON.parse(JSON.stringify(next));
     const setting = await db.automationSetting.upsert({
       where: { key: KEY },
       create: { key: KEY, enabled: true, config: jsonConfig },
