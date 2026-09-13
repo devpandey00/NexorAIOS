@@ -4,6 +4,16 @@ import { getOpenWAConnectionStatus, getOpenWAStatus, startOpenWASession } from '
 
 export const runtime = 'nodejs';
 
+function metaFallbackStatus() {
+  const token = Boolean(process.env.WHATSAPP_ACCESS_TOKEN?.trim());
+  const phoneNumberId = Boolean(process.env.WHATSAPP_PHONE_NUMBER_ID?.trim());
+  const templateName = Boolean(process.env.WHATSAPP_TEMPLATE_NAME?.trim());
+  return {
+    configured: token && phoneNumberId,
+    templateConfigured: token && phoneNumberId && templateName,
+  };
+}
+
 async function authorized(req: NextRequest) {
   const user = await getSessionUser(req);
   return Boolean(user);
@@ -11,13 +21,36 @@ async function authorized(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   if (!(await authorized(req))) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  const config = getOpenWAStatus();
+  const fallback = metaFallbackStatus();
+  if (!config.configured) {
+    return NextResponse.json({
+      success: true,
+      provider: config,
+      connected: false,
+      status: fallback.templateConfigured ? 'fallback_ready' : 'not_configured',
+      fallback,
+    });
+  }
   try {
-    const config = getOpenWAStatus();
-    if (!config.configured) return NextResponse.json({ success: true, provider: config, connected: false, status: 'not_configured' });
     const connection = await getOpenWAConnectionStatus();
-    return NextResponse.json({ success: true, provider: config, connection, connected: connection.ready });
+    return NextResponse.json({
+      success: true,
+      provider: config,
+      connection,
+      connected: connection.ready,
+      status: connection.ready ? 'connected' : 'not_ready',
+      fallback,
+    });
   } catch (error) {
-    return NextResponse.json({ success: false, provider: getOpenWAStatus(), connected: false, error: error instanceof Error ? error.message : String(error) }, { status: 502 });
+    return NextResponse.json({
+      success: true,
+      provider: config,
+      connected: false,
+      status: fallback.templateConfigured ? 'fallback_ready' : 'provider_error',
+      fallback,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 
