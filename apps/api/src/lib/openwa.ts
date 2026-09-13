@@ -138,12 +138,54 @@ export async function sendOpenWADocument(to: string, mediaUrl: string, filename:
   return sendOpenWAMedia('document', to, mediaUrl, { ...options, filename });
 }
 
-export async function sendOpenWAText(to: string, text: string) {
-  const resolvedSessionId = await resolveSessionId();
-  const data = await openwaFetch(`/api/sessions/${encodeURIComponent(resolvedSessionId)}/messages/send-text`, {
+async function sendMetaTemplateFallback(to: string, text: string) {
+  const token = process.env.WHATSAPP_ACCESS_TOKEN?.trim();
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID?.trim();
+  const templateName = process.env.WHATSAPP_TEMPLATE_NAME?.trim();
+  const templateLanguage = process.env.WHATSAPP_TEMPLATE_LANGUAGE?.trim() || 'en_US';
+  if (!token || !phoneNumberId || !templateName) return undefined;
+  const recipient = to.replace(/\D/g, '');
+  if (!recipient || recipient.length < 8) throw new Error('Lead WhatsApp number is invalid after normalization.');
+  const parameterText = text.replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+  if (!parameterText) throw new Error('WhatsApp template parameter is empty.');
+  const version = process.env.WHATSAPP_API_VERSION?.trim() || 'v23.0';
+  const response = await fetch(`https://graph.facebook.com/${version}/${phoneNumberId}/messages`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chatId: chatIdFromPhone(to), text }),
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: recipient,
+      type: 'template',
+      template: {
+        name: templateName,
+        language: { code: templateLanguage },
+        components: [{ type: 'body', parameters: [{ type: 'text', text: parameterText }] }],
+      },
+    }),
+    cache: 'no-store',
   });
-  return (data?.messageId ?? data?.id ?? data?.message?.id) as string | undefined;
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const providerMessage = data?.error?.message ?? `Meta WhatsApp fallback failed (${response.status})`;
+    const providerCode = Number(data?.error?.code ?? 0);
+    throw new Error(providerCode ? `${providerMessage} [Meta ${providerCode}]` : providerMessage);
+  }
+  return data?.messages?.[0]?.id as string | undefined;
+}
+
+export async function sendOpenWAText(to: string, text: string) {
+  try {
+    const resolvedSessionId = await resolveSessionId();
+    const data = await openwaFetch(`/api/sessions/${encodeURIComponent(resolvedSessionId)}/messages/send-text`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chatId: chatIdFromPhone(to), text }),
+    });
+    return (data?.messageId ?? data?.id ?? data?.message?.id) as string | undefined;
+  } catch (openwaError) {
+    const fallbackMessageId = await sendMetaTemplateFallback(to, text);
+    if (fallbackMessageId) return fallbackMessageId;
+    throw openwaError;
+  }
 }
