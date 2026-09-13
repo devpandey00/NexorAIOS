@@ -47,7 +47,18 @@ export async function isAutomationEnabled(key: AutomationKey): Promise<boolean> 
 }
 
 export async function isOutboundEnabled(): Promise<boolean> {
-  return (await isAutomationEnabled('master_autopilot')) && (await isAutomationEnabled('outbound_enabled'));
+  try {
+    const db = getDatabaseClients().write;
+    const rows = await db.automationSetting.findMany({
+      where: { key: { in: ['master_autopilot', 'outbound_enabled'] } },
+    });
+    const byKey = new Map(rows.map((row) => [row.key, row.enabled]));
+    return (byKey.get('master_autopilot') ?? true) && (byKey.get('outbound_enabled') ?? true);
+  } catch (error) {
+    // The emergency stop must fail closed if the settings store is unavailable.
+    console.error('[OUTBOUND SETTING]', error);
+    return false;
+  }
 }
 
 export async function getAutomationSettings() {
