@@ -96,7 +96,7 @@ export async function GET(request: NextRequest) {
       `),
     ]);
 
-    const row = stats[0] ?? { sent: 0n, failed: 0n, pending: 0n, queued: 0n, replied: 0n };
+    const row = stats[0];
 
     return NextResponse.json({
       success: true,
@@ -104,11 +104,11 @@ export async function GET(request: NextRequest) {
       range: { label, since: since.toISOString(), until: until?.toISOString() ?? null },
       channel: channel ?? 'ALL',
       stats: {
-        sent: Number(row.sent),
-        failed: Number(row.failed),
-        pending: Number(row.pending),
-        queued: Number(row.queued),
-        replied: Number(row.replied),
+        sent: Number(row?.sent ?? 0),
+        failed: Number(row?.failed ?? 0),
+        pending: Number(row?.pending ?? 0),
+        queued: Number(row?.queued ?? 0),
+        replied: Number(row?.replied ?? 0),
       },
       conversations,
       queue: queue.map((q) => ({ status: q.status, count: Number(q.count) })),
