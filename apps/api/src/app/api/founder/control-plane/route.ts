@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabaseClients } from '@nexor/database';
 import { getSessionUser } from '@/lib/auth';
+import type { Prisma } from '@prisma/client';
 
 export const runtime = 'nodejs';
 
@@ -45,7 +46,15 @@ export async function POST(request: NextRequest) {
     for (const key of Object.keys(CONTROL_DEFAULTS)) {
       if (Object.prototype.hasOwnProperty.call(input, key)) next[key] = input[key];
     }
-    const setting = await db.automationSetting.upsert({ where: { key: KEY }, create: { key: KEY, enabled: true, config: next }, update: { config: next } });
+
+    // Request bodies are JSON, so normalize the merged control-plane object and
+    // explicitly hand Prisma the JSON input type it expects.
+    const jsonConfig = JSON.parse(JSON.stringify(next)) as Prisma.InputJsonValue;
+    const setting = await db.automationSetting.upsert({
+      where: { key: KEY },
+      create: { key: KEY, enabled: true, config: jsonConfig },
+      update: { config: jsonConfig },
+    });
     return NextResponse.json({ success: true, controls: setting.config });
   } catch (error) {
     return NextResponse.json({ success: false, error: error instanceof Error ? error.message : String(error) }, { status: 400 });
