@@ -37,12 +37,18 @@ async function checkMeta() {
 
 async function checkFacebookPage() {
   const pageId = process.env.META_PAGE_ID?.trim();
-  if (!pageId) return { configured: false, healthy: false, message: 'META_PAGE_ID is not configured' };
   const tokens = metaTokens();
+  if (!tokens.length) return { configured: false, healthy: false, message: 'Meta token is not configured' };
   for (const token of tokens) {
     try {
-      const { response, body } = await jsonFetch(`https://graph.facebook.com/${graphVersion()}/${pageId}?fields=id,name&access_token=${encodeURIComponent(token)}`);
-      if (response.ok && !body?.error) return { configured: true, healthy: true, message: `Facebook Page connected${body?.name ? `: ${String(body.name)}` : ''}` };
+      if (pageId) {
+        const { response, body } = await jsonFetch(`https://graph.facebook.com/${graphVersion()}/${pageId}?fields=id,name&access_token=${encodeURIComponent(token)}`);
+        if (response.ok && !body?.error) return { configured: true, healthy: true, message: `Facebook Page connected${body?.name ? `: ${String(body.name)}` : ''}` };
+      }
+      const { response, body } = await jsonFetch(`https://graph.facebook.com/${graphVersion()}/me/accounts?fields=id,name,access_token&limit=100&access_token=${encodeURIComponent(token)}`);
+      const pages = Array.isArray(body?.data) ? body.data as Array<{ id?: string; name?: string; access_token?: string }> : [];
+      const page = pages.find((item) => item?.id && item?.access_token && (!pageId || item.id === pageId));
+      if (response.ok && page?.id) return { configured: true, healthy: true, message: `Facebook Page connected${page.name ? `: ${page.name}` : ''}` };
     } catch {
       // Try the next configured Meta credential.
     }
