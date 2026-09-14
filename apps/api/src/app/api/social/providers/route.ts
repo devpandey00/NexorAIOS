@@ -25,7 +25,7 @@ async function checkMeta() {
   let last = 'Meta token could not be verified';
   for (const token of tokens) {
     try {
-      const { response, body } = await jsonFetch(`https://graph.facebook.com/${graphVersion()}/me?fields=id,name&access_token=${encodeURIComponent(token)}`);
+      const { response, body } = await jsonFetch(`https://graph.facebook.com/${graphVersion}/me?fields=id,name&access_token=${encodeURIComponent(token)}`);
       if (response.ok && !body?.error) return { configured: true, healthy: true, message: `Meta authenticated${body?.name ? ` as ${String(body.name)}` : ''}` };
       last = body?.error?.message || `Meta returned HTTP ${response.status}`;
     } catch (error) {
@@ -42,10 +42,10 @@ async function checkFacebookPage() {
   for (const token of tokens) {
     try {
       if (pageId) {
-        const { response, body } = await jsonFetch(`https://graph.facebook.com/${graphVersion()}/${pageId}?fields=id,name&access_token=${encodeURIComponent(token)}`);
+        const { response, body } = await jsonFetch(`https://graph.facebook.com/${graphVersion}/${pageId}?fields=id,name&access_token=${encodeURIComponent(token)}`);
         if (response.ok && !body?.error) return { configured: true, healthy: true, message: `Facebook Page connected${body?.name ? `: ${String(body.name)}` : ''}` };
       }
-      const { response, body } = await jsonFetch(`https://graph.facebook.com/${graphVersion()}/me/accounts?fields=id,name,access_token&limit=100&access_token=${encodeURIComponent(token)}`);
+      const { response, body } = await jsonFetch(`https://graph.facebook.com/${graphVersion}/me/accounts?fields=id,name,access_token&limit=100&access_token=${encodeURIComponent(token)}`);
       const pages = Array.isArray(body?.data) ? body.data as Array<{ id?: string; name?: string; access_token?: string }> : [];
       const page = pages.find((item) => item?.id && item?.access_token && (!pageId || item.id === pageId));
       if (response.ok && page?.id) return { configured: true, healthy: true, message: `Facebook Page connected${page.name ? `: ${page.name}` : ''}` };
@@ -61,7 +61,7 @@ async function checkInstagram() {
   if (!accountId || !metaTokens().length) return { configured: false, healthy: false, message: 'Instagram account ID or Meta token is not configured' };
   for (const token of metaTokens()) {
     try {
-      const { response, body } = await jsonFetch(`https://graph.facebook.com/${graphVersion()}/${accountId}?fields=id,username&access_token=${encodeURIComponent(token)}`);
+      const { response, body } = await jsonFetch(`https://graph.facebook.com/${graphVersion}/${accountId}?fields=id,username&access_token=${encodeURIComponent(token)}`);
       if (response.ok && !body?.error) return { configured: true, healthy: true, message: `Instagram connected${body?.username ? `: @${String(body.username)}` : ''}` };
     } catch {
       // Try the next token.
@@ -75,7 +75,7 @@ async function checkWhatsApp() {
   const phoneNumberId = (process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.META_WHATSAPP_PHONE_NUMBER_ID)?.trim();
   if (!token || !phoneNumberId) return { configured: false, healthy: false, message: 'WhatsApp token or phone number ID is not configured' };
   try {
-    const { response, body } = await jsonFetch(`https://graph.facebook.com/${graphVersion()}/${phoneNumberId}?fields=id,display_phone_number,verified_name&access_token=${encodeURIComponent(token)}`);
+    const { response, body } = await jsonFetch(`https://graph.facebook.com/${graphVersion}/${phoneNumberId}?fields=id,display_phone_number,verified_name&access_token=${encodeURIComponent(token)}`);
     if (response.ok && !body?.error) return { configured: true, healthy: true, message: `WhatsApp Cloud API connected${body?.verified_name ? `: ${String(body.verified_name)}` : ''}` };
     return { configured: true, healthy: false, message: body?.error?.message || `WhatsApp returned HTTP ${response.status}` };
   } catch (error) {
