@@ -1,11 +1,208 @@
 'use client';
-import{useEffect,useMemo,useState}from'react';
-type Post={id:string;platform:string;status:string;title:string;caption:string;hashtags:string[];mediaUrl?:string|null;scheduledAt:string|null;createdAt:string;error?:string|null};
-const platforms=['INSTAGRAM','FACEBOOK','LINKEDIN','YOUTUBE','X','TIKTOK'];
-export default function SocialContentWorkspace(){const[platform,setPlatform]=useState('INSTAGRAM'),[niche,setNiche]=useState('digital marketing'),[goal,setGoal]=useState('generate qualified leads'),[offer,setOffer]=useState('Google Ads, Meta Ads, SEO and websites'),[audience,setAudience]=useState('premium local service businesses'),[tone,setTone]=useState('premium, confident, practical'),[posts,setPosts]=useState<Post[]>([]),[loading,setLoading]=useState(false),[busyId,setBusyId]=useState<string|null>(null),[message,setMessage]=useState(''),[scheduleAt,setScheduleAt]=useState('');
-const upcoming=useMemo(()=>posts.filter(p=>p.status==='SCHEDULED').length,[posts]);
-async function loadPosts(){const r=await fetch('/api/social/content?limit=100',{cache:'no-store'});const x=await r.json();if(x.success)setPosts(x.posts)}
-useEffect(()=>{void loadPosts()},[]);
-async function generate(){setLoading(true);setMessage('Generating content…');try{const r=await fetch('/api/social/content/generate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({platform,niche,goal,offer,audience,tone})});const x=await r.json();if(!r.ok||!x.success)throw new Error(x.error??'Generation failed');setMessage(x.ai?'AI draft created.':'Draft created with deterministic fallback.');await loadPosts()}catch(e){setMessage(e instanceof Error?e.message:'Generation failed')}finally{setLoading(false)}}
-async function patch(id:string,body:any,ok:string){setBusyId(id);setMessage('Saving…');try{const r=await fetch(`/api/social/content/${id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(body)});const x=await r.json();if(!r.ok||!x.success)throw new Error(x.error??'Update failed');await loadPosts();setMessage(ok)}catch(e){setMessage(e instanceof Error?e.message:'Update failed')}finally{setBusyId(null)}}
-return <div className="space-y-5"><section className="nexor-panel p-6"><div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3"><label className="text-[8px] font-mono text-[var(--text-muted)]">PLATFORM<select value={platform} onChange={e=>setPlatform(e.target.value)} className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-3 py-3 text-[10px]">{platforms.map(x=><option key={x}>{x}</option>)}</select></label><label className="text-[8px] font-mono text-[var(--text-muted)]">NICHE<input value={niche} onChange={e=>setNiche(e.target.value)} className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-3 py-3 text-[10px]"/></label><label className="text-[8px] font-mono text-[var(--text-muted)]">GOAL<input value={goal} onChange={e=>setGoal(e.target.value)} className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-3 py-3 text-[10px]"/></label><label className="text-[8px] font-mono text-[var(--text-muted)]">OFFER<input value={offer} onChange={e=>setOffer(e.target.value)} className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-3 py-3 text-[10px]"/></label><label className="text-[8px] font-mono text-[var(--text-muted)]">AUDIENCE<input value={audience} onChange={e=>setAudience(e.target.value)} className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-3 py-3 text-[10px]"/></label><label className="text-[8px] font-mono text-[var(--text-muted)]">TONE<input value={tone} onChange={e=>setTone(e.target.value)} className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-3 py-3 text-[10px]"/></label></div><div className="mt-5 flex flex-wrap items-center gap-3"><button onClick={generate} disabled={loading} className="rounded-xl bg-[var(--accent)] px-5 py-3 text-[9px] font-bold text-black disabled:opacity-50">{loading?'GENERATING…':'GENERATE POST'}</button><div className="rounded-xl border border-[var(--border)] px-4 py-3 text-[9px] text-[var(--text-secondary)]">{posts.length} posts · {upcoming} scheduled</div>{message&&<div className="text-[9px] text-[var(--text-muted)]">{message}</div>}</div></section><section className="space-y-3">{posts.map(post=><article key={post.id} className="nexor-panel p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><div className="font-mono text-[7px] tracking-[0.12em] text-[var(--accent)]">{post.platform} · {post.status}</div><h3 className="mt-2 text-sm font-semibold">{post.title}</h3></div><div className="flex flex-wrap gap-2">{post.status==='DRAFT'&&<button disabled={busyId===post.id} onClick={()=>patch(post.id,{status:'APPROVED'},'Post approved.')} className="rounded-lg border border-[var(--border)] px-3 py-2 text-[8px]">APPROVE</button>}{post.status==='APPROVED'&&<button disabled={busyId===post.id} onClick={()=>patch(post.id,{status:'SCHEDULED',scheduledAt:scheduleAt?new Date(scheduleAt).toISOString():new Date(Date.now()+3600000).toISOString()},scheduleAt?'Post scheduled.':'Post scheduled +1h.')} className="rounded-lg bg-[var(--accent-soft)] px-3 py-2 text-[8px] text-[var(--accent)]">SCHEDULE</button>}{['APPROVED','SCHEDULED'].includes(post.status)&&<button disabled={busyId===post.id} onClick={()=>{setBusyId(post.id);fetch(`/api/social/content/${post.id}/publish`,{method:'POST'}).then(async r=>{const x=await r.json();if(!r.ok||!x.success)throw new Error(x.error??'Publishing failed');setMessage('Published successfully.');await loadPosts()}).catch(e=>{setMessage(e instanceof Error?e.message:'Publishing failed');void loadPosts()}).finally(()=>setBusyId(null))}} className="rounded-lg bg-[var(--accent)] px-3 py-2 text-[8px] font-bold text-black">PUBLISH NOW</button>}{post.status==='FAILED'&&<button disabled={busyId===post.id} onClick={()=>patch(post.id,{status:'APPROVED'},'Post re-approved.')} className="rounded-lg border border-[var(--border)] px-3 py-2 text-[8px]">RE-APPROVE</button>}</div></div><div className="mt-4 grid gap-3 md:grid-cols-[1fr_280px]"><p className="whitespace-pre-wrap text-[10px] leading-5 text-[var(--text-secondary)]">{post.caption}</p><div className="space-y-2"><label className="block text-[7px] font-mono text-[var(--text-muted)]">PUBLIC MEDIA URL<input defaultValue={post.mediaUrl||''} onBlur={e=>{const v=e.target.value.trim();if(v!==post.mediaUrl)void patch(post.id,{mediaUrl:v||null},'Media URL saved.')}} placeholder="https://…/image.jpg or video.mp4" className="mt-1 h-9 w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 text-[8px]"/></label><label className="block text-[7px] font-mono text-[var(--text-muted)]">SCHEDULE AT<input type="datetime-local" value={scheduleAt} onChange={e=>setScheduleAt(e.target.value)} className="mt-1 h-9 w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 text-[8px]"/></label></div></div><div className="mt-3 flex flex-wrap gap-2">{post.hashtags.map(t=><span key={t} className="rounded-full border border-[var(--border)] px-2 py-1 text-[7px] text-[var(--text-muted)]">{t}</span>)}</div>{post.error&&<div className="mt-3 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-[8px] leading-4 text-red-400">PUBLISH ERROR: {post.error}</div>}</article>)}{!posts.length&&<div className="nexor-panel p-10 text-center text-[9px] text-[var(--text-muted)]">No content yet. Generate the first post above.</div>}</section></div>}
+
+import { useEffect, useMemo, useState } from 'react';
+
+type Post = {
+  id: string;
+  platform: string;
+  status: string;
+  title: string;
+  caption: string;
+  hashtags: string[];
+  mediaUrl?: string | null;
+  scheduledAt: string | null;
+  createdAt: string;
+  error?: string | null;
+};
+
+type Provider = { configured: boolean; healthy: boolean; message: string };
+
+type ProviderMap = Record<string, Provider>;
+
+const platforms = ['INSTAGRAM', 'FACEBOOK', 'LINKEDIN', 'YOUTUBE', 'X'];
+
+export default function SocialContentWorkspace() {
+  const [platform, setPlatform] = useState('INSTAGRAM');
+  const [niche, setNiche] = useState('digital marketing');
+  const [goal, setGoal] = useState('generate qualified leads');
+  const [offer, setOffer] = useState('Google Ads, Meta Ads, SEO and websites');
+  const [audience, setAudience] = useState('premium local service businesses');
+  const [tone, setTone] = useState('premium, confident, practical');
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [providers, setProviders] = useState<ProviderMap>({});
+  const [loading, setLoading] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [message, setMessage] = useState('');
+  const [scheduleAt, setScheduleAt] = useState('');
+
+  const upcoming = useMemo(() => posts.filter((p) => p.status === 'SCHEDULED').length, [posts]);
+
+  async function loadPosts() {
+    const r = await fetch('/api/social/content?limit=100', { cache: 'no-store' });
+    const x = await r.json();
+    if (x.success) setPosts(x.posts);
+  }
+
+  async function checkConnections() {
+    setChecking(true);
+    try {
+      const r = await fetch('/api/social/providers', { cache: 'no-store' });
+      const x = await r.json();
+      if (!r.ok || !x.success) throw new Error(x.error ?? 'Connection check failed');
+      setProviders(x.providers ?? {});
+      setMessage('Provider connections checked.');
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : 'Connection check failed');
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadPosts();
+    void checkConnections();
+  }, []);
+
+  async function generate() {
+    setLoading(true);
+    setMessage('Generating content…');
+    try {
+      const r = await fetch('/api/social/content/generate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ platform, niche, goal, offer, audience, tone }),
+      });
+      const x = await r.json();
+      if (!r.ok || !x.success) throw new Error(x.error ?? 'Generation failed');
+      setMessage(x.ai ? 'AI draft created.' : 'Draft created with deterministic fallback.');
+      await loadPosts();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : 'Generation failed');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function patch(id: string, body: Record<string, unknown>, ok: string) {
+    setBusyId(id);
+    setMessage('Saving…');
+    try {
+      const r = await fetch(`/api/social/content/${id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const x = await r.json();
+      if (!r.ok || !x.success) throw new Error(x.error ?? 'Update failed');
+      await loadPosts();
+      setMessage(ok);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : 'Update failed');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function publish(id: string) {
+    setBusyId(id);
+    setMessage('Publishing…');
+    try {
+      const r = await fetch(`/api/social/content/${id}/publish`, { method: 'POST' });
+      const x = await r.json();
+      if (!r.ok || !x.success) throw new Error(x.error ?? 'Publishing failed');
+      setMessage('Published successfully.');
+      await loadPosts();
+      await checkConnections();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : 'Publishing failed');
+      await loadPosts();
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  const providerNames: Array<[string, string]> = [
+    ['FACEBOOK', 'Facebook'],
+    ['INSTAGRAM', 'Instagram'],
+    ['LINKEDIN', 'LinkedIn'],
+    ['WHATSAPP', 'WhatsApp'],
+    ['X', 'X'],
+  ];
+
+  return (
+    <div className="space-y-5">
+      <section className="nexor-panel p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="font-mono text-[8px] tracking-[0.14em] text-[var(--accent)]">SOCIAL CONNECTIONS</div>
+            <h2 className="mt-1 text-sm font-semibold">Publishing infrastructure</h2>
+            <p className="mt-1 text-[9px] text-[var(--text-muted)]">Credentials are checked server-side. You should not have to paste a token every time you publish.</p>
+          </div>
+          <button onClick={checkConnections} disabled={checking} className="rounded-lg border border-[var(--border)] px-3 py-2 text-[8px] disabled:opacity-50">
+            {checking ? 'CHECKING…' : 'CHECK CONNECTIONS'}
+          </button>
+        </div>
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+          {providerNames.map(([key, name]) => {
+            const provider = providers[key];
+            return (
+              <div key={key} className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[9px] font-semibold">{name}</span>
+                  <span className={`h-2 w-2 rounded-full ${provider?.healthy ? 'bg-emerald-400' : provider?.configured ? 'bg-red-400' : 'bg-zinc-500'}`} />
+                </div>
+                <div className="mt-2 text-[7px] leading-3 text-[var(--text-muted)]">{provider?.message ?? 'Not checked'}</div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="nexor-panel p-6">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <label className="text-[8px] font-mono text-[var(--text-muted)]">PLATFORM<select value={platform} onChange={(e) => setPlatform(e.target.value)} className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-3 py-3 text-[10px]">{platforms.map((x) => <option key={x}>{x}</option>)}</select></label>
+          <label className="text-[8px] font-mono text-[var(--text-muted)]">NICHE<input value={niche} onChange={(e) => setNiche(e.target.value)} className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-3 py-3 text-[10px]" /></label>
+          <label className="text-[8px] font-mono text-[var(--text-muted)]">GOAL<input value={goal} onChange={(e) => setGoal(e.target.value)} className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-3 py-3 text-[10px]" /></label>
+          <label className="text-[8px] font-mono text-[var(--text-muted)]">OFFER<input value={offer} onChange={(e) => setOffer(e.target.value)} className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-3 py-3 text-[10px]" /></label>
+          <label className="text-[8px] font-mono text-[var(--text-muted)]">AUDIENCE<input value={audience} onChange={(e) => setAudience(e.target.value)} className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-3 py-3 text-[10px]" /></label>
+          <label className="text-[8px] font-mono text-[var(--text-muted)]">TONE<input value={tone} onChange={(e) => setTone(e.target.value)} className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-3 py-3 text-[10px]" /></label>
+        </div>
+        <div className="mt-5 flex flex-wrap items-center gap-3">
+          <button onClick={generate} disabled={loading} className="rounded-xl bg-[var(--accent)] px-5 py-3 text-[9px] font-bold text-black disabled:opacity-50">{loading ? 'GENERATING…' : 'GENERATE POST'}</button>
+          <div className="rounded-xl border border-[var(--border)] px-4 py-3 text-[9px] text-[var(--text-secondary)]">{posts.length} posts · {upcoming} scheduled</div>
+          {message && <div className="text-[9px] text-[var(--text-muted)]">{message}</div>}
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        {posts.map((post) => (
+          <article key={post.id} className="nexor-panel p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="font-mono text-[7px] tracking-[0.12em] text-[var(--accent)]">{post.platform} · {post.status}</div>
+                <h3 className="mt-2 text-sm font-semibold">{post.title}</h3>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {post.status === 'DRAFT' && <button disabled={busyId === post.id} onClick={() => patch(post.id, { status: 'APPROVED' }, 'Post approved.')} className="rounded-lg border border-[var(--border)] px-3 py-2 text-[8px]">APPROVE</button>}
+                {post.status === 'APPROVED' && <button disabled={busyId === post.id} onClick={() => patch(post.id, { status: 'SCHEDULED', scheduledAt: scheduleAt ? new Date(scheduleAt).toISOString() : new Date(Date.now() + 3600000).toISOString() }, scheduleAt ? 'Post scheduled.' : 'Post scheduled +1h.')} className="rounded-lg bg-[var(--accent-soft)] px-3 py-2 text-[8px] text-[var(--accent)]">SCHEDULE</button>}
+                {['APPROVED', 'SCHEDULED'].includes(post.status) && <button disabled={busyId === post.id} onClick={() => void publish(post.id)} className="rounded-lg bg-[var(--accent)] px-3 py-2 text-[8px] font-bold text-black">PUBLISH NOW</button>}
+                {post.status === 'FAILED' && <button disabled={busyId === post.id} onClick={() => patch(post.id, { status: 'APPROVED' }, 'Post re-approved.')} className="rounded-lg border border-[var(--border)] px-3 py-2 text-[8px]">RE-APPROVE</button>}
+              </div>
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-[1fr_280px]">
+              <p className="whitespace-pre-wrap text-[10px] leading-5 text-[var(--text-secondary)]">{post.caption}</p>
+              <div className="space-y-2">
+                <label className="block text-[7px] font-mono text-[var(--text-muted)]">PUBLIC MEDIA URL<input defaultValue={post.mediaUrl || ''} onBlur={(e) => { const v = e.target.value.trim(); if (v !== post.mediaUrl) void patch(post.id, { mediaUrl: v || null }, 'Media URL saved.'); }} placeholder="https://…/image.jpg or video.mp4" className="mt-1 h-9 w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 text-[8px]" /></label>
+                <label className="block text-[7px] font-mono text-[var(--text-muted)]">SCHEDULE AT<input type="datetime-local" value={scheduleAt} onChange={(e) => setScheduleAt(e.target.value)} className="mt-1 h-9 w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 text-[8px]" /></label>
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">{post.hashtags.map((t) => <span key={t} className="rounded-full border border-[var(--border)] px-2 py-1 text-[7px] text-[var(--text-muted)]">{t}</span>)}</div>
+            {post.error && <div className="mt-3 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-[8px] leading-4 text-red-400">PUBLISH ERROR: {post.error}</div>}
+          </article>
+        ))}
+        {!posts.length && <div className="nexor-panel p-10 text-center text-[9px] text-[var(--text-muted)]">No content yet. Generate the first post above.</div>}
+      </section>
+    </div>
+  );
+}
