@@ -5,32 +5,82 @@ function graphVersion() {
 }
 
 function metaToken() {
-  const token = process.env.META_ACCESS_TOKEN?.trim();
-  if (!token) throw new Error('META_ACCESS_TOKEN is not configured');
+  const token = [
+    process.env.META_ACCESS_TOKEN,
+    process.env.META_PAGE_ACCESS_TOKEN,
+    process.env.WHATSAPP_ACCESS_TOKEN,
+  ].map((value) => value?.trim()).find(Boolean);
+  if (!token) throw new Error('Meta credentials are not configured. Set META_ACCESS_TOKEN (preferred) or META_PAGE_ACCESS_TOKEN.');
   return token;
+}
+
+async function metaGet(path: string, accessToken: string) {
+  const response = await fetch(`https://graph.facebook.com/${graphVersion()}${path}${path.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(accessToken)}`, { cache: 'no-store' });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok || json?.error) throw new Error(json?.error?.message ?? `Meta API request failed (${response.status})`);
+  return json as Record<string, unknown>;
 }
 
 async function metaRequest(path: string, body: Record<string, string>, accessToken = metaToken()) {
   const response = await fetch(`https://graph.facebook.com/${graphVersion()}${path}`, {
-    method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ ...body, access_token: accessToken }).toString(), cache: 'no-store',
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ ...body, access_token: accessToken }).toString(),
+    cache: 'no-store',
   });
   const json = await response.json().catch(() => ({}));
   if (!response.ok || json?.error) throw new Error(json?.error?.message ?? `Meta API request failed (${response.status})`);
   return json as { id?: string; post_id?: string };
 }
 
+function metaCandidateTokens() {
+  return Array.from(new Set([
+    process.env.META_PAGE_ACCESS_TOKEN,
+    process.env.META_ACCESS_TOKEN,
+    process.env.WHATSAPP_ACCESS_TOKEN,
+  ].map((value) => value?.trim()).filter(Boolean) as string[]));
+}
+
 async function resolveFacebookPage() {
   const configuredPageId = process.env.META_PAGE_ID?.trim();
-  const userToken = metaToken();
-  if (configuredPageId) return { pageId: configuredPageId, accessToken: userToken };
-  const response = await fetch(`https://graph.facebook.com/${graphVersion()}/me/accounts?fields=id,name,access_token&limit=100&access_token=${encodeURIComponent(userToken)}`, { cache: 'no-store' });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok || body?.error) throw new Error(body?.error?.message ?? `Unable to discover Facebook Pages (${response.status})`);
-  const pages = Array.isArray(body?.data) ? body.data : [];
-  const page = pages.find((item: { id?: string; access_token?: string }) => item?.id && item?.access_token);
-  if (!page) throw new Error('No Facebook Page is available to this Meta access token. Grant the Page publishing permissions and reconnect the token.');
-  return { pageId: String(page.id), accessToken: String(page.access_token) };
+  const explicitPageToken = process.env.META_PAGE_ACCESS_TOKEN?.trim();
+  const tokens = metaCandidateTokens();
+  if (!tokens.length) throw new Error('Meta credentials are not configured. Set META_ACCESS_TOKEN or META_PAGE_ACCESS_TOKEN.');
+
+  if (configuredPageId && explicitPageToken) {
+    try {
+      await metaGet(`/${configuredPageId}?fields=id,name`, explicitPageToken);
+      return { pageId: configuredPageId, accessToken: explicitPageToken };
+    } catch {
+      // Fall through and try the user/WhatsApp token path below.
+    }
+  }
+
+  let lastError = '';
+  for (const token of tokens) {
+    if (configuredPageId) {
+      try {
+        const page = await metaGet(`/${configuredPageId}?fields=id,name`, token);
+        if (page.id) return { pageId: configuredPageId, accessToken: token };
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+      }
+    }
+
+    try {
+      const body = await metaGet('/me/accounts?fields=id,name,access_token&limit=100', token);
+      const pages = Array.isArray(body?.data) ? body.data as Array<{ id?: string; access_token?: string }> : [];
+      const page = pages.find((item) => item?.id && item?.access_token && (!configuredPageId || item.id === configuredPageId));
+      if (page?.id && page.access_token) return { pageId: String(page.id), accessToken: String(page.access_token) };
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  if (lastError.toLowerCase().includes('invalid oauth access token')) {
+    throw new Error('Meta access token is invalid or expired. Reconnect the Facebook/Instagram account and save a fresh token.');
+  }
+  throw new Error(lastError || 'No Facebook Page is available to the configured Meta credentials. Grant Page publishing permissions and reconnect.');
 }
 
 function linkedinToken() {
@@ -38,18 +88,38 @@ function linkedinToken() {
   if (!token) throw new Error('LINKEDIN_ACCESS_TOKEN is not configured');
   return token;
 }
-function linkedinVersion() { return process.env.LINKEDIN_VERSION?.trim() ?? '202601'; }
+
+function linkedinVersion() {
+  return process.env.LINKEDIN_VERSION?.trim() ?? '202608';
+}
 
 async function publishLinkedIn(post: { caption: string; hashtags: string[] }) {
   const author = process.env.LINKEDIN_AUTHOR_URN?.trim();
   if (!author) throw new Error('LINKEDIN_AUTHOR_URN is not configured');
   const response = await fetch('https://api.linkedin.com/rest/posts', {
-    method: 'POST', headers: { Authorization: `Bearer ${linkedinToken()}`, 'Content-Type': 'application/json', 'LinkedIn-Version': linkedinVersion(), 'X-Restli-Protocol-Version': '2.0.0' },
-    body: JSON.stringify({ author, commentary: `${post.caption}${post.hashtags.length ? `\n\n${post.hashtags.join(' ')}` : ''}`, visibility: 'PUBLIC', distribution: { feedDistribution: 'MAIN_FEED', targetEntities: [], thirdPartyDistributionChannels: [] }, lifecycleState: 'PUBLISHED', isReshareDisabledByAuthor: false }),
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${linkedinToken()}`,
+      'Content-Type': 'application/json',
+      'LinkedIn-Version': linkedinVersion(),
+      'X-Restli-Protocol-Version': '2.0.0',
+    },
+    body: JSON.stringify({
+      author,
+      commentary: `${post.caption}${post.hashtags.length ? `\n\n${post.hashtags.join(' ')}` : ''}`,
+      visibility: 'PUBLIC',
+      distribution: { feedDistribution: 'MAIN_FEED', targetEntities: [], thirdPartyDistributionChannels: [] },
+      lifecycleState: 'PUBLISHED',
+      isReshareDisabledByAuthor: false,
+    }),
     cache: 'no-store',
   });
   const body = await response.text();
-  if (!response.ok) throw new Error(body || `LinkedIn publish failed (${response.status})`);
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('LinkedIn access token is invalid or expired. Reconnect LinkedIn and save a fresh OAuth token.');
+    if (response.status === 403) throw new Error(`LinkedIn rejected publishing: ${body || 'missing w_member_social permission or author access'}`);
+    throw new Error(body || `LinkedIn publish failed (${response.status})`);
+  }
   return response.headers.get('x-restli-id') ?? response.headers.get('x-linkedin-id') ?? '';
 }
 
@@ -58,7 +128,12 @@ async function youtubeAccessToken() {
   const clientId = process.env.YOUTUBE_CLIENT_ID?.trim();
   const clientSecret = process.env.YOUTUBE_CLIENT_SECRET?.trim();
   if (refreshToken && clientId && clientSecret) {
-    const response = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: 'refresh_token' }).toString(), cache: 'no-store' });
+    const response = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: 'refresh_token' }).toString(),
+      cache: 'no-store',
+    });
     const body = await response.json().catch(() => ({}));
     if (!response.ok || !body?.access_token) throw new Error(body?.error_description ?? body?.error ?? `YouTube token refresh failed (${response.status})`);
     return String(body.access_token);
@@ -75,11 +150,19 @@ async function publishYouTube(post: { title: string; caption: string; mediaUrl: 
   const media = await mediaResponse.arrayBuffer();
   const contentType = mediaResponse.headers.get('content-type') || 'video/mp4';
   if (!contentType.startsWith('video/')) throw new Error(`YouTube media must be video/*, received ${contentType}`);
-  const metadata = { snippet: { title: post.title.slice(0, 100) || 'NexorAIOS Social Video', description: post.caption, categoryId: process.env.YOUTUBE_CATEGORY_ID?.trim() ?? '22' }, status: { privacyStatus: process.env.YOUTUBE_PRIVACY_STATUS?.trim() ?? 'private', selfDeclaredMadeForKids: false } };
+  const metadata = {
+    snippet: { title: post.title.slice(0, 100) || 'NexorAIOS Social Video', description: post.caption, categoryId: process.env.YOUTUBE_CATEGORY_ID?.trim() ?? '22' },
+    status: { privacyStatus: process.env.YOUTUBE_PRIVACY_STATUS?.trim() ?? 'private', selfDeclaredMadeForKids: false },
+  };
   const form = new FormData();
   form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
   form.append('media', new Blob([media], { type: contentType }));
-  const response = await fetch('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=multipart&part=snippet,status', { method: 'POST', headers: { Authorization: `Bearer ${await youtubeAccessToken()}` }, body: form, cache: 'no-store' });
+  const response = await fetch('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=multipart&part=snippet,status', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${await youtubeAccessToken()}` },
+    body: form,
+    cache: 'no-store',
+  });
   const body = await response.json().catch(() => ({}));
   if (!response.ok || !body?.id) throw new Error(body?.error?.message ?? `YouTube publish failed (${response.status})`);
   return body.id as string;
@@ -90,14 +173,24 @@ async function publishX(post: { caption: string; hashtags: string[] }) {
   if (!token) throw new Error('X_ACCESS_TOKEN is not configured');
   const text = `${post.caption}${post.hashtags.length ? `\n\n${post.hashtags.join(' ')}` : ''}`.trim();
   if (!text) throw new Error('X post cannot be empty');
-  const response = await fetch('https://api.x.com/2/tweets', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ text: text.slice(0, 280) }), cache: 'no-store' });
+  const response = await fetch('https://api.x.com/2/tweets', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: text.slice(0, 280) }),
+    cache: 'no-store',
+  });
   const body = await response.json().catch(() => ({}));
   if (!response.ok || !body?.data?.id) throw new Error(body?.detail ?? body?.title ?? `X publish failed (${response.status})`);
   return String(body.data.id);
 }
 
-function metaInstagramUserId() { return process.env.META_INSTAGRAM_USER_ID?.trim() || process.env.META_INSTAGRAM_ACCOUNT_ID?.trim() || ''; }
-function isVideoUrl(url: string) { return /\.(mp4|mov|m4v|webm)(?:\?|$)/i.test(url); }
+function metaInstagramUserId() {
+  return process.env.META_INSTAGRAM_USER_ID?.trim() || process.env.META_INSTAGRAM_ACCOUNT_ID?.trim() || '';
+}
+
+function isVideoUrl(url: string) {
+  return /\.(mp4|mov|m4v|webm)(?:\?|$)/i.test(url);
+}
 
 async function waitForInstagramContainer(id: string) {
   const deadline = Date.now() + 120_000;
@@ -119,7 +212,10 @@ async function publishInstagram(post: { caption: string; hashtags: string[]; med
   if (!post.mediaUrl) throw new Error('Instagram publishing requires a public mediaUrl');
   const caption = `${post.caption}${post.hashtags.length ? `\n\n${post.hashtags.join(' ')}` : ''}`;
   const video = isVideoUrl(post.mediaUrl);
-  const creation = await metaRequest(`/${igUserId}/media`, video ? { media_type: 'REELS', video_url: post.mediaUrl, caption } : { image_url: post.mediaUrl, caption });
+  const creation = await metaRequest(
+    `/${igUserId}/media`,
+    video ? { media_type: 'REELS', video_url: post.mediaUrl, caption } : { image_url: post.mediaUrl, caption },
+  );
   if (!creation.id) throw new Error('Meta did not return an Instagram creation id');
   if (video) await waitForInstagramContainer(creation.id);
   const published = await metaRequest(`/${igUserId}/media_publish`, { creation_id: creation.id });
@@ -160,8 +256,8 @@ export async function publishSocialPost(postId: string) {
 }
 
 export function isProviderConfigured(platform: SocialContentPlatform) {
-  if (platform === 'FACEBOOK') return Boolean(process.env.META_ACCESS_TOKEN);
-  if (platform === 'INSTAGRAM') return Boolean(process.env.META_ACCESS_TOKEN && metaInstagramUserId());
+  if (platform === 'FACEBOOK') return Boolean(metaCandidateTokens().length);
+  if (platform === 'INSTAGRAM') return Boolean(metaCandidateTokens().length && metaInstagramUserId());
   if (platform === 'LINKEDIN') return Boolean(process.env.LINKEDIN_ACCESS_TOKEN && process.env.LINKEDIN_AUTHOR_URN);
   if (platform === 'YOUTUBE') return Boolean((process.env.YOUTUBE_CLIENT_ID && process.env.YOUTUBE_CLIENT_SECRET && process.env.YOUTUBE_REFRESH_TOKEN) || process.env.YOUTUBE_ACCESS_TOKEN);
   if (platform === 'X') return Boolean(process.env.X_ACCESS_TOKEN);
