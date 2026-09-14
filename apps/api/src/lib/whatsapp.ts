@@ -1,11 +1,13 @@
 import crypto from 'node:crypto';
 
-const graphVersion = process.env.WHATSAPP_API_VERSION || 'v23.0';
+const graphVersion = process.env.WHATSAPP_API_VERSION || process.env.META_GRAPH_VERSION || 'v23.0';
 
-function required(name: string): string {
-  const value = process.env[name];
-  if (!value) throw new Error(`WhatsApp configuration required: ${name}`);
-  return value;
+function requiredAny(names: string[]): string {
+  for (const name of names) {
+    const value = process.env[name]?.trim();
+    if (value) return value;
+  }
+  throw new Error(`WhatsApp configuration required: ${names.join(' or ')}`);
 }
 
 export type WhatsAppSendResult = {
@@ -22,8 +24,10 @@ export async function sendWhatsAppText(to: string, body: string): Promise<WhatsA
   }
   if (!body.trim() || body.length > 4096) throw new Error('WhatsApp text body must contain 1-4096 characters');
 
-  const token = required('WHATSAPP_ACCESS_TOKEN');
-  const phoneNumberId = required('WHATSAPP_PHONE_NUMBER_ID');
+  // One Meta Cloud API credential is enough for both social publishing and WhatsApp.
+  // WHATSAPP_ACCESS_TOKEN remains supported for projects that intentionally use a separate token.
+  const token = requiredAny(['WHATSAPP_ACCESS_TOKEN', 'META_ACCESS_TOKEN', 'META_PAGE_ACCESS_TOKEN']);
+  const phoneNumberId = requiredAny(['WHATSAPP_PHONE_NUMBER_ID', 'META_WHATSAPP_PHONE_NUMBER_ID']);
   const url = `https://graph.facebook.com/${graphVersion}/${phoneNumberId}/messages`;
 
   const response = await fetch(url, {
