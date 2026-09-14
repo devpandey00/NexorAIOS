@@ -10,22 +10,14 @@ import { leadScoringTool } from '../sales/lead-scoring.tool.js';
 import { leadDedupTool } from '../sales/lead-dedup.tool.js';
 import { leadDiscoveryTool } from '../sales/lead-discovery.tool.js';
 import { outreachDraftTool } from '../sales/outreach-draft.tool.js';
+import { growthTools } from '../sales/growth-tools.js';
+import { utilityTools } from '../utility/utility.tools.js';
 import { toolRegistry } from './tool-registry.js';
 
 export function registerDefaultTools() {
   for (const tool of [
-    calendarTool,
-    crmTool,
-    emailTool,
-    filesTool,
-    proposalTool,
-    searchTool,
-    websiteTool,
-    whatsappTool,
-    leadDiscoveryTool,
-    leadScoringTool,
-    leadDedupTool,
-    outreachDraftTool,
+    calendarTool, crmTool, emailTool, filesTool, proposalTool, searchTool, websiteTool, whatsappTool,
+    leadDiscoveryTool, leadScoringTool, leadDedupTool, outreachDraftTool, ...utilityTools, ...growthTools,
   ]) {
     if (!toolRegistry.has(tool.id)) toolRegistry.register(tool);
   }
