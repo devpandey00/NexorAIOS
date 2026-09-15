@@ -1,19 +1,9 @@
 import { getDatabaseClients } from '@nexor/database';
 
 export const AUTOMATION_KEYS = [
-  'master_autopilot',
-  'outbound_enabled',
-  'campaign_discovery',
-  'scheduler',
-  'job_autopilot',
-  'autopilot',
-  'whatsapp_generation',
-  'whatsapp_sending',
-  'followups',
-  'outreach',
-  'social_publishing',
-  'daily_reports',
-  'growth_reports',
+  'master_autopilot', 'outbound_enabled', 'campaign_discovery', 'scheduler', 'job_autopilot',
+  'autopilot', 'whatsapp_generation', 'whatsapp_sending', 'followups', 'outreach',
+  'social_publishing', 'daily_reports', 'growth_reports',
 ] as const;
 export type AutomationKey = (typeof AUTOMATION_KEYS)[number];
 
@@ -41,21 +31,19 @@ export async function isAutomationEnabled(key: AutomationKey): Promise<boolean> 
     await db.automationSetting.create({ data: { key, enabled: true } });
     return true;
   } catch (error) {
+    // Never run autonomous work when the control-plane store is unavailable.
     console.error(`[AUTOMATION SETTING] ${key}`, error);
-    return true;
+    return false;
   }
 }
 
 export async function isOutboundEnabled(): Promise<boolean> {
   try {
     const db = getDatabaseClients().write;
-    const rows = await db.automationSetting.findMany({
-      where: { key: { in: ['master_autopilot', 'outbound_enabled'] } },
-    });
+    const rows = await db.automationSetting.findMany({ where: { key: { in: ['master_autopilot', 'outbound_enabled'] } } });
     const byKey = new Map(rows.map((row) => [row.key, row.enabled]));
     return (byKey.get('master_autopilot') ?? true) && (byKey.get('outbound_enabled') ?? true);
   } catch (error) {
-    // The emergency stop must fail closed if the settings store is unavailable.
     console.error('[OUTBOUND SETTING]', error);
     return false;
   }
@@ -64,22 +52,13 @@ export async function isOutboundEnabled(): Promise<boolean> {
 export async function getAutomationSettings() {
   try {
     const db = getDatabaseClients().write;
-    await Promise.all(
-      AUTOMATION_KEYS.map((key) =>
-        db.automationSetting.upsert({ where: { key }, create: { key, enabled: true }, update: {} }),
-      ),
-    );
+    await Promise.all(AUTOMATION_KEYS.map((key) => db.automationSetting.upsert({ where: { key }, create: { key, enabled: true }, update: {} })));
     const rows = await db.automationSetting.findMany({ where: { key: { in: [...AUTOMATION_KEYS] } } });
     const byKey = new Map(rows.map((row) => [row.key, row]));
-    return AUTOMATION_KEYS.map((key) => ({
-      key,
-      label: AUTOMATION_LABELS[key],
-      enabled: byKey.get(key)?.enabled ?? true,
-      updatedAt: byKey.get(key)?.updatedAt?.toISOString() ?? null,
-    }));
+    return AUTOMATION_KEYS.map((key) => ({ key, label: AUTOMATION_LABELS[key], enabled: byKey.get(key)?.enabled ?? true, updatedAt: byKey.get(key)?.updatedAt?.toISOString() ?? null }));
   } catch (error) {
     console.error('[AUTOMATION SETTINGS READ]', error);
-    return AUTOMATION_KEYS.map((key) => ({ key, label: AUTOMATION_LABELS[key], enabled: true, updatedAt: null }));
+    return AUTOMATION_KEYS.map((key) => ({ key, label: AUTOMATION_LABELS[key], enabled: false, updatedAt: null }));
   }
 }
 
