@@ -14,6 +14,15 @@ function metaToken() {
   return token;
 }
 
+/** Non-throwing diagnostic helper used by the provider health endpoint. */
+export function getMetaAccessToken() {
+  return [
+    process.env.META_ACCESS_TOKEN,
+    process.env.META_PAGE_ACCESS_TOKEN,
+    process.env.WHATSAPP_ACCESS_TOKEN,
+  ].map((value) => value?.trim()).find(Boolean) ?? null;
+}
+
 async function metaGet(path: string, accessToken: string) {
   const response = await fetch(`https://graph.facebook.com/${graphVersion()}${path}${path.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(accessToken)}`, { cache: 'no-store' });
   const json = await response.json().catch(() => ({}));
@@ -83,10 +92,29 @@ async function resolveFacebookPage() {
   throw new Error(lastError || 'No Facebook Page is available to the configured Meta credentials. Grant Page publishing permissions and reconnect.');
 }
 
+/** Provider diagnostic helper returning the resolved Facebook Page shape expected by the health route. */
+export async function getFacebookPage() {
+  const page = await resolveFacebookPage();
+  return { id: page.pageId, access_token: page.accessToken };
+}
+
+/** Resolve the Instagram Business account attached to the configured Facebook Page. */
+export async function getInstagramBusinessAccount() {
+  const page = await resolveFacebookPage();
+  const body = await metaGet(`/${page.pageId}?fields=instagram_business_account`, page.accessToken);
+  const account = body?.instagram_business_account;
+  if (!account || typeof account !== 'object') return null;
+  return account as { id?: string };
+}
+
 function linkedinToken() {
   const token = process.env.LINKEDIN_ACCESS_TOKEN?.trim();
   if (!token) throw new Error('LINKEDIN_ACCESS_TOKEN is not configured');
   return token;
+}
+
+export function getLinkedInAccessToken() {
+  return process.env.LINKEDIN_ACCESS_TOKEN?.trim() ?? null;
 }
 
 function linkedinVersion() {
