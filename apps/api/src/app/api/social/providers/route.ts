@@ -1,122 +1,46 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getSessionUser } from '@/lib/auth';
+import { NextResponse } from 'next/server';
 
-export const runtime = 'nodejs';
+import { getFacebookPage, getInstagramBusinessAccount, getMetaAccessToken } from '@/lib/social-publisher';
+import { getWhatsAppProviderStatus } from '@/lib/outreach-sender';
+import { getLinkedInAccessToken } from '@/lib/linkedin';
 
 const graphVersion = process.env.META_GRAPH_VERSION?.trim() || 'v23.0';
 
-async function jsonFetch(url: string, init: RequestInit = {}) {
-  const response = await fetch(url, { ...init, cache: 'no-store', signal: AbortSignal.timeout(12_000) });
-  const body = await response.json().catch(() => ({}));
-  return { response, body };
-}
+export async function GET() {
+  const metaToken = getMetaAccessToken();
+  const metaConfigured = Boolean(metaToken);
 
-function metaTokens() {
-  return Array.from(new Set([
-    process.env.META_ACCESS_TOKEN,
-    process.env.META_PAGE_ACCESS_TOKEN,
-    process.env.WHATSAPP_ACCESS_TOKEN,
-  ].map((value) => value?.trim()).filter(Boolean) as string[]));
-}
+  const facebook = { configured: metaConfigured, connected: false, reason: '' };
+  const instagram = { configured: metaConfigured, connected: false, reason: '' };
+  const whatsapp = getWhatsAppProviderStatus();
+  const linkedinToken = getLinkedInAccessToken();
+  const linkedin = { configured: Boolean(linkedinToken), connected: Boolean(linkedinToken), reason: linkedinToken ? '' : 'LinkedIn credentials are not configured.' };
 
-async function checkMeta() {
-  const tokens = metaTokens();
-  if (!tokens.length) return { configured: false, healthy: false, message: 'Meta token is not configured' };
-  let last = 'Meta token could not be verified';
-  for (const token of tokens) {
+  if (metaToken) {
     try {
-      const { response, body } = await jsonFetch(`https://graph.facebook.com/${graphVersion}/me?fields=id,name&access_token=${encodeURIComponent(token)}`);
-      if (response.ok && !body?.error) return { configured: true, healthy: true, message: `Meta authenticated${body?.name ? ` as ${String(body.name)}` : ''}` };
-      last = body?.error?.message || `Meta returned HTTP ${response.status}`;
+      const page = await getFacebookPage();
+      facebook.connected = Boolean(page?.id && page?.access_token);
+      if (!facebook.connected) facebook.reason = 'No Facebook Page with a usable Page Access Token was found.';
     } catch (error) {
-      last = error instanceof Error ? error.message : String(error);
+      facebook.reason = error instanceof Error ? error.message : 'Facebook connection check failed.';
     }
-  }
-  return { configured: true, healthy: false, message: last.toLowerCase().includes('invalid oauth access token') ? 'Meta access token is invalid or expired' : last };
-}
 
-async function checkFacebookPage() {
-  const pageId = process.env.META_PAGE_ID?.trim();
-  const tokens = metaTokens();
-  if (!tokens.length) return { configured: false, healthy: false, message: 'Meta token is not configured' };
-  for (const token of tokens) {
     try {
-      if (pageId) {
-        const { response, body } = await jsonFetch(`https://graph.facebook.com/${graphVersion}/${pageId}?fields=id,name&access_token=${encodeURIComponent(token)}`);
-        if (response.ok && !body?.error) return { configured: true, healthy: true, message: `Facebook Page connected${body?.name ? `: ${String(body.name)}` : ''}` };
-      }
-      const { response, body } = await jsonFetch(`https://graph.facebook.com/${graphVersion}/me/accounts?fields=id,name,access_token&limit=100&access_token=${encodeURIComponent(token)}`);
-      const pages = Array.isArray(body?.data) ? body.data as Array<{ id?: string; name?: string; access_token?: string }> : [];
-      const page = pages.find((item) => item?.id && item?.access_token && (!pageId || item.id === pageId));
-      if (response.ok && page?.id) return { configured: true, healthy: true, message: `Facebook Page connected${page.name ? `: ${page.name}` : ''}` };
-    } catch {
-      // Try the next configured Meta credential.
+      const instagramAccount = await getInstagramBusinessAccount();
+      instagram.connected = Boolean(instagramAccount?.id);
+      if (!instagram.connected) instagram.reason = 'No Instagram Business account was found for the connected Facebook Page.';
+    } catch (error) {
+      instagram.reason = error instanceof Error ? error.message : 'Instagram connection check failed.';
     }
+  } else {
+    facebook.reason = 'Meta credentials are not configured.';
+    instagram.reason = 'Meta credentials are not configured.';
   }
-  return { configured: true, healthy: false, message: 'Facebook Page token/permissions are invalid. Reconnect the Page.' };
-}
 
-async function checkInstagram() {
-  const accountId = process.env.META_INSTAGRAM_USER_ID?.trim() || process.env.META_INSTAGRAM_ACCOUNT_ID?.trim();
-  if (!accountId || !metaTokens().length) return { configured: false, healthy: false, message: 'Instagram account ID or Meta token is not configured' };
-  for (const token of metaTokens()) {
-    try {
-      const { response, body } = await jsonFetch(`https://graph.facebook.com/${graphVersion}/${accountId}?fields=id,username&access_token=${encodeURIComponent(token)}`);
-      if (response.ok && !body?.error) return { configured: true, healthy: true, message: `Instagram connected${body?.username ? `: @${String(body.username)}` : ''}` };
-    } catch {
-      // Try the next token.
-    }
-  }
-  return { configured: true, healthy: false, message: 'Instagram token/account is invalid or missing publishing permissions' };
-}
-
-async function checkWhatsApp() {
-  const token = (process.env.WHATSAPP_ACCESS_TOKEN || process.env.META_ACCESS_TOKEN || process.env.META_PAGE_ACCESS_TOKEN)?.trim();
-  const phoneNumberId = (process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.META_WHATSAPP_PHONE_NUMBER_ID)?.trim();
-  if (!token || !phoneNumberId) return { configured: false, healthy: false, message: 'WhatsApp token or phone number ID is not configured' };
-  try {
-    const { response, body } = await jsonFetch(`https://graph.facebook.com/${graphVersion}/${phoneNumberId}?fields=id,display_phone_number,verified_name&access_token=${encodeURIComponent(token)}`);
-    if (response.ok && !body?.error) return { configured: true, healthy: true, message: `WhatsApp Cloud API connected${body?.verified_name ? `: ${String(body.verified_name)}` : ''}` };
-    return { configured: true, healthy: false, message: body?.error?.message || `WhatsApp returned HTTP ${response.status}` };
-  } catch (error) {
-    return { configured: true, healthy: false, message: error instanceof Error ? error.message : String(error) };
-  }
-}
-
-async function checkLinkedIn() {
-  const token = process.env.LINKEDIN_ACCESS_TOKEN?.trim();
-  const author = process.env.LINKEDIN_AUTHOR_URN?.trim();
-  if (!token || !author) return { configured: false, healthy: false, message: 'LinkedIn access token or author URN is not configured' };
-  try {
-    const { response, body } = await jsonFetch('https://api.linkedin.com/v2/me', { headers: { Authorization: `Bearer ${token}` } });
-    if (response.ok && !body?.error) return { configured: true, healthy: true, message: 'LinkedIn authenticated and ready to publish' };
-    return { configured: true, healthy: false, message: response.status === 401 ? 'LinkedIn access token is invalid or expired' : (body?.message || `LinkedIn returned HTTP ${response.status}`) };
-  } catch (error) {
-    return { configured: true, healthy: false, message: error instanceof Error ? error.message : String(error) };
-  }
-}
-
-async function checkX() {
-  const token = process.env.X_ACCESS_TOKEN?.trim();
-  if (!token) return { configured: false, healthy: false, message: 'X access token is not configured' };
-  try {
-    const { response, body } = await jsonFetch('https://api.x.com/2/users/me', { headers: { Authorization: `Bearer ${token}` } });
-    if (response.ok && !body?.errors) return { configured: true, healthy: true, message: 'X authenticated and ready to publish' };
-    return { configured: true, healthy: false, message: body?.detail || `X returned HTTP ${response.status}` };
-  } catch (error) {
-    return { configured: true, healthy: false, message: error instanceof Error ? error.message : String(error) };
-  }
-}
-
-export async function GET(req: NextRequest) {
-  if (!(await getSessionUser(req))) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
-  const [meta, facebook, instagram, whatsapp, linkedin, x] = await Promise.all([
-    checkMeta(),
-    checkFacebookPage(),
-    checkInstagram(),
-    checkWhatsApp(),
-    checkLinkedIn(),
-    checkX(),
-  ]);
-  return NextResponse.json({ success: true, providers: { META: meta, FACEBOOK: facebook, INSTAGRAM: instagram, WHATSAPP: whatsapp, LINKEDIN: linkedin, X: x } });
+  return NextResponse.json({
+    ok: true,
+    checkedAt: new Date().toISOString(),
+    graphVersion,
+    providers: { facebook, instagram, whatsapp, linkedin },
+  });
 }
