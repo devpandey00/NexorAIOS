@@ -20,7 +20,7 @@ jobs:
     steps:
       - name: Run fast Nexor automation workers
         env:
-          NEXOR_BASE_URL: https://nexoraios-main-1.vercel.app
+          NEXOR_BASE_URL: https://nexoraios-main-1-diwakarpandeyitwa-3531s-projects.vercel.app
         run: |
           set -uo pipefail
           failures=0
