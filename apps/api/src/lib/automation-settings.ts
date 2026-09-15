@@ -23,13 +23,27 @@ export const AUTOMATION_LABELS: Record<AutomationKey, string> = {
   growth_reports: '3-hour growth + milestone reports',
 };
 
+/**
+ * Central fail-closed control-plane check. MASTER AUTOPILOT is the global
+ * emergency stop for every autonomous capability except itself.
+ */
 export async function isAutomationEnabled(key: AutomationKey): Promise<boolean> {
   try {
     const db = getDatabaseClients().write;
-    const setting = await db.automationSetting.findUnique({ where: { key } });
-    if (setting) return setting.enabled;
-    await db.automationSetting.create({ data: { key, enabled: true } });
-    return true;
+    const keys = key === 'master_autopilot' ? ['master_autopilot'] : ['master_autopilot', key];
+    const rows = await db.automationSetting.findMany({ where: { key: { in: keys } } });
+    const byKey = new Map(rows.map((row) => [row.key, row.enabled]));
+
+    if (!byKey.has('master_autopilot')) {
+      await db.automationSetting.create({ data: { key: 'master_autopilot', enabled: true } });
+    }
+    if (key !== 'master_autopilot' && !byKey.has(key)) {
+      await db.automationSetting.create({ data: { key, enabled: true } });
+    }
+
+    const master = byKey.get('master_autopilot') ?? true;
+    if (!master) return false;
+    return key === 'master_autopilot' ? master : (byKey.get(key) ?? true);
   } catch (error) {
     // Never run autonomous work when the control-plane store is unavailable.
     console.error(`[AUTOMATION SETTING] ${key}`, error);
