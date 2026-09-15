@@ -9,7 +9,7 @@ const DEFAULTS = {
   founder_name: 'Dev',
   founder_role: 'Founder · Nexor Media',
   avatar_url: '/founder-avatar.svg',
-  theme: 'Executive Pearl',
+  theme: 'Pearl Glass',
   accent: 'Indigo',
   density: 'Comfortable',
   font_scale: 'Default',
@@ -39,7 +39,9 @@ export async function POST(request: NextRequest) {
     const profile = {
       founder_name: typeof input?.founder_name === 'string' ? input.founder_name.slice(0, 120) : DEFAULTS.founder_name,
       founder_role: typeof input?.founder_role === 'string' ? input.founder_role.slice(0, 160) : DEFAULTS.founder_role,
-      avatar_url: typeof input?.avatar_url === 'string' && input.avatar_url.length <= 800_000 ? input.avatar_url : DEFAULTS.avatar_url,
+      avatar_url: typeof input?.avatar_url === 'string' && input.avatar_url.length <= 800_000
+        ? input.avatar_url
+        : typeof input?.avatar === 'string' && input.avatar.length <= 800_000 ? input.avatar : DEFAULTS.avatar_url,
       theme: typeof input?.theme === 'string' ? input.theme.slice(0, 60) : DEFAULTS.theme,
       accent: typeof input?.accent === 'string' ? input.accent.slice(0, 40) : DEFAULTS.accent,
       density: typeof input?.density === 'string' ? input.density.slice(0, 40) : DEFAULTS.density,
