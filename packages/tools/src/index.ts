@@ -20,3 +20,5 @@ export * from './website/website.tool.js';
 export * from './whatsapp/whatsapp.tool.js';
 export * from './sales/lead-scoring.tool.js';
 export * from './sales/outreach-draft.tool.js';
+export * from './utility/utility.tools.js';
+export * from './sales/growth-tools.js';
