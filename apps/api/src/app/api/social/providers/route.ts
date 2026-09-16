@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 
-import { getFacebookPage, getInstagramBusinessAccount, getMetaAccessToken } from '@/lib/social-publisher';
+import { getFacebookPage, getInstagramBusinessAccount, getMetaAccessToken, getLinkedInAccessToken } from '@/lib/social-publisher';
 import { getWhatsAppProviderStatus } from '@/lib/outreach-sender';
-import { getLinkedInAccessToken } from '@/lib/linkedin';
 
 const graphVersion = process.env.META_GRAPH_VERSION?.trim() || 'v23.0';
 
