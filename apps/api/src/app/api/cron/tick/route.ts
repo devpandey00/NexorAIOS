@@ -15,12 +15,26 @@ export async function GET(request: NextRequest) {
   }
 
   const origin = request.nextUrl.origin;
-  const secret = process.env.CRON_SECRET?.trim();
-  if (!secret) {
-    return NextResponse.json({ success: false, error: 'CRON_SECRET is required for the production heartbeat' }, { status: 503 });
+
+  // Forward the already-verified machine credential to downstream workers.
+  // GitHub Actions uses a short-lived GitHub OIDC token, so requiring a
+  // Vercel-side CRON_SECRET here would incorrectly make the heartbeat fail
+  // even though machine authentication already succeeded.
+  const machineToken =
+    request.headers.get('x-nexor-machine-token')?.trim() ||
+    request.headers.get('x-github-oidc-token')?.trim() ||
+    request.headers.get('authorization')?.replace(/^Bearer\\s+/i, '').trim() ||
+    '';
+
+  if (!machineToken) {
+    return NextResponse.json({ success: false, error: 'Machine credential is required for the production heartbeat' }, { status: 401 });
   }
 
-  const headers = { authorization: `Bearer ${secret}`, 'x-cron-secret': secret };
+  const headers = {
+    authorization: `Bearer ${machineToken}`,
+    'x-nexor-machine-token': machineToken,
+    'x-github-oidc-token': machineToken,
+  };
   const jobs: Array<[string, Promise<Response>]> = [
     ['scheduler', fetch(`${origin}/api/automations/run`, { method: 'POST', headers })],
     ['campaign_discovery', fetch(`${origin}/api/cron/campaign-worker`, { headers, cache: 'no-store' })],
