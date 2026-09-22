@@ -37,8 +37,9 @@
 - The durable automation runner uses `FOR UPDATE SKIP LOCKED`, persists run failures, advances recurring schedules and cancels successful one-time schedules.
 - Scheduled maintenance runs job discovery every two hours, daily autopilot and daily reporting.
 - Worker workflows use the canonical production domain and fail on non-2xx responses.
-- A production runtime check exposed a real remaining configuration blocker: `GET /api/cron/job-autopilot` returned HTTP 503 because neither `CRON_SECRET` nor `OUTREACH_API_SECRET` is available to the Vercel Production runtime. GitHub Actions has its own `CRON_SECRET` secret, but that does not automatically become a Vercel environment variable.
-- Therefore scheduled automation is NOT yet proven LIVE in production.
+- The heartbeat route previously had a real configuration blocker: it required a Vercel-side `CRON_SECRET` even after `authorizeMachineRequest` had already verified the GitHub OIDC machine credential.
+- Fixed in commit `a2c0f7e3`: `/api/cron/tick` now forwards the already-verified short-lived machine credential to downstream workers, so the GitHub Actions OIDC path does not depend on a duplicated Vercel `CRON_SECRET`.
+- Production deployment for `a2c0f7e3` was created and is currently queued; the fix is not marked LIVE until that deployment reaches READY and the authorized worker path is smoke-tested.
 
 ## Automation code fixes committed after inspection
 - Schedule GET/POST now accept either a valid cron/automation secret or a real Nexor session; unauthenticated schedule listing is no longer allowed.
@@ -61,8 +62,8 @@ WhatsApp/Instagram/Facebook/LinkedIn/SMS/email sending, social publishing, Googl
 
 ## Verification still required
 1. Apply `20260830150000_add_social_intelligence` to production using the existing migration workflow before calling Trend/Analytics production-live.
-2. Add `CRON_SECRET` to Vercel Production environment variables using the same secret value used by the GitHub automation worker, then redeploy the latest `main`.
-3. Confirm `/api/cron/job-autopilot`, `/api/automations/run`, `/api/cron/followups`, `/api/cron/outreach`, and `/api/cron/social-publish` return genuine 2xx responses when authorized.
+2. Wait for the `a2c0f7e3` production deployment to become READY.
+3. Confirm `/api/cron/tick`, `/api/automations/run`, `/api/cron/followups`, `/api/cron/outreach`, and `/api/cron/social-publish` return genuine 2xx responses with the GitHub OIDC machine credential.
 4. Reproduce and fix the CI lint failure; then require typecheck, format check, unit tests and build to pass.
 5. Smoke-test login, dashboard, CRM CRUD, lead flow, research, outreach approval/send paths, social calendar/publishing, social trend ingestion, analytics ingestion, automation execution and video agent.
 6. Connect and test external providers one by one.
